@@ -1,10 +1,11 @@
 """
 python -m apps.Latent_DiT.test
 """
-from apps.Latent_DiT.data import  create_dummy_dataloader, create_imagenet_dataloader,DataArgs, may_download_image_dataset
+from apps.Simple_DiT.data import  create_dummy_dataloader, create_imagenet_dataloader,DataArgs, may_download_image_dataset
 from lingua.transformer import precompute_freqs_cis
-from apps.Latent_DiT.model import precompute_2d_freqs_cls, DiTransformer, DiTransformerArgs, DiffuserVAEArgs, DiffuserVAE,LatentTransformer, ModelArgs
-from apps.Latent_DiT.schedulers import SchedulerArgs, RectFlow
+from apps.Simple_DiT.transformer import precompute_2d_freqs_cls, DiTransformer, DiTransformerArgs
+from apps.Latent_DiT.model import DiffuserVAEArgs, DiffuserVAE,LatentTransformer, ModelArgs
+from apps.Simple_DiT.schedulers import SchedulerArgs, RectFlow
 import logging
 from torchvision.utils import save_image
 # Configure logging
