@@ -161,3 +161,6 @@ cython_debug/
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
 apps/Simple_DiT/.DS_Store
+sync.sh
+.gitignore
+.DS_Store
