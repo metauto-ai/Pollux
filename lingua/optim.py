@@ -145,7 +145,7 @@ def build_lr_fn(args: OptimArgs, n_steps: int):
 def build_optimizer(model: nn.Module, args: OptimArgs, n_steps: int):
     logger.info("Starting build of optimizer...")
     optimizer = AdamW(
-        model.parameters(),
+        (param for param in model.parameters() if param.requires_grad),
         lr=args.lr,
         betas=(args.beta1, args.beta2),
         weight_decay=args.weight_decay,
