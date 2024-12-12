@@ -167,5 +167,7 @@ def main():
     # Calculate tokens per second
     save_image(samples, "sample.png", nrow=3, normalize=True, value_range=(-1, 1))
     logger.info(f"inference time is {end_time-start_time} seconds")
+
+
 if __name__ == "__main__":
     main()

@@ -8,6 +8,11 @@ import inspect
 
 @dataclass
 class SchedulerArgs:
+    """
+    from https://huggingface.co/black-forest-labs/FLUX.1-dev/blob/main/scheduler/scheduler_config.json
+    Note SD3's use_dynamic_shifting is set as False. 
+    For Flux, use_dynamic_shifting is set as True.
+    """
     num_train_timesteps: int = 1000
     base_image_seq_len: int = 256
     base_shift: float =  0.5
@@ -18,7 +23,7 @@ class SchedulerArgs:
     logit_mean: float = 0.0
     logit_std: float = 1.0
     mode_scale: float = 1.29
-
+    use_dynamic_shifting: bool = False
 
 
 def retrieve_timesteps(
@@ -81,6 +86,21 @@ def retrieve_timesteps(
     return timesteps, num_inference_steps
 
 
+def calculate_shift(
+    image_seq_len,
+    base_seq_len: int = 256,
+    max_seq_len: int = 4096,
+    base_shift: float = 0.5,
+    max_shift: float = 1.16,
+):
+    m = (max_shift - base_shift) / (max_seq_len - base_seq_len)
+    b = base_shift - m * base_seq_len
+    mu = image_seq_len * m + b
+    return mu
+
+
+
+
 class RectFlow(torch.nn.Module):
     
     def __init__(self, args: SchedulerArgs):
@@ -98,6 +118,7 @@ class RectFlow(torch.nn.Module):
             max_image_seq_len = args.max_image_seq_len,
             max_shift = args.max_shift,
             shift =  args.shift,
+            use_dynamic_shifting = args.use_dynamic_shifting
         )
         return scheduler
 

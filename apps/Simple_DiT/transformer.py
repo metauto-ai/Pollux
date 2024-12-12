@@ -272,6 +272,7 @@ class DiTransformer(BaseDiTransformer):
         super().__init__(args)
         self.patch_size = args.patch_size
         self.out_channels = args.out_channels
+        self.in_channels = args.in_channels
         self.num_classes = args.num_classes
         self.tmb_embed = TimestepEmbedder(hidden_size=args.ada_dim,time_embedding_size=args.tmb_size)
         self.img_embed = ImageEmbedder(in_dim=self.patch_size * self.patch_size*args.in_channels, out_dim=args.dim)
