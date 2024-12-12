@@ -234,7 +234,8 @@ def train(args: TrainArgs):
         logger.info("Model is built !")
 
         model_param_count = get_num_params(model)
-
+        torch.manual_seed(args.seed)
+        model.init_weights(args.model.transformer.pre_trained_path)
         model = parallelize_model(
             model,
             world_mesh,
@@ -244,22 +245,7 @@ def train(args: TrainArgs):
             tp_parallelize=tp_parallelize,
             no_recompute_ops=get_no_recompute_ops(),
         )
-
-        # Once we shard the model on different gpus we can actually initialize the model
-        # First we create empty tensors of the correct shapes
         model = model.to(device="cuda")
-        # Then we init the model. Please make sure this function initializes *ALL* parameters
-        # and buffers, otherwise you will have random values in the unitialized tensors
-        # which will silently fail (give nan gradients for example)
-
-        if args.checkpoint.init_ckpt_path:
-            logger.info(f"Loading initial model from {args.checkpoint.init_ckpt_path}")
-            load_from_checkpoint(args.checkpoint.init_ckpt_path, model, model_key="model") # Put model_key="" if its directly the model checkpoint
-            model.transformer.rope_embeddings.reset_parameters() # For RoPe initialization since it's a buffer it might not be loaded
-        else:
-            with torch.random.fork_rng(devices=[torch.cuda.current_device()]):
-                torch.manual_seed(args.seed)
-                model.init_weights()
         check_model_value_range(model, range=10.0, std=1.0)
 
         # log model size

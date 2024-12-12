@@ -22,12 +22,24 @@ if __name__ == '__main__':
     freqs_2d_cls = precompute_2d_freqs_cls(512, 1024)
     args = DiTransformerArgs(
         dim= 2048,
-        n_layers= 25,
-        n_heads= 16,
+        ffn_dim_multiplier= 1.5,
+        multiple_of= 256,
+        n_heads= 32,
+        n_kv_heads= 8,
+        n_layers= 16,
+        ada_dim= 512,
+        patch_size= 16,
+        in_channels= 3,
+        out_channels= 3,
+        tmb_size= 256,
+        cfg_drop_ratio= 0.1,
+        num_classes= 1000,
+        max_seqlen= 1000,
     )
     dataloader = create_dummy_dataloader(batch_size=16,num_classes=args.num_classes)
-    model = DiTransformer(args).cuda()
-
+    model = DiTransformer(args)
+    model.init_weights('/mnt/data/Llama-3.2-1B/original/consolidated.00.pth')
+    model.cuda()
     schedulers_arg = SchedulerArgs()
     scheduler = RectFlow(schedulers_arg)
     for class_idx, time_step, image in dataloader:
