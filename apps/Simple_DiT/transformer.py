@@ -29,6 +29,10 @@ from lingua.transformer import (
     LabelEmbedder,
     modulate,
 )
+import os
+import logging
+
+logger = logging.getLogger()
 
 def precompute_2d_freqs_cls(
     dim: int,
@@ -158,6 +162,7 @@ class DiTransformerArgs(BaseTransformerArgs):
     tmb_size: int = 320
     cfg_drop_ratio: float = 0.1
     num_classes: int = 1000
+    pre_trained_path: Optional[str] = None
 
 
 class DiTransformerBlock(nn.Module):
@@ -253,7 +258,7 @@ class BaseDiTransformer(nn.Module):
         # Either use fixed base std or sqrt model dim
         self.rope_embeddings.reset_parameters()
 
-    def init_weights(self):
+    def init_weights(self,pre_trained_path:Optional[str]=None):
         self.reset_parameters()
         for depth, layer in enumerate(self.layers):
             factor = {
@@ -264,6 +269,20 @@ class BaseDiTransformer(nn.Module):
             }[self.init_std_factor]
 
             layer.init_weights(self.init_base_std, factor)
+        if pre_trained_path:
+            assert os.path.exists(pre_trained_path)
+            ckpt_state_dict = torch.load(pre_trained_path, map_location='cpu')
+            target_state_dict = self.state_dict()
+            filtered_state_dict = {
+                k: v for k, v in ckpt_state_dict.items() if k in target_state_dict and v.shape == target_state_dict[k].shape
+            }
+            target_state_dict.update(filtered_state_dict)
+            self.load_state_dict(target_state_dict)
+            missing_keys = set(target_state_dict.keys()) - set(filtered_state_dict.keys())
+            unexpected_keys = set(ckpt_state_dict.keys()) - set(target_state_dict.keys())
+            logger.info(f'Load the checkpoints from {pre_trained_path}')
+            logger.warning(f"Missing keys: {missing_keys}")
+            logger.warning(f"Unexpected keys: {unexpected_keys}")
 
 
 class DiTransformer(BaseDiTransformer):
@@ -334,6 +353,7 @@ class DiTransformer(BaseDiTransformer):
         out = self.img_output(self.norm(h))
         x = self.unpatchify(out, img_size)
         return x
+    
     def reset_parameters(self, init_std=None):
         # Either use fixed base std or sqrt model dim
         super().reset_parameters()

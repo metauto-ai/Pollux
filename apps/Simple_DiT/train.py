@@ -72,7 +72,6 @@ class TrainArgs:
     dump_dir: str = ""
 
     seed: int = 42
-
     # Number of gradient accumulation steps
     # Total batch size is batch_size*grad_acc_steps
     grad_acc_steps: int = 1
@@ -231,12 +230,14 @@ def train(args: TrainArgs):
 
         torch.manual_seed(args.seed)
         logger.info("Building model")
-        # Initializing Model in meta device allows us to initialize models much bigger than 1 gpu's memory
-        with torch.device("meta"):
-            model = DiTransformer(args.model)
+        model = DiTransformer(args.model)
         logger.info("Model is built !")
 
         model_param_count = get_num_params(model)
+
+
+        torch.manual_seed(args.model.seed)
+        model.init_weights(args.model.pre_trained_path)
 
         model = parallelize_model(
             model,
@@ -247,22 +248,7 @@ def train(args: TrainArgs):
             tp_parallelize=tp_parallelize,
             no_recompute_ops=get_no_recompute_ops(),
         )
-
-        # Once we shard the model on different gpus we can actually initialize the model
-        # First we create empty tensors of the correct shapes
-        model = model.to_empty(device="cuda")
-        # Then we init the model. Please make sure this function initializes *ALL* parameters
-        # and buffers, otherwise you will have random values in the unitialized tensors
-        # which will silently fail (give nan gradients for example)
-
-        if args.checkpoint.init_ckpt_path:
-            logger.info(f"Loading initial model from {args.checkpoint.init_ckpt_path}")
-            load_from_checkpoint(args.checkpoint.init_ckpt_path, model, model_key="model") # Put model_key="" if its directly the model checkpoint
-            model.rope_embeddings.reset_parameters() # For RoPe initialization since it's a buffer it might not be loaded
-        else:
-            with torch.random.fork_rng(devices=[torch.cuda.current_device()]):
-                torch.manual_seed(args.model.seed)
-                model.init_weights()
+        model = model.to(device="cuda")
         check_model_value_range(model, range=10.0, std=1.0)
 
         # log model size
@@ -467,41 +453,7 @@ def train(args: TrainArgs):
             if args.eval is not None and every_n_steps(
                 train_state, args.checkpoint.eval.every, acc_step=0
             ):
-                from apps.main.eval import (
-                    launch_eval,
-                    EVAL_FOLDER_NAME,
-                    EvalArgs,
-                )
-
-                eval_args = dataclass_from_dict(EvalArgs, args.eval)
-
-                eval_args.global_step = train_state.step
-                eval_args.ckpt_dir = str(checkpoint.existing_saves[-1])
-                eval_args.dump_dir = str(
-                    os.path.join(
-                        args.dump_dir,
-                        "evals",
-                        EVAL_FOLDER_NAME.format(train_state.step),
-                    )
-                )
-                eval_args.metric_log_dir = args.dump_dir
-                if args.async_eval_gpus is None:
-                    launch_eval(eval_args)
-                elif get_is_master():
-                    if wandb.run is not None and args.logging.wandb is not None:
-                        eval_args.wandb = deepcopy(args.logging.wandb)
-                    assert args.async_eval_gpus > 0
-                    logger.info(f"Launching evals on {args.async_eval_gpus} gpus")
-                    with clean_env():
-                        launch_job(
-                            StoolArgs(
-                                asdict(eval_args),
-                                script="apps.main.eval",
-                                copy_code=False,
-                                nodes=args.async_eval_gpus // 8,
-                                qos="lowest",
-                            )
-                        )
+                pass #TODO ADD some evaluations here in the future.
 
             if preemption_flag["flag"]:
                 if not saved:

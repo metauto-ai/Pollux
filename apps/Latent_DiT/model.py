@@ -110,8 +110,8 @@ class LatentTransformer(nn.Module):
         loss = F.mse_loss(output, target)
         return batch, loss
 
-    def init_weights(self):
-        self.transformer.init_weights()
+    def init_weights(self,pre_trained_path:Optional[str]=None):
+        self.transformer.init_weights(pre_trained_path)
         
         
 # Optional policy for activation checkpointing. With None, we stick to the default (defined distributed.py: default_no_recompute_ops)
