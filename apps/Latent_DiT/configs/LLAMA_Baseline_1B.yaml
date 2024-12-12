@@ -1,6 +1,6 @@
 # Template config, need to change dump_dir, data.root_dir and data.tokenizer.path
 
-dump_dir: /mnt/data/dump/ImageNet_1B_BaseLine_256_Flux
+dump_dir: /mnt/data/dump/ImageNet_1B_BaseLine_256_Flux/checkpoints/0000027500
 name: "debug"
 steps: 100000
 seed: 777
