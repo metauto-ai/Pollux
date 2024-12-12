@@ -52,7 +52,5 @@ python -m apps.Simple_DiT.test
 
 ### TODO 
 
-* Loading Pre-Training Weigts for DM (LLAMA3.2-1B/3B)
-* Inference for Latent DM based on Flux RectFlow (`dynamic_shift=True`)
 * P(ure)-DiffusionModel where time embedding/conditional signal is tokenized to the sequential input. 
 * Ensemble minimal and efficient Qwen model for image/video understanding.
