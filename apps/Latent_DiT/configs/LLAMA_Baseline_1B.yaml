@@ -1,6 +1,6 @@
 # Template config, need to change dump_dir, data.root_dir and data.tokenizer.path
-
-dump_dir: /mnt/data/dump/ImageNet_1B_BaseLine_256_Flux/checkpoints/0000027500
+# torchrun --standalone --nnodes 1 --nproc-per-node 4 -m apps.Latent_DiT.train config=apps/Latent_DiT/configs/LLAMA_Baseline_1B.yaml
+dump_dir: /mnt/data/dump/ImageNet_1B_BaseLine_256_Flux_LLAMA_Pre_Train/
 name: "debug"
 steps: 100000
 seed: 777
