@@ -20,7 +20,7 @@ from apps.main.modules.transformer import DiffusionTransformer, DiffusionTransfo
 
 
 @dataclass
-class DiffuserVAEArgs:
+class LatentVideoVAEArgs:
     pretrained_model_name_or_path: str = "black-forest-labs/FLUX.1-dev"
     revision: Optional[str] = None
     variant: Optional[str] = None
