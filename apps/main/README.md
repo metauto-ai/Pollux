@@ -52,3 +52,7 @@ To test individual modules, execute:
 ```bash
 python -m apps.main.test
 ```
+
+### TODO
+
+* Mingchen: Learn the basic knowledge of latent diffusion transformer and contribute
