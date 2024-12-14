@@ -32,19 +32,19 @@ pip install torchvision==0.20.0
 * We provides a minimal system to train diffusion model on ImageNet with parallelized system. The following example is how we train our pipeline on 4 GPUs.
 
 ```
-torchrun --standalone --nnodes 1 --nproc-per-node 4 -m apps.Simple_DiT.train config=apps/Simple_DiT/configs/LLAMA_Baseline_1B.yaml
+torchrun --standalone --nnodes 1 --nproc-per-node 4 -m apps.main.train config=apps/main/configs/LLAMA_Baseline_1B.yaml
 ```
 
 * Generate visualizations:
 
 ```
-python -m apps.Simple_DiT.generate config=apps/Simple_DiT/configs/eval.yaml
+python -m apps.main.generate config=apps/main/configs/eval.yaml
 ```
 
 * Test each module:
 
 ```
-python -m apps.Simple_DiT.test
+python -m apps.main.test
 ```
 
 
