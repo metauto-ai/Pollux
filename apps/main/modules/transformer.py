@@ -376,7 +376,7 @@ class DiffusionTransformer(BaseDiffusionTransformer):
         is_video: bool = False,
     ):
         if not is_video:
-            x, img_size, freqs_cis = self.patchify_and_embed(x)
+            x, img_size, freqs_cis = self.patchify_and_embed_image(x)
         else:
             x, vid_size, freqs_cis = self.patchify_and_embed_video(x)
 
@@ -392,9 +392,9 @@ class DiffusionTransformer(BaseDiffusionTransformer):
         out = self.img_output(self.norm(h))
 
         if not is_video:
-            x = self.unpatchify(out, img_size)
+            x = self.unpatchify_image(out, img_size)
         else:
-            x = self.unpatchify(out, vid_size)
+            x = self.unpatchify_video(out, vid_size)
         return x
 
     def unpatchify_image(
