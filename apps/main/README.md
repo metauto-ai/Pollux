@@ -1,42 +1,54 @@
 ### Huggingface Credentials
 
-* Put the token here to access Llama or FLUX.1-dev
-```
+To access models like Llama or FLUX.1-dev, authenticate with Huggingface by following the steps below:
+
+```bash
 huggingface-cli login
 git config --global credential.helper store
 ```
 
-### Wandb Usage (please ask Mingchen for invitation to Wandb team)
+### Wandb Integration
 
-* Set you wandb (get the API key from [here](https://wandb.me/wandb-server))
+If you need access to the Wandb team, please contact Mingchen for an invitation.
 
-```
+1. Obtain your Wandb API key from [this link](https://wandb.me/wandb-server).
+2. Log in using the following command:
+
+```bash
 wandb login
 ```
 
-* Set it into the config (for example, in the `apps/main/configs/LLAMA_Baseline_1B.yaml`)
+3. Update your configuration file (e.g., `apps/main/configs/LLAMA_Baseline_1B.yaml`) with the relevant Wandb settings:
 
+```yaml
+# Update the `name` field for each new run. The `dump_dir` will be auto-generated.
+name: "ImageNet_1B_BaseLine_256_Flux_LLAMA_Pre_Train_MC" # Ensure to modify this for each run
 ```
-# Only need to change the `name` each time; `dump_dir` will be generated automatically and accordingly
-name: "ImageNet_1B_BaseLine_256_Flux_LLAMA_Pre_Train_MC" # Mingchen: Please modify this everytime
-```
 
-### Run
+### Running the Pipeline
 
-* We provides a minimal system to train diffusion model on ImageNet with parallelized system. The following example is how we train our pipeline on 4 GPUs.
+Our system provides a streamlined setup for training diffusion models on ImageNet using a parallelized architecture. Below are the steps for training, visualization, and testing:
 
-```
+#### Training
+
+Use the following command to train the model on 4 GPUs:
+
+```bash
 torchrun --standalone --nnodes 1 --nproc-per-node 4 -m apps.main.train config=apps/main/configs/LLAMA_Baseline_1B.yaml
 ```
 
-* Generate visualizations:
+#### Visualization
 
-```
+To generate visualizations, run:
+
+```bash
 python -m apps.main.generate config=apps/main/configs/eval.yaml
 ```
 
-* Test each module:
+#### Module Testing
 
-```
+To test individual modules, execute:
+
+```bash
 python -m apps.main.test
 ```
