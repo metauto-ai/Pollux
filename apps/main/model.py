@@ -15,8 +15,8 @@ from torch.distributed.tensor.parallel import (
     parallelize_module,
 )
 from diffusers import AutoencoderKL
-from apps.Latent_DiT.schedulers import RectFlow, SchedulerArgs
-from apps.Latent_DiT.transformer import DiffusionTransformer, DiffusionTransformerArgs
+from apps.main.modules.schedulers import RectFlow, SchedulerArgs
+from apps.main.modules.transformer import DiffusionTransformer, DiffusionTransformerArgs
 
 
 @dataclass
@@ -90,7 +90,10 @@ class DiffuserVAE(nn.Module):
 
 
 
-class LatentTransformer(nn.Module):
+class PolluxModel(nn.Module):
+
+    version: str = "v0.1" # The basic one from Haozhe's preliminary version
+
     def __init__(self, args:ModelArgs):
         super().__init__()
         self.transformer = DiffusionTransformer(args.transformer)

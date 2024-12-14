@@ -1,32 +1,31 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # This software may be used and distributed according to the terms of the Llama 2 Community License Agreement.
 
-from copy import deepcopy
 import gc
 import logging
 import os
 import sys
 import time
+
+import wandb
+import numpy as np
+import torch
+import torch.distributed
+import xformers.profiler
+
+from copy import deepcopy
+from torch.optim import lr_scheduler
+from torch.distributed.checkpoint.stateful import Stateful
+from torch.distributed._tensor import DTensor
 from contextlib import ExitStack
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from timeit import default_timer as timer
 from typing import Any, Dict, List, Optional
-
-import numpy as np
 from omegaconf import OmegaConf
-import torch
-import torch.distributed
-import xformers.profiler
-from torch.optim import lr_scheduler
-from torch.distributed.checkpoint.stateful import Stateful
-from torch.distributed._tensor import DTensor
 
 from lingua.args import dump_config, flatten_dict
 from lingua.checkpoint import CheckpointArgs, CheckpointManager, load_from_checkpoint
-from apps.Simple_DiT.data import  create_imagenet_dataloader,DataArgs
-from apps.Simple_DiT.schedulers import SchedulerArgs
-from apps.Simple_DiT.transformer import get_num_flop_per_token
 from lingua.distributed import (
     DistributedArgs,
     EnvironmentArgs,
@@ -51,30 +50,31 @@ from lingua.metrics import (
 )
 from lingua.optim import OptimArgs, build_optimizer
 from lingua.profiling import ProfilerArgs, maybe_run_profiler
-from apps.Latent_DiT.model import (
-    LatentTransformer,
+
+from apps.main.data import create_imagenet_dataloader, DataArgs
+from apps.main.modules.schedulers import SchedulerArgs
+from apps.main.modules.transformer import get_num_flop_per_token
+from apps.main.model import (
+    PolluxModel,
     ModelArgs,
     build_fsdp_grouping_plan,
     tp_parallelize,
     get_no_recompute_ops,
 )
 
-import wandb
-
 logger = logging.getLogger()
 
 
 @dataclass
 class TrainArgs:
-    name: str = "lingua"
+    name: str = "Pollux"
+    output_dir: str = "/mnt/data/dump/"
     dump_dir: str = ""
-
     seed: int = 42
 
     # Number of gradient accumulation steps
     # Total batch size is batch_size*grad_acc_steps
     grad_acc_steps: int = 1
-
     gc_collect_freq: int = 1000
     probe_freq: Optional[int] = None
 
@@ -90,11 +90,11 @@ class TrainArgs:
     checkpoint: CheckpointArgs = field(default_factory=CheckpointArgs)
     profiling: ProfilerArgs = field(default_factory=ProfilerArgs)
     logging: LoggingArgs = field(default_factory=LoggingArgs)
-    scheduler: SchedulerArgs =  field(default_factory=SchedulerArgs)
+    scheduler: SchedulerArgs = field(default_factory=SchedulerArgs)
+
     # If set to None, eval is run locally otherwise it launches a new job with the given number of gpus
     async_eval_gpus: Optional[int] = None
     eval: Optional[Any] = None
-
 
 # TODO: ADD stateful dataloader in the future
 
@@ -105,6 +105,7 @@ class TrainState(Stateful):
     scheduler: lr_scheduler.LambdaLR
     # data_loader_state: PackTokensState
     # TODO: StatefulDataloader
+
     def state_dict(self) -> Dict[str, Any]:
         return {
             "step": self.step,
@@ -121,11 +122,12 @@ class TrainState(Stateful):
 
 
 def validate_train_args(args: TrainArgs):
-    #assert args.dump_dir, "Dump dir not set"
+    # assert args.dump_dir, "Dump dir not set" # Mingchen: no need any more
 
     # Minchen: generate the dump dir according to the config
     if not args.dump_dir:
-        args.dump_dir = f"/mnt/data/dump/{args.name}"
+        #args.dump_dir = f"/mnt/data/dump/{args.name}"
+        args.dump_dir = f"{args.output_dir}{args.name}"
 
     logger.info(f"Dump dir set to {args.dump_dir}")
 
@@ -139,8 +141,9 @@ def validate_train_args(args: TrainArgs):
         logger.info(f"Setting checkpoint path to {args.checkpoint.path}")
         args.checkpoint.path = str(Path(args.dump_dir) / "checkpoints")
 
-
-    assert os.path.exists(args.data.root_dir), f"{args.data.root_dir} doesn't exist"
+    # TODO: Mingchen: here need to support multiple source later as in the original lingua codebase
+    assert os.path.exists(
+        args.data.root_dir), f"{args.data.root_dir} doesn't exist"
 
     if (
         args.distributed.dp_replicate
@@ -222,18 +225,21 @@ def train(args: TrainArgs):
             os.makedirs(args.dump_dir, exist_ok=True)
             dump_config(args, Path(args.dump_dir) / "config.yaml")
         init_logger(Path(args.dump_dir) / "train.log")
-        init_signal_handler(set_preemption_flag)  # For handling preemption signals.
+        # For handling preemption signals.
+        init_signal_handler(set_preemption_flag)
         setup_env(args.env)
         setup_torch_distributed(args.distributed)
         world_mesh = get_device_mesh(args.distributed)
         logger.info(f"Starting job: {args.name}")
+
         # build dataloader
         # need dp world size and rank
         dp_mesh = world_mesh["dp_replicate"]
         dp_degree = dp_mesh.size()
         dp_rank = dp_mesh.get_local_rank()
         if args.distributed.dp_shard > 1:
-            dp_rank = dp_rank * dp_degree + world_mesh["dp_shard"].get_local_rank()
+            dp_rank = dp_rank * dp_degree + \
+                world_mesh["dp_shard"].get_local_rank()
             dp_degree *= world_mesh["dp_shard"].size()
 
         logger.info(f"Running on dp rank : {dp_rank}")
@@ -242,10 +248,11 @@ def train(args: TrainArgs):
         torch.manual_seed(args.seed)
         logger.info("Building model")
 
-        model = LatentTransformer(args.model) #TODO change the model here
+        model = PolluxModel(args.model)  # TODO change the model here
         logger.info("Model is built !")
 
         model_param_count = get_num_params(model)
+
         torch.manual_seed(args.seed)
         model.init_weights(args.model.transformer.pre_trained_path)
         model = parallelize_model(
@@ -253,11 +260,15 @@ def train(args: TrainArgs):
             world_mesh,
             args.model.transformer,
             args.distributed,
-            fsdp_grouping_plan=build_fsdp_grouping_plan(args.model.transformer,model.compressor.vae.config),
+            fsdp_grouping_plan=build_fsdp_grouping_plan(
+                args.model.transformer, model.compressor.vae.config),
             tp_parallelize=tp_parallelize,
             no_recompute_ops=get_no_recompute_ops(),
         )
         model = model.to(device="cuda")
+
+        # TODO: Mingchen: need to add the continual training the model from existing checkpoint.
+
         check_model_value_range(model, range=10.0, std=1.0)
 
         # log model size
@@ -280,7 +291,8 @@ def train(args: TrainArgs):
             scheduler=scheduler,
         )
 
-        checkpoint = CheckpointManager.instantiate_and_make_dir(args.checkpoint)
+        checkpoint = CheckpointManager.instantiate_and_make_dir(
+            args.checkpoint)
         checkpoint.load(model, optimizer, train_state, world_mesh)
         # Either load from latest checkpoint or start from scratch
 
@@ -295,13 +307,13 @@ def train(args: TrainArgs):
             maybe_run_profiler(args.dump_dir, model, args.profiling)
         )
         data_loader = create_imagenet_dataloader(
-                dp_rank, dp_degree, args.data,
-            )
+            dp_rank, dp_degree, args.data,
+        )
         dataloader_iterator = iter(data_loader)
         nwords_since_last_log = 0
         time_last_log = timer()
         gc.collect()
-        
+
         while train_state.step < args.steps:
             # We constrain train_state.acc_step to be in range 0 to args.grad_acc_steps - 1
             train_state.acc_step += 1
@@ -362,7 +374,8 @@ def train(args: TrainArgs):
 
             torch.cuda.synchronize()
 
-            curr_iter_time = round(start_timer.elapsed_time(end_timer) * 1e-3, 4)
+            curr_iter_time = round(
+                start_timer.elapsed_time(end_timer) * 1e-3, 4)
 
             # if profiler is active
             if torch_profiler:
@@ -376,7 +389,8 @@ def train(args: TrainArgs):
                 acc_freq=args.logging.acc_freq,
             ):
                 time_delta = timer() - time_last_log
-                wps = nwords_since_last_log / (time_delta * args.distributed.tp_size)
+                wps = nwords_since_last_log / \
+                    (time_delta * args.distributed.tp_size)
 
                 gpu_mem_stats = gpu_memory_monitor.get_peak_stats()
 
@@ -458,7 +472,9 @@ def train(args: TrainArgs):
             if args.eval is not None and every_n_steps(
                 train_state, args.checkpoint.eval.every, acc_step=0
             ):
-                pass # TODO add some potential evaluation metrics here
+                pass  # TODO add some potential evaluation metrics here
+                      # TODO: Mingchen: Yes, we are eager to have one here. I found current loss is quickly been stable after 500 steps.
+                      # TODO: Mingchen: So we may need a better signal here. 
 
             if preemption_flag["flag"]:
                 if not saved:

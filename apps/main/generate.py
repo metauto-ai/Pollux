@@ -5,7 +5,7 @@ from torch import nn
 from torch.nn import functional as F
 from torchvision.utils import save_image
 import numpy as np
-from apps.Latent_DiT.model import LatentTransformer, ModelArgs
+from apps.main.model import LatentTransformer, ModelArgs
 from apps.Simple_DiT.generate import (GeneratorArgs, load_consolidated_model,
                                       randn_tensor)
 from apps.Simple_DiT.schedulers import RectFlow, retrieve_timesteps, calculate_shift
