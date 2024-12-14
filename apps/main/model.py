@@ -28,37 +28,42 @@ class LatentVideoVAEArgs:
 
 @dataclass
 class ModelArgs:
-    transformer: DiffusionTransformerArgs = field(default_factory=DiffusionTransformerArgs)
+    transformer: DiffusionTransformerArgs = field(
+        default_factory=DiffusionTransformerArgs
+    )
     vae: LatentVideoVAErgs = field(default_factory=LatentVideoVAEArgs)
     scheduler: SchedulerArgs = field(default_factory=SchedulerArgs)
 
 
 class LatentVideoVAE(nn.Module):
-    def __init__(self,args:LatentVideoVAEArgs):
+    def __init__(self, args: LatentVideoVAEArgs):
         super().__init__()
         vae = AutoencoderKL.from_pretrained(
             args.pretrained_model_name_or_path,
             subfolder="vae",
             revision=args.revision,
             variant=args.variant,
-            )
+        )
         self.vae = vae
         self.vae = self.vae.requires_grad_(False)
+
     @torch.no_grad()
-    def encode(self,x:torch.Tensor)->torch.Tensor:
+    def encode(self, x: torch.Tensor) -> torch.Tensor:
         x = self.vae.encode(x).latent_dist.sample()
         x = (x - self.vae.config.shift_factor) * self.vae.config.scaling_factor
         return x
+
     @torch.no_grad()
-    def decode(self,x:torch.Tensor)->torch.Tensor:
+    def decode(self, x: torch.Tensor) -> torch.Tensor:
         x = (x / self.vae.config.scaling_factor) + self.vae.config.shift_factor
         image = self.vae.decode(x, return_dict=False)[0]
         return image
-    
+
     @torch.no_grad()
-    def forward(self, x = torch.Tensor):
+    def forward(self, x=torch.Tensor):
         x = self.encode(x)
         return self.decode(x)
+
     def enable_vae_slicing(self):
         r"""
         Enable sliced VAE decoding. When this option is enabled, the VAE will split the input tensor in slices to
@@ -89,7 +94,6 @@ class LatentVideoVAE(nn.Module):
         self.vae.disable_tiling()
 
 
-
 class LatentDiffusionTransformer(nn.Module):
     """
     Latent Diffusion Transformer Model for Long Video Generation.
@@ -100,24 +104,21 @@ class LatentDiffusionTransformer(nn.Module):
     version: str = "v0.2"
     description: str = "Latent Diffusion Transformer for VideoGen."
 
-    def __init__(self, args:ModelArgs):
+    def __init__(self, args: ModelArgs):
         super().__init__()
         self.transformer = DiffusionTransformer(args.transformer)
         self.compressor = LatentVideoVAE(args.vae)
         self.scheduler = RectifiedFlow(args.scheduler)
-    
-    def forward(self, batch:torch.Tensor)->dict[str:any]:
 
-        image = batch['image']
-        condition = batch['label']
+    def forward(self, batch: torch.Tensor) -> dict[str:any]:
+
+        image = batch["image"]
+        condition = batch["label"]
         latent_code = self.compressor.encode(image)
         noised_x, t, target = self.scheduler.sample_noised_input(latent_code)
-        output = self.transformer(
-            x=noised_x,
-            time_steps=t,
-            condition=condition)
-        batch['prediction'] = output
-        batch['target'] = target
+        output = self.transformer(x=noised_x, time_steps=t, condition=condition)
+        batch["prediction"] = output
+        batch["target"] = target
         target = target.to(output.dtype)
         loss = F.mse_loss(output, target)
 
@@ -125,17 +126,17 @@ class LatentDiffusionTransformer(nn.Module):
 
         return batch, loss
 
-    def init_weights(self,pre_trained_path:Optional[str]=None):
+    def init_weights(self, pre_trained_path: Optional[str] = None):
         self.transformer.init_weights(pre_trained_path)
-        
-        
+
+
 # Optional policy for activation checkpointing. With None, we stick to the default (defined distributed.py: default_no_recompute_ops)
 def get_no_recompute_ops():
     return None
 
 
 # Optional and only used for fully shard options (fsdp) is choose. Highly recommanded for large models
-def build_fsdp_grouping_plan(model_args: DiffusionTransformerArgs,vae_config:dict):
+def build_fsdp_grouping_plan(model_args: DiffusionTransformerArgs, vae_config: dict):
     group_plan: Tuple[int, bool] = []
     # Grouping and output seperately
     # group_plan.append(("tok_embeddings", False))
@@ -151,7 +152,9 @@ def build_fsdp_grouping_plan(model_args: DiffusionTransformerArgs,vae_config:dic
 
 
 # Optional and only used for model/tensor parallelism when tp_size > 1
-def tp_parallelize(model, tp_mesh, model_args: DiffusionTransformerArgs, distributed_args):
+def tp_parallelize(
+    model, tp_mesh, model_args: DiffusionTransformerArgs, distributed_args
+):
     assert model_args.dim % distributed_args.tp_size == 0
     assert model_args.vocab_size % distributed_args.tp_size == 0
     assert model_args.n_heads % distributed_args.tp_size == 0
@@ -160,7 +163,7 @@ def tp_parallelize(model, tp_mesh, model_args: DiffusionTransformerArgs, distrib
 
     # Embedding layer tp
     main_plan = {}
-    #TODO
+    # TODO
     # main_plan["tok_embeddings"] = ColwiseParallel(
     #     input_layouts=Replicate(), output_layouts=Shard(1)
     # )

@@ -6,20 +6,22 @@ from dataclasses import dataclass
 from typing import List, Optional, Tuple, Union
 import inspect
 
+
 @dataclass
 class SchedulerArgs:
     """
     from https://huggingface.co/black-forest-labs/FLUX.1-dev/blob/main/scheduler/scheduler_config.json
-    Note SD3's use_dynamic_shifting is set as False. 
+    Note SD3's use_dynamic_shifting is set as False.
     For Flux, use_dynamic_shifting is set as True.
     """
+
     num_train_timesteps: int = 1000
     base_image_seq_len: int = 256
-    base_shift: float =  0.5
+    base_shift: float = 0.5
     max_image_seq_len: int = 4096
     max_shift: float = 1.15
-    shift: float =  3.0
-    weighting_scheme: str = 'logit_normal'
+    shift: float = 3.0
+    weighting_scheme: str = "logit_normal"
     logit_mean: float = 0.0
     logit_std: float = 1.0
     mode_scale: float = 1.29
@@ -55,13 +57,17 @@ def retrieve_timesteps(
 
     Returns:
         `Tuple[torch.Tensor, int]`: A tuple where the first element is the timestep schedule from the scheduler and the
-        second element is the number of inference steps. 
+        second element is the number of inference steps.
         from https://github.com/huggingface/diffusers/blob/main/src/diffusers/pipelines/stable_diffusion_3/pipeline_stable_diffusion_3.py
     """
     if timesteps is not None and sigmas is not None:
-        raise ValueError("Only one of `timesteps` or `sigmas` can be passed. Please choose one to set custom values")
+        raise ValueError(
+            "Only one of `timesteps` or `sigmas` can be passed. Please choose one to set custom values"
+        )
     if timesteps is not None:
-        accepts_timesteps = "timesteps" in set(inspect.signature(scheduler.set_timesteps).parameters.keys())
+        accepts_timesteps = "timesteps" in set(
+            inspect.signature(scheduler.set_timesteps).parameters.keys()
+        )
         if not accepts_timesteps:
             raise ValueError(
                 f"The current scheduler class {scheduler.__class__}'s `set_timesteps` does not support custom"
@@ -71,7 +77,9 @@ def retrieve_timesteps(
         timesteps = scheduler.timesteps
         num_inference_steps = len(timesteps)
     elif sigmas is not None:
-        accept_sigmas = "sigmas" in set(inspect.signature(scheduler.set_timesteps).parameters.keys())
+        accept_sigmas = "sigmas" in set(
+            inspect.signature(scheduler.set_timesteps).parameters.keys()
+        )
         if not accept_sigmas:
             raise ValueError(
                 f"The current scheduler class {scheduler.__class__}'s `set_timesteps` does not support custom"
@@ -114,17 +122,17 @@ class RectifiedFlow(torch.nn.Module):
 
     def create_schedulers(self, args: SchedulerArgs):
         scheduler = FlowMatchEulerDiscreteScheduler(
-            num_train_timesteps = args.num_train_timesteps,
-            base_image_seq_len =  args.base_image_seq_len,
-            base_shift =  args.base_shift,
-            max_image_seq_len = args.max_image_seq_len,
-            max_shift = args.max_shift,
-            shift =  args.shift,
-            use_dynamic_shifting = args.use_dynamic_shifting
+            num_train_timesteps=args.num_train_timesteps,
+            base_image_seq_len=args.base_image_seq_len,
+            base_shift=args.base_shift,
+            max_image_seq_len=args.max_image_seq_len,
+            max_shift=args.max_shift,
+            shift=args.shift,
+            use_dynamic_shifting=args.use_dynamic_shifting,
         )
         return scheduler
 
-    def compute_density_for_timestep_sampling(self, batch_size: int)-> torch.Tensor:
+    def compute_density_for_timestep_sampling(self, batch_size: int) -> torch.Tensor:
         """
         Compute the density for sampling the timesteps when doing SD3 training.
 
@@ -134,7 +142,12 @@ class RectifiedFlow(torch.nn.Module):
         """
         if self.weighting_scheme == "logit_normal":
             # See 3.1 in the SD3 paper ($rf/lognorm(0.00,1.00)$).
-            u = torch.normal(mean=self.logit_mean, std=self.logit_std, size=(batch_size,), device="cpu")
+            u = torch.normal(
+                mean=self.logit_mean,
+                std=self.logit_std,
+                size=(batch_size,),
+                device="cpu",
+            )
             u = torch.nn.functional.sigmoid(u)
         elif self.weighting_scheme == "mode":
             u = torch.rand(size=(batch_size,), device="cpu")
@@ -142,8 +155,7 @@ class RectifiedFlow(torch.nn.Module):
         else:
             u = torch.rand(size=(batch_size,), device="cpu")
         return u
-    
-    
+
     def get_sigmas(self, timesteps, n_dim=4, dtype=torch.float32):
         sigmas = self.scheduler.sigmas.to(device=timesteps.device, dtype=dtype)
         schedule_timesteps = self.scheduler.timesteps.to(timesteps.device)
@@ -153,16 +165,19 @@ class RectifiedFlow(torch.nn.Module):
         while len(sigma.shape) < n_dim:
             sigma = sigma.unsqueeze(-1)
         return sigma
-    
-    
-    def sample_noised_input(self,x:torch.Tensor)->Tuple[torch.tensor,torch.tensor,torch.tensor]:
+
+    def sample_noised_input(
+        self, x: torch.Tensor
+    ) -> Tuple[torch.tensor, torch.tensor, torch.tensor]:
         """
         Samples a noisy input given a clean latent x and returns noisy input, timesteps and target.
         """
 
         bsz = x.size(0)
         noise = torch.randn_like(x)
-        u = self.compute_density_for_timestep_sampling(batch_size=bsz,)
+        u = self.compute_density_for_timestep_sampling(
+            batch_size=bsz,
+        )
         indices = (u * self.scheduler.config.num_train_timesteps).long()
         timesteps = self.scheduler.timesteps[indices].to(device=x.device)
         sigmas = self.get_sigmas(timesteps, n_dim=x.ndim, dtype=x.dtype)
