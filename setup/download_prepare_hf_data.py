@@ -78,6 +78,7 @@ def setup_terashuf(work_dir):
 def main(dataset, memory, data_dir, seed=42, nchunks=32):
     # Configuration
     repo_id = {
+        "fineweb_small": "VisionTheta/fineweb-1B",
         "fineweb_edu": "HuggingFaceFW/fineweb-edu",
         "fineweb_edu_10bt": "HuggingFaceFW/fineweb-edu",
         "dclm_baseline_1.0": "mlfoundations/dclm-baseline-1.0",
@@ -89,18 +90,21 @@ def main(dataset, memory, data_dir, seed=42, nchunks=32):
     work_dir = src_dir  # Directory of this Python file
     prefix = f"{dataset}.chunk."
     orig_extension = {
+        "fineweb_small": ".jsonl",
         "fineweb_edu": ".jsonl",
         "fineweb_edu_10bt": ".jsonl",
         "dclm_baseline_1.0": ".jsonl.zst",
         "dclm_baseline_1.0_10prct": ".jsonl.zst",
     }[dataset]
     cat_command = {
+        "fineweb_small": "cat",
         "fineweb_edu": "cat",
         "fineweb_edu_10bt": "cat",
         "dclm_baseline_1.0": "zstdcat",
         "dclm_baseline_1.0_10prct": "zstdcat",
     }[dataset]
     allow_patterns = {
+        "fineweb_small": None,
         "fineweb_edu": None,
         "fineweb_edu_10bt": "sample/10BT/*",
         "dclm_baseline_1.0": "*.jsonl.zst",
