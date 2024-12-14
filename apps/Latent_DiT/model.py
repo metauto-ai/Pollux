@@ -90,7 +90,7 @@ class DiffuserVAE(nn.Module):
 
 
 
-class LatentTransformer(nn.Module):
+class PolluxModel(nn.Module):
     def __init__(self, args:ModelArgs):
         super().__init__()
         self.transformer = DiffusionTransformer(args.transformer)
