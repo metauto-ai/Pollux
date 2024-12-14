@@ -1,11 +1,10 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 
 from dataclasses import dataclass, field
-from typing import Optional, Tuple, Union
+from typing import Optional, Tuple
 
 import torch
 from torch import nn
-from torch.nn.attention.flex_attention import create_block_mask, BlockMask
 import torch.nn.functional as F
 from torch.distributed._tensor import Replicate, Shard
 from torch.distributed.tensor.parallel import (
@@ -16,8 +15,8 @@ from torch.distributed.tensor.parallel import (
     parallelize_module,
 )
 from diffusers import AutoencoderKL
-from apps.Simple_DiT.schedulers import RectFlow,SchedulerArgs
-from apps.Simple_DiT.transformer import DiTransformer, DiTransformerArgs
+from apps.Latent_DiT.schedulers import RectFlow, SchedulerArgs
+from apps.Latent_DiT.transformer import DiTransformer, DiTransformerArgs
 
 
 @dataclass
