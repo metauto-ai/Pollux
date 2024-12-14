@@ -31,7 +31,7 @@ class ModelArgs:
     transformer: DiffusionTransformerArgs = field(
         default_factory=DiffusionTransformerArgs
     )
-    vae: LatentVideoVAErgs = field(default_factory=LatentVideoVAEArgs)
+    vae: LatentVideoVAEArgs = field(default_factory=LatentVideoVAEArgs)
     scheduler: SchedulerArgs = field(default_factory=SchedulerArgs)
 
 
