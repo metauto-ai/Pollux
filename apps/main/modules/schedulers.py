@@ -99,8 +99,11 @@ def calculate_shift(
     return mu
 
 
-class RectFlow(torch.nn.Module):
-    
+class RectifiedFlow(torch.nn.Module):
+    """
+    A scheduler that creates noise timesteps and manages the diffusion schedule.
+    """
+
     def __init__(self, args: SchedulerArgs):
         super().__init__()
         self.scheduler = self.create_schedulers(args)
@@ -108,6 +111,7 @@ class RectFlow(torch.nn.Module):
         self.logit_mean = args.logit_mean
         self.logit_std = args.logit_std
         self.mode_scale = args.mode_scale
+
     def create_schedulers(self, args: SchedulerArgs):
         scheduler = FlowMatchEulerDiscreteScheduler(
             num_train_timesteps = args.num_train_timesteps,
@@ -152,11 +156,13 @@ class RectFlow(torch.nn.Module):
     
     
     def sample_noised_input(self,x:torch.Tensor)->Tuple[torch.tensor,torch.tensor,torch.tensor]:
+        """
+        Samples a noisy input given a clean latent x and returns noisy input, timesteps and target.
+        """
+
         bsz = x.size(0)
         noise = torch.randn_like(x)
-        u = self.compute_density_for_timestep_sampling(
-            batch_size=bsz,
-        )
+        u = self.compute_density_for_timestep_sampling(batch_size=bsz,)
         indices = (u * self.scheduler.config.num_train_timesteps).long()
         timesteps = self.scheduler.timesteps[indices].to(device=x.device)
         sigmas = self.get_sigmas(timesteps, n_dim=x.ndim, dtype=x.dtype)

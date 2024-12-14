@@ -15,7 +15,7 @@ from torch.distributed.tensor.parallel import (
     parallelize_module,
 )
 from diffusers import AutoencoderKL
-from apps.main.modules.schedulers import RectFlow, SchedulerArgs
+from apps.main.modules.schedulers import RectifiedFlow, SchedulerArgs
 from apps.main.modules.transformer import DiffusionTransformer, DiffusionTransformerArgs
 
 
@@ -29,12 +29,12 @@ class DiffuserVAEArgs:
 @dataclass
 class ModelArgs:
     transformer: DiffusionTransformerArgs = field(default_factory=DiffusionTransformerArgs)
-    vae: DiffuserVAEArgs = field(default_factory=DiffuserVAEArgs)
+    vae: LatentVideoVAErgs = field(default_factory=LatentVideoVAEArgs)
     scheduler: SchedulerArgs = field(default_factory=SchedulerArgs)
 
 
-class DiffuserVAE(nn.Module):
-    def __init__(self,args:DiffuserVAEArgs):
+class LatentVideoVAE(nn.Module):
+    def __init__(self,args:LatentVideoVAEArgs):
         super().__init__()
         vae = AutoencoderKL.from_pretrained(
             args.pretrained_model_name_or_path,
@@ -90,27 +90,39 @@ class DiffuserVAE(nn.Module):
 
 
 
-class PolluxModel(nn.Module):
+class LatentDiffusionTransformer(nn.Module):
+    """
+    Latent Diffusion Transformer Model for Long Video Generation.
+    This model integrates a VAE for latent compression, a transformer for temporal and spatial token mixing,
+    and a custom scheduler for diffusion steps.
+    """
 
-    version: str = "v0.1" # The basic one from Haozhe's preliminary version
-    description: str = "Our final version may use Latent Diffusion Transformers"
+    version: str = "v0.2"
+    description: str = "Latent Diffusion Transformer for VideoGen."
 
     def __init__(self, args:ModelArgs):
         super().__init__()
         self.transformer = DiffusionTransformer(args.transformer)
-        self.compressor = DiffuserVAE(args.vae)
-        self.scheduler = RectFlow(args.scheduler)
+        self.compressor = LatentVideoVAE(args.vae)
+        self.scheduler = RectifiedFlow(args.scheduler)
     
     def forward(self, batch:torch.Tensor)->dict[str:any]:
+
         image = batch['image']
-        context = batch['label']
+        condition = batch['label']
         latent_code = self.compressor.encode(image)
         noised_x, t, target = self.scheduler.sample_noised_input(latent_code)
-        output = self.transformer(x=noised_x,time_steps=t,context=context)
+        output = self.transformer(
+            x=noised_x,
+            time_steps=t,
+            condition=condition)
         batch['prediction'] = output
         batch['target'] = target
         target = target.to(output.dtype)
         loss = F.mse_loss(output, target)
+
+        # TODO: Mingchen: seems that currently the pipeline is work for image classification task
+
         return batch, loss
 
     def init_weights(self,pre_trained_path:Optional[str]=None):

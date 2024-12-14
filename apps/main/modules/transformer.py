@@ -286,7 +286,11 @@ class BaseDiffusionTransformer(nn.Module):
 
 
 class DiffusionTransformer(BaseDiffusionTransformer):
-    
+    """
+    Diffusion Transformer capable of handling both images and video sequences.
+    Uses patchify for images and a similar approach for video (flattening spatial and temporal dims).
+    """
+
     def __init__(self, args: DiffusionTransformerArgs):
         super().__init__(args)
         self.patch_size = args.patch_size
@@ -307,7 +311,8 @@ class DiffusionTransformer(BaseDiffusionTransformer):
             max_seqlen=args.max_seqlen,
         )
         self.norm = RMSNorm(args.dim, eps=args.norm_eps)
-    def patchify_and_embed(
+
+    def patchify_and_embed_image(
         self, x: torch.Tensor
     ) -> Tuple[torch.Tensor, torch.Tensor, Tuple[int, int], torch.Tensor]:
         self.rope_embeddings.freqs_cis = self.rope_embeddings.freqs_cis.to(x[0].device)
@@ -316,13 +321,62 @@ class DiffusionTransformer(BaseDiffusionTransformer):
         x = x.view(B, C, H // pH, pH, W // pW, pW).permute(0, 2, 4, 1, 3, 5).flatten(3)
         x = self.img_embed(x)
         x = x.flatten(1, 2)
+        freqs_cis = self.rope_embeddings.freqs_cis[: H // pH, : W // pW].flatten(0, 1)
         return (
             x,
             (H, W),
-            self.rope_embeddings.freqs_cis[: H // pH, : W // pW].flatten(0, 1),
+            freqs_cis,
         )
 
-    def unpatchify(self, x: torch.Tensor, img_size: Tuple[int, int]) -> torch.Tensor:
+    def patchify_and_embed_video(self, v: torch.Tensor) -> Tuple[torch.Tensor, Tuple[int,int,int], torch.Tensor]:
+        """
+        Patchify a video (B,T,C,H,W) into sequences of patches. We consider T*H/pH*W/pW patches.
+        """
+        self.rope_embeddings.freqs_cis = self.rope_embeddings.freqs_cis.to(v.device)
+        pH = pW = self.patch_size
+        B, T, C, H, W = v.size()
+        # (B,T,C,H,W) -> (B,T,H//pH,W//pW,C*pH*pW)
+        v = v.view(B, T, C, H // pH, pH, W // pW, pW)
+        v = v.permute(0, 1, 3, 5, 2, 4, 6).flatten(-3)
+        # (B,T,H//pH,W//pW, C*pH*pW) -> (B, T*(H//pH)*(W//pW), D)
+        v = v.flatten(1, 3)
+        v = self.img_embed(v)
+        # v shape now (B, T*(H//pH)*(W//pW), D)
+        # For freqs_cis, we consider spatial positions, time can be encoded in the modulation signal
+        freqs_cis = self.rope_embeddings.freqs_cis[: H // pH, : W // pW].flatten(0, 1)
+        return v, (T, H, W), freqs_cis
+
+    def forward(
+        self,
+        x: torch.Tensor,
+        time_steps: torch.Tensor,
+        condition: torch.Tensor,
+        mask: Optional[Union[BlockMask, AttentionBias, torch.Tensor, str]] = None,
+        train: bool=True,
+        attn_impl: str = "sdpa",
+        is_video: bool = False,
+    ):
+        if not is_video:
+            x, img_size, freqs_cis = self.patchify_and_embed(x)
+        else:
+            x, vid_size, freqs_cis = self.patchify_and_embed_video(x)
+
+        freqs_cis = freqs_cis.to(x.device)
+        t_emb = self.tmb_embed(time_steps)
+        cls_emb = self.cls_embed(condition,train=train)
+        modulation_signal = t_emb+cls_emb
+
+        h = super().forward(x, freqs_cis, modulation_signal, mask=mask, attn_impl=attn_impl)
+
+        out = self.img_output(self.norm(h))
+
+        if not is_video:
+            x = self.unpatchify(out, img_size)
+        else:
+            x = self.unpatchify(out, vid_size)
+        return x
+    
+    def unpatchify_image(self, x: torch.Tensor, img_size: Tuple[int, int]) -> torch.Tensor:
         pH = pW = self.patch_size
         H, W = img_size
         B = x.size(0)
@@ -331,29 +385,17 @@ class DiffusionTransformer(BaseDiffusionTransformer):
         x = x.permute(0, 5, 1, 3, 2, 4).flatten(4, 5).flatten(2, 3)
         return x
 
-
-    def forward(
-        self,
-        x: torch.Tensor,
-        time_steps: torch.Tensor,
-        context: torch.Tensor,
-        mask: Optional[Union[BlockMask, AttentionBias, torch.Tensor, str]] = None,
-        train: bool=True,
-        attn_impl: str = "sdpa",
-    ):
-        x, img_size, freqs_cis = self.patchify_and_embed(x)
-
-        freqs_cis = freqs_cis.to(x.device)
-        t_emb = self.tmb_embed(time_steps)
-        cls_emb = self.cls_embed(context,train=train)
-
-        modulation_signal = t_emb+cls_emb
-        h = super().forward(x, freqs_cis, modulation_signal, mask=mask, attn_impl=attn_impl)
-
-        out = self.img_output(self.norm(h))
-        x = self.unpatchify(out, img_size)
+    def unpatchify_video(self, x: torch.Tensor, vid_size: Tuple[int,int,int]) -> torch.Tensor:
+        pH = pW = self.patch_size
+        T, H, W = vid_size
+        B = x.size(0)
+        L = (H // pH) * (W // pW) * T
+        x = x[:, :L]
+        x = x.view(B, T, H // pH, W // pW, pH, pW, self.out_channels)
+        x = x.permute(0, 1, 6, 2, 4, 3, 5)
+        x = x.reshape(B, T, self.out_channels, H, W)
         return x
-    
+
     def reset_parameters(self, init_std=None):
         # Either use fixed base std or sqrt model dim
         super().reset_parameters()
