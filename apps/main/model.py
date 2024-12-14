@@ -93,6 +93,7 @@ class DiffuserVAE(nn.Module):
 class PolluxModel(nn.Module):
 
     version: str = "v0.1" # The basic one from Haozhe's preliminary version
+    description: str = "Our final version may use Latent Diffusion Transformers"
 
     def __init__(self, args:ModelArgs):
         super().__init__()
