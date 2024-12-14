@@ -1,13 +1,16 @@
 """
 python -m apps.main.test
 """
-from apps.Simple_DiT.data import  create_dummy_dataloader, create_imagenet_dataloader,DataArgs, may_download_image_dataset
-from lingua.transformer import precompute_freqs_cis
-from apps.Simple_DiT.transformer import precompute_2d_freqs_cls, DiffusionTransformer, DiffusionTransformerArgs
-from apps.main.model import DiffuserVAEArgs, DiffuserVAE, LatentTransformer, ModelArgs
-from apps.Simple_DiT.schedulers import SchedulerArgs, RectFlow
-import logging
+import logging\
 from torchvision.utils import save_image
+from lingua.transformer import precompute_freqs_cis
+
+from apps.main.data import  create_dummy_dataloader, create_imagenet_dataloader,DataArgs, may_download_image_dataset
+from apps.main.transformer import precompute_2d_freqs_cls, DiffusionTransformer, DiffusionTransformerArgs
+from apps.main.model import DiffuserVAEArgs, DiffuserVAE, LatentTransformer, ModelArgs
+from apps.main.schedulers import SchedulerArgs, RectFlow
+
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,  # Set the logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
@@ -16,7 +19,6 @@ logging.basicConfig(
         logging.StreamHandler()         # Also log to console
     ]
 )
-
 
 
 if __name__ == '__main__':

@@ -52,8 +52,8 @@ from lingua.optim import OptimArgs, build_optimizer
 from lingua.profiling import ProfilerArgs, maybe_run_profiler
 
 from apps.main.data import create_imagenet_dataloader, DataArgs
-from apps.main.schedulers import SchedulerArgs
-from apps.main.transformer import get_num_flop_per_token
+from apps.main.modules.schedulers import SchedulerArgs
+from apps.main.modules.transformer import get_num_flop_per_token
 from apps.main.model import (
     PolluxModel,
     ModelArgs,

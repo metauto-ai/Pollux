@@ -34,7 +34,7 @@ Our system provides a streamlined setup for training diffusion models on ImageNe
 Use the following command to train the model on 4 GPUs:
 
 ```bash
-torchrun --standalone --nnodes 1 --nproc-per-node 4 -m apps.main.train config=apps/main/configs/LLAMA_Baseline_1B.yaml
+torchrun --standalone --nnodes 1 --nproc-per-node 4 -m apps.main.train config=apps/main/configs/pollux_v0.1.yaml
 ```
 
 #### Visualization

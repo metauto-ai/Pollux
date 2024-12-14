@@ -15,8 +15,8 @@ from torch.distributed.tensor.parallel import (
     parallelize_module,
 )
 from diffusers import AutoencoderKL
-from apps.main.schedulers import RectFlow, SchedulerArgs
-from apps.main.transformer import DiffusionTransformer, DiffusionTransformerArgs
+from apps.main.modules.schedulers import RectFlow, SchedulerArgs
+from apps.main.modules.transformer import DiffusionTransformer, DiffusionTransformerArgs
 
 
 @dataclass
