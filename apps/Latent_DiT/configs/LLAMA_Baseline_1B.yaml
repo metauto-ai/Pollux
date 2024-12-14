@@ -1,7 +1,7 @@
 # Template config, need to change dump_dir, data.root_dir and data.tokenizer.path
 # torchrun --standalone --nnodes 1 --nproc-per-node 4 -m apps.Latent_DiT.train config=apps/Latent_DiT/configs/LLAMA_Baseline_1B.yaml
 
-name: "ImageNet_1B_BaseLine_256_Flux_LLAMA_Pre_Train_MC" # Mingchen: Please modify this everytime
+name: "ImageNet_1B_BaseLine_256_Flux_LLAMA_Pre_Train_MC_1" # Mingchen: Please modify this everytime
 dump_dir: "" # Mingchen: No need to put now! I revise the code to flexible put `/mnt/data/dump` + name for dump_dir
 steps: 100000
 seed: 777
@@ -13,7 +13,6 @@ optim:
 
 env:
     ENABLE_INTRA_NODE_COMM: '0' # disable one default seeting here, as have some error in our cluster
-
 
 distributed:
     fsdp_type: full_shard

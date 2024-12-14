@@ -152,7 +152,7 @@ class RotaryEmbedding(torch.nn.Module):
 
 
 @dataclass
-class DiTransformerArgs(BaseTransformerArgs):
+class DiffusionTransformerArgs(BaseTransformerArgs):
 
     seed: int = 42
     ada_dim: int = 512
@@ -165,8 +165,8 @@ class DiTransformerArgs(BaseTransformerArgs):
     pre_trained_path: Optional[str] = None
 
 
-class DiTransformerBlock(nn.Module):
-    def __init__(self, args: DiTransformerArgs):
+class DiffusionTransformerBlock(nn.Module):
+    def __init__(self, args: DiffusionTransformerArgs):
         super().__init__()
 
         assert (args.head_dim is not None) or (
@@ -229,8 +229,8 @@ class DiTransformerBlock(nn.Module):
         self.ffn_norm.reset_parameters()
 
 
-class BaseDiTransformer(nn.Module):
-    def __init__(self, args: DiTransformerArgs):
+class BaseDiffusionTransformer(nn.Module):
+    def __init__(self, args: DiffusionTransformerArgs):
         super().__init__()
         self.dim = args.dim
         self.init_base_std = args.init_base_std
@@ -239,7 +239,7 @@ class BaseDiTransformer(nn.Module):
 
         self.layers = nn.ModuleList()
         for _ in range(args.n_layers):
-            self.layers.append(DiTransformerBlock(args))
+            self.layers.append(DiffusionTransformerBlock(args))
 
     def forward(
         self,
@@ -285,9 +285,9 @@ class BaseDiTransformer(nn.Module):
             logger.warning(f"Unexpected keys: {unexpected_keys}")
 
 
-class DiTransformer(BaseDiTransformer):
+class DiffusionTransformer(BaseDiffusionTransformer):
     
-    def __init__(self, args: DiTransformerArgs):
+    def __init__(self, args: DiffusionTransformerArgs):
         super().__init__(args)
         self.patch_size = args.patch_size
         self.out_channels = args.out_channels
@@ -377,7 +377,7 @@ def get_no_recompute_ops():
 
 
 # Optional and only used for fully shard options (fsdp) is choose. Highly recommanded for large models
-def build_fsdp_grouping_plan(model_args: DiTransformerArgs):
+def build_fsdp_grouping_plan(model_args: DiffusionTransformerArgs):
     group_plan: Tuple[int, bool] = []
     #TODO
     # Grouping and output seperately
@@ -393,7 +393,7 @@ def build_fsdp_grouping_plan(model_args: DiTransformerArgs):
 
 
 # Optional and only used for model/tensor parallelism when tp_size > 1
-def tp_parallelize(model, tp_mesh, model_args: DiTransformerArgs, distributed_args):
+def tp_parallelize(model, tp_mesh, model_args: DiffusionTransformerArgs, distributed_args):
     assert model_args.dim % distributed_args.tp_size == 0
     assert model_args.vocab_size % distributed_args.tp_size == 0
     assert model_args.n_heads % distributed_args.tp_size == 0

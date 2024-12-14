@@ -99,8 +99,6 @@ def calculate_shift(
     return mu
 
 
-
-
 class RectFlow(torch.nn.Module):
     
     def __init__(self, args: SchedulerArgs):
