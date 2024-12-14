@@ -3,8 +3,8 @@ python -m apps.Latent_DiT.test
 """
 from apps.Simple_DiT.data import  create_dummy_dataloader, create_imagenet_dataloader,DataArgs, may_download_image_dataset
 from lingua.transformer import precompute_freqs_cis
-from apps.Simple_DiT.transformer import precompute_2d_freqs_cls, DiTransformer, DiTransformerArgs
-from apps.Latent_DiT.model import DiffuserVAEArgs, DiffuserVAE,LatentTransformer, ModelArgs
+from apps.Simple_DiT.transformer import precompute_2d_freqs_cls, DiffusionTransformer, DiffusionTransformerArgs
+from apps.Latent_DiT.model import DiffuserVAEArgs, DiffuserVAE, LatentTransformer, ModelArgs
 from apps.Simple_DiT.schedulers import SchedulerArgs, RectFlow
 import logging
 from torchvision.utils import save_image
@@ -23,7 +23,7 @@ if __name__ == '__main__':
     # may_download_image_dataset('/mnt/data/imagenet')
     freqs_1d_cls = precompute_freqs_cis(512, 1024)
     freqs_2d_cls = precompute_2d_freqs_cls(512, 1024)
-    dit_args = DiTransformerArgs(
+    dit_args = DiffusionTransformerArgs(
         dim= 2048,
         n_layers= 25,
         n_heads= 16,
@@ -31,7 +31,7 @@ if __name__ == '__main__':
         in_channels=16,
     )
     dataloader = create_dummy_dataloader(batch_size=16,num_classes=dit_args.num_classes,image_size=(16,32,32))
-    DiT = DiTransformer(dit_args).cuda()
+    DiT = DiffusionTransformer(dit_args).cuda()
     vae_args = DiffuserVAEArgs()
     schedulers_arg = SchedulerArgs()
     scheduler = RectFlow(schedulers_arg)

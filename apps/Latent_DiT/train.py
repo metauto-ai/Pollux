@@ -121,7 +121,19 @@ class TrainState(Stateful):
 
 
 def validate_train_args(args: TrainArgs):
-    assert args.dump_dir, "Dump dir not set"
+    #assert args.dump_dir, "Dump dir not set"
+
+    # Minchen: generate the dump dir according to the config
+    if not args.dump_dir:
+        args.dump_dir = f"/mnt/data/dump/{args.name}"
+
+    logger.info(f"Dump dir set to {args.dump_dir}")
+
+    if args.logging.wandb is not None:
+        if not args.logging.wandb.name:
+            args.logging.wandb.name = args.name
+
+    logger.info(f"Wandb name set to {args.logging.wandb.name}")
 
     if args.checkpoint.path is None:
         logger.info(f"Setting checkpoint path to {args.checkpoint.path}")

@@ -1,11 +1,10 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 
 from dataclasses import dataclass, field
-from typing import Optional, Tuple, Union
+from typing import Optional, Tuple
 
 import torch
 from torch import nn
-from torch.nn.attention.flex_attention import create_block_mask, BlockMask
 import torch.nn.functional as F
 from torch.distributed._tensor import Replicate, Shard
 from torch.distributed.tensor.parallel import (
@@ -16,8 +15,8 @@ from torch.distributed.tensor.parallel import (
     parallelize_module,
 )
 from diffusers import AutoencoderKL
-from apps.Simple_DiT.schedulers import RectFlow,SchedulerArgs
-from apps.Simple_DiT.transformer import DiTransformer, DiTransformerArgs
+from apps.Latent_DiT.schedulers import RectFlow, SchedulerArgs
+from apps.Latent_DiT.transformer import DiffusionTransformer, DiffusionTransformerArgs
 
 
 @dataclass
@@ -29,7 +28,7 @@ class DiffuserVAEArgs:
 
 @dataclass
 class ModelArgs:
-    transformer: DiTransformerArgs = field(default_factory=DiTransformerArgs)
+    transformer: DiffusionTransformerArgs = field(default_factory=DiffusionTransformerArgs)
     vae: DiffuserVAEArgs = field(default_factory=DiffuserVAEArgs)
     scheduler: SchedulerArgs = field(default_factory=SchedulerArgs)
 
@@ -94,7 +93,7 @@ class DiffuserVAE(nn.Module):
 class LatentTransformer(nn.Module):
     def __init__(self, args:ModelArgs):
         super().__init__()
-        self.transformer = DiTransformer(args.transformer)
+        self.transformer = DiffusionTransformer(args.transformer)
         self.compressor = DiffuserVAE(args.vae)
         self.scheduler = RectFlow(args.scheduler)
     
@@ -120,7 +119,7 @@ def get_no_recompute_ops():
 
 
 # Optional and only used for fully shard options (fsdp) is choose. Highly recommanded for large models
-def build_fsdp_grouping_plan(model_args: DiTransformerArgs,vae_config:dict):
+def build_fsdp_grouping_plan(model_args: DiffusionTransformerArgs,vae_config:dict):
     group_plan: Tuple[int, bool] = []
     # Grouping and output seperately
     # group_plan.append(("tok_embeddings", False))
@@ -136,7 +135,7 @@ def build_fsdp_grouping_plan(model_args: DiTransformerArgs,vae_config:dict):
 
 
 # Optional and only used for model/tensor parallelism when tp_size > 1
-def tp_parallelize(model, tp_mesh, model_args: DiTransformerArgs, distributed_args):
+def tp_parallelize(model, tp_mesh, model_args: DiffusionTransformerArgs, distributed_args):
     assert model_args.dim % distributed_args.tp_size == 0
     assert model_args.vocab_size % distributed_args.tp_size == 0
     assert model_args.n_heads % distributed_args.tp_size == 0
