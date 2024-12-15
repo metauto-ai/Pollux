@@ -128,6 +128,7 @@ def tp_parallelize(
         layer_plan["attention.wo"] = RowwiseParallel(output_layouts=Shard(1))
 
         # Feedforward layers TP
+        # Feedforward layers TP
         layer_plan["feed_forward"] = PrepareModuleInput(
             input_layouts=(Shard(1),),
             desired_input_layouts=(Replicate(),),
