@@ -55,7 +55,7 @@ from apps.main.data import create_imagenet_dataloader, DataArgs
 from apps.main.modules.schedulers import SchedulerArgs
 from apps.main.modules.transformer import get_num_flop_per_token
 from apps.main.model import (
-    PolluxModel,
+    LatentDiffusionTransformer,
     ModelArgs,
     build_fsdp_grouping_plan,
     tp_parallelize,
@@ -248,7 +248,7 @@ def train(args: TrainArgs):
         torch.manual_seed(args.seed)
         logger.info("Building model")
 
-        model = PolluxModel(args.model)  # TODO change the model here
+        model = LatentDiffusionTransformer(args.model)  # TODO change the model here
         logger.info("Model is built !")
 
         model_param_count = get_num_params(model)

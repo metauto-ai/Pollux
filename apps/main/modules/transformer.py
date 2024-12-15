@@ -34,6 +34,7 @@ import logging
 
 logger = logging.getLogger()
 
+
 def precompute_2d_freqs_cls(
     dim: int,
     end: int,
@@ -158,7 +159,7 @@ class DiffusionTransformerArgs(BaseTransformerArgs):
     ada_dim: int = 512
     patch_size: int = 16
     in_channels: int = 3
-    out_channels:int = 3
+    out_channels: int = 3
     tmb_size: int = 320
     cfg_drop_ratio: float = 0.1
     num_classes: int = 1000
@@ -196,10 +197,9 @@ class DiffusionTransformerBlock(nn.Module):
         self.ffn_norm = RMSNorm(args.dim, eps=args.norm_eps)
         self.adaLN_modulation = AdaLN_Modulation(
             in_dim=args.ada_dim,
-            out_dim=4*args.dim,
+            out_dim=4 * args.dim,
         )
-    
-    
+
     def forward(
         self,
         x: torch.Tensor,
@@ -208,7 +208,9 @@ class DiffusionTransformerBlock(nn.Module):
         mask: Optional[Union[BlockMask, AttentionBias, str]] = None,
         attn_impl: str = "sdpa",
     ) -> torch.Tensor:
-        scale_msa, gate_msa, scale_mlp, gate_mlp = self.adaLN_modulation(modulation_signal).chunk(4, dim=1)
+        scale_msa, gate_msa, scale_mlp, gate_mlp = self.adaLN_modulation(
+            modulation_signal
+        ).chunk(4, dim=1)
         h = x + gate_msa.unsqueeze(1).tanh() * self.attention(
             modulate(self.attention_norm(x), scale_msa),
             freqs_cis,
@@ -216,9 +218,9 @@ class DiffusionTransformerBlock(nn.Module):
             mask=mask,
             attn_impl=attn_impl,
         )
-        out = h + gate_mlp.unsqueeze(1).tanh() *  self.feed_forward(
+        out = h + gate_mlp.unsqueeze(1).tanh() * self.feed_forward(
             modulate(self.ffn_norm(h), scale_mlp)
-            )
+        )
         return out
 
     def init_weights(self, init_std=None, factor=1.0):
@@ -243,7 +245,7 @@ class BaseDiffusionTransformer(nn.Module):
 
     def forward(
         self,
-        h,  
+        h,
         freqs_cis,
         modulation_signal,
         mask: Optional[Union[BlockMask, AttentionBias, str]] = None,
@@ -258,7 +260,7 @@ class BaseDiffusionTransformer(nn.Module):
         # Either use fixed base std or sqrt model dim
         self.rope_embeddings.reset_parameters()
 
-    def init_weights(self,pre_trained_path:Optional[str]=None):
+    def init_weights(self, pre_trained_path: Optional[str] = None):
         self.reset_parameters()
         for depth, layer in enumerate(self.layers):
             factor = {
@@ -271,31 +273,50 @@ class BaseDiffusionTransformer(nn.Module):
             layer.init_weights(self.init_base_std, factor)
         if pre_trained_path:
             assert os.path.exists(pre_trained_path)
-            ckpt_state_dict = torch.load(pre_trained_path, map_location='cpu')
+            ckpt_state_dict = torch.load(pre_trained_path, map_location="cpu")
             target_state_dict = self.state_dict()
             filtered_state_dict = {
-                k: v for k, v in ckpt_state_dict.items() if k in target_state_dict and v.shape == target_state_dict[k].shape
+                k: v
+                for k, v in ckpt_state_dict.items()
+                if k in target_state_dict and v.shape == target_state_dict[k].shape
             }
             target_state_dict.update(filtered_state_dict)
             self.load_state_dict(target_state_dict)
-            missing_keys = set(target_state_dict.keys()) - set(filtered_state_dict.keys())
-            unexpected_keys = set(ckpt_state_dict.keys()) - set(target_state_dict.keys())
-            logger.info(f'Load the checkpoints from {pre_trained_path}')
+            missing_keys = set(target_state_dict.keys()) - set(
+                filtered_state_dict.keys()
+            )
+            unexpected_keys = set(ckpt_state_dict.keys()) - set(
+                target_state_dict.keys()
+            )
+            logger.info(f"Load the checkpoints from {pre_trained_path}")
             logger.warning(f"Missing keys: {missing_keys}")
             logger.warning(f"Unexpected keys: {unexpected_keys}")
 
 
 class DiffusionTransformer(BaseDiffusionTransformer):
-    
+    """
+    Diffusion Transformer capable of handling both images and video sequences.
+    Uses patchify for images and a similar approach for video (flattening spatial and temporal dims).
+    """
+
     def __init__(self, args: DiffusionTransformerArgs):
         super().__init__(args)
         self.patch_size = args.patch_size
         self.out_channels = args.out_channels
         self.in_channels = args.in_channels
         self.num_classes = args.num_classes
-        self.tmb_embed = TimestepEmbedder(hidden_size=args.ada_dim,time_embedding_size=args.tmb_size)
-        self.img_embed = ImageEmbedder(in_dim=self.patch_size * self.patch_size*args.in_channels, out_dim=args.dim)
-        self.cls_embed = LabelEmbedder(num_classes=args.num_classes, hidden_size=args.ada_dim,dropout_prob=args.cfg_drop_ratio)
+        self.tmb_embed = TimestepEmbedder(
+            hidden_size=args.ada_dim, time_embedding_size=args.tmb_size
+        )
+        self.img_embed = ImageEmbedder(
+            in_dim=self.patch_size * self.patch_size * args.in_channels,
+            out_dim=args.dim,
+        )
+        self.cls_embed = LabelEmbedder(
+            num_classes=args.num_classes,
+            hidden_size=args.ada_dim,
+            dropout_prob=args.cfg_drop_ratio,
+        )
         self.img_output = nn.Linear(
             args.dim,
             self.patch_size * self.patch_size * args.out_channels,
@@ -307,7 +328,8 @@ class DiffusionTransformer(BaseDiffusionTransformer):
             max_seqlen=args.max_seqlen,
         )
         self.norm = RMSNorm(args.dim, eps=args.norm_eps)
-    def patchify_and_embed(
+
+    def patchify_and_embed_image(
         self, x: torch.Tensor
     ) -> Tuple[torch.Tensor, torch.Tensor, Tuple[int, int], torch.Tensor]:
         self.rope_embeddings.freqs_cis = self.rope_embeddings.freqs_cis.to(x[0].device)
@@ -316,13 +338,68 @@ class DiffusionTransformer(BaseDiffusionTransformer):
         x = x.view(B, C, H // pH, pH, W // pW, pW).permute(0, 2, 4, 1, 3, 5).flatten(3)
         x = self.img_embed(x)
         x = x.flatten(1, 2)
+        freqs_cis = self.rope_embeddings.freqs_cis[: H // pH, : W // pW].flatten(0, 1)
         return (
             x,
             (H, W),
-            self.rope_embeddings.freqs_cis[: H // pH, : W // pW].flatten(0, 1),
+            freqs_cis,
         )
 
-    def unpatchify(self, x: torch.Tensor, img_size: Tuple[int, int]) -> torch.Tensor:
+    def patchify_and_embed_video(
+        self, v: torch.Tensor
+    ) -> Tuple[torch.Tensor, Tuple[int, int, int], torch.Tensor]:
+        """
+        Patchify a video (B,T,C,H,W) into sequences of patches. We consider T*H/pH*W/pW patches.
+        """
+        self.rope_embeddings.freqs_cis = self.rope_embeddings.freqs_cis.to(v.device)
+        pH = pW = self.patch_size
+        B, T, C, H, W = v.size()
+        # (B,T,C,H,W) -> (B,T,H//pH,W//pW,C*pH*pW)
+        v = v.view(B, T, C, H // pH, pH, W // pW, pW)
+        v = v.permute(0, 1, 3, 5, 2, 4, 6).flatten(-3)
+        # (B,T,H//pH,W//pW, C*pH*pW) -> (B, T*(H//pH)*(W//pW), D)
+        v = v.flatten(1, 3)
+        v = self.img_embed(v)
+        # v shape now (B, T*(H//pH)*(W//pW), D)
+        # For freqs_cis, we consider spatial positions, time can be encoded in the modulation signal
+        freqs_cis = self.rope_embeddings.freqs_cis[: H // pH, : W // pW].flatten(0, 1)
+        return v, (T, H, W), freqs_cis
+
+    def forward(
+        self,
+        x: torch.Tensor,
+        time_steps: torch.Tensor,
+        condition: torch.Tensor,
+        mask: Optional[Union[BlockMask, AttentionBias, torch.Tensor, str]] = None,
+        train: bool = True,
+        attn_impl: str = "sdpa",
+        is_video: bool = False,
+    ):
+        if not is_video:
+            x, img_size, freqs_cis = self.patchify_and_embed_image(x)
+        else:
+            x, vid_size, freqs_cis = self.patchify_and_embed_video(x)
+
+        freqs_cis = freqs_cis.to(x.device)
+        t_emb = self.tmb_embed(time_steps)
+        cls_emb = self.cls_embed(condition, train=train)
+        modulation_signal = t_emb + cls_emb
+
+        h = super().forward(
+            x, freqs_cis, modulation_signal, mask=mask, attn_impl=attn_impl
+        )
+
+        out = self.img_output(self.norm(h))
+
+        if not is_video:
+            x = self.unpatchify_image(out, img_size)
+        else:
+            x = self.unpatchify_video(out, vid_size)
+        return x
+
+    def unpatchify_image(
+        self, x: torch.Tensor, img_size: Tuple[int, int]
+    ) -> torch.Tensor:
         pH = pW = self.patch_size
         H, W = img_size
         B = x.size(0)
@@ -331,29 +408,19 @@ class DiffusionTransformer(BaseDiffusionTransformer):
         x = x.permute(0, 5, 1, 3, 2, 4).flatten(4, 5).flatten(2, 3)
         return x
 
-
-    def forward(
-        self,
-        x: torch.Tensor,
-        time_steps: torch.Tensor,
-        context: torch.Tensor,
-        mask: Optional[Union[BlockMask, AttentionBias, torch.Tensor, str]] = None,
-        train: bool=True,
-        attn_impl: str = "sdpa",
-    ):
-        x, img_size, freqs_cis = self.patchify_and_embed(x)
-
-        freqs_cis = freqs_cis.to(x.device)
-        t_emb = self.tmb_embed(time_steps)
-        cls_emb = self.cls_embed(context,train=train)
-
-        modulation_signal = t_emb+cls_emb
-        h = super().forward(x, freqs_cis, modulation_signal, mask=mask, attn_impl=attn_impl)
-
-        out = self.img_output(self.norm(h))
-        x = self.unpatchify(out, img_size)
+    def unpatchify_video(
+        self, x: torch.Tensor, vid_size: Tuple[int, int, int]
+    ) -> torch.Tensor:
+        pH = pW = self.patch_size
+        T, H, W = vid_size
+        B = x.size(0)
+        L = (H // pH) * (W // pW) * T
+        x = x[:, :L]
+        x = x.view(B, T, H // pH, W // pW, pH, pW, self.out_channels)
+        x = x.permute(0, 1, 6, 2, 4, 3, 5)
+        x = x.reshape(B, T, self.out_channels, H, W)
         return x
-    
+
     def reset_parameters(self, init_std=None):
         # Either use fixed base std or sqrt model dim
         super().reset_parameters()
@@ -379,7 +446,7 @@ def get_no_recompute_ops():
 # Optional and only used for fully shard options (fsdp) is choose. Highly recommanded for large models
 def build_fsdp_grouping_plan(model_args: DiffusionTransformerArgs):
     group_plan: Tuple[int, bool] = []
-    #TODO
+    # TODO
     # Grouping and output seperately
     # group_plan.append(("tok_embeddings", False))
 
@@ -393,7 +460,9 @@ def build_fsdp_grouping_plan(model_args: DiffusionTransformerArgs):
 
 
 # Optional and only used for model/tensor parallelism when tp_size > 1
-def tp_parallelize(model, tp_mesh, model_args: DiffusionTransformerArgs, distributed_args):
+def tp_parallelize(
+    model, tp_mesh, model_args: DiffusionTransformerArgs, distributed_args
+):
     assert model_args.dim % distributed_args.tp_size == 0
     assert model_args.vocab_size % distributed_args.tp_size == 0
     assert model_args.n_heads % distributed_args.tp_size == 0
@@ -402,7 +471,7 @@ def tp_parallelize(model, tp_mesh, model_args: DiffusionTransformerArgs, distrib
 
     # Embedding layer tp
     main_plan = {}
-    #TODO
+    # TODO
     # main_plan["tok_embeddings"] = ColwiseParallel(
     #     input_layouts=Replicate(), output_layouts=Shard(1)
     # )

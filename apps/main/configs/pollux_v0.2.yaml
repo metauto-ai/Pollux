@@ -1,7 +1,7 @@
 # Template config, need to change dump_dir, data.root_dir and data.tokenizer.path
 # torchrun --standalone --nnodes 1 --nproc-per-node 4 -m apps.Latent_DiT.train config=apps/Latent_DiT/configs/LLAMA_Baseline_1B.yaml
 
-name: "ImageNet_1B_BaseLine_256_Flux_LLAMA_Pre_Train_MC_1" # Mingchen: Please modify this (for local output and wandb name)
+name: "ImageNet_1B_BaseLine_256_Flux_LLAMA_Pre_Train_MC_3" # Mingchen: Please modify this (for local output and wandb name)
 dump_dir: "" # Mingchen: No need to put now! I revise the code to flexible put `/mnt/data/dump` + name for dump_dir
 steps: 100000
 seed: 777
