@@ -23,6 +23,7 @@ from apps.main.modules.vae import LatentVideoVAE, LatentVideoVAEArgs
 
 logger = logging.getLogger()
 
+
 @dataclass
 class ModelArgs:
     transformer: DiffusionTransformerArgs = field(
@@ -40,7 +41,9 @@ class LatentDiffusionTransformer(nn.Module):
     """
 
     version: str = "v0.3"
-    description: str = "Latent Diffusion Transformer for VideoGen: (1) currently we only support image classification for debugging."
+    description: str = (
+        "Latent Diffusion Transformer for VideoGen: (1) currently we only support image classification for debugging."
+    )
 
     def __init__(self, args: ModelArgs):
         super().__init__()
@@ -61,8 +64,6 @@ class LatentDiffusionTransformer(nn.Module):
         target = target.to(output.dtype)
         loss = F.mse_loss(output, target)
 
-        # TODO: Mingchen: seems that currently the pipeline is work for image classification task
-
         return batch, loss
 
     def init_weights(self, pre_trained_path: Optional[str] = None):
@@ -80,12 +81,6 @@ def build_fsdp_grouping_plan(model_args: DiffusionTransformerArgs, vae_config: d
 
     for i in range(len(vae_config.down_block_types)):
         group_plan.append((f"compressor.vae.encoder.down_blocks.{i}", False))
-
-    # Mingchen: I also add up_block because I am not sure wether we only add down_block before. 
-    # Mingchen: Got it. We did not use decoder (but in the future we may use, right?)
-    # if "up_block_types" in vae_config:
-    #     for i in range(len(vae_config.up_block_types)):
-    #         group_plan.append((f"compressor.vae.decoder.up_blocks.{i}", False))
 
     for i in range(model_args.n_layers):
         group_plan.append((f"transformer.layers.{i}", False))
@@ -105,17 +100,6 @@ def tp_parallelize(
     assert model_args.n_heads % distributed_args.tp_size == 0
     assert (model_args.n_kv_heads or 0) % distributed_args.tp_size == 0
     assert model_args.n_heads % (model_args.n_kv_heads or 1) == 0
-
-    vae_plan = {}
-    for i, block in enumerate(model.compressor.vae.encoder.down_blocks):
-        vae_plan[f"encoder.down_blocks.{i}.conv"] = ColwiseParallel()
-        vae_plan[f"encoder.down_blocks.{i}.norm"] = SequenceParallel()
-        parallelize_module(block, tp_mesh, vae_plan)
-
-    scheduler_plan = {
-        "sigmas": SequenceParallel(), 
-    }
-    parallelize_module(model.scheduler, tp_mesh, scheduler_plan)
 
     main_plan = {}
     main_plan["norm"] = SequenceParallel()
