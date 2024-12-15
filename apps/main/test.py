@@ -44,7 +44,7 @@ if __name__ == "__main__":
         n_heads=32,
         n_kv_heads=8,
         n_layers=16,
-        ada_dim=512,
+        ada_dim=2048,
         patch_size=2,
         in_channels=16,
         out_channels=16,
@@ -52,12 +52,15 @@ if __name__ == "__main__":
         cfg_drop_ratio=0.1,
         num_classes=1000,
         max_seqlen=1000,
+        block_type="language_model",
         pre_trained_path="/mnt/data/Llama-3.2-1B/original/consolidated.00.pth",
     )
     dataloader = create_dummy_dataloader(
         batch_size=16, num_classes=dit_args.num_classes, image_size=(16, 32, 32)
     )
-    DiT = DiffusionTransformer(dit_args).cuda()
+    DiT = DiffusionTransformer(dit_args)
+    DiT.init_weights(dit_args.pre_trained_path)
+    DiT = DiT.cuda()
     vae_args = LatentVideoVAEArgs()
     schedulers_arg = SchedulerArgs()
     scheduler = RectifiedFlow(schedulers_arg)

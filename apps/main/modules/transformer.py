@@ -7,18 +7,11 @@ import torch
 from torch import nn
 from torch.nn.attention.flex_attention import create_block_mask, BlockMask
 
-from torch.distributed._tensor import Replicate, Shard
-from torch.distributed.tensor.parallel import (
-    ColwiseParallel,
-    RowwiseParallel,
-    SequenceParallel,
-    PrepareModuleInput,
-    parallelize_module,
-)
 
 from xformers.ops import fmha, AttentionBias
 from lingua.transformer import (
     BaseTransformerArgs,
+    TransformerBlock,
     RMSNorm,
     FeedForward,
     Attention,
@@ -29,6 +22,7 @@ from lingua.transformer import (
     LabelEmbedder,
     modulate,
 )
+from lingua.transformer import RotaryEmbedding as RotaryEmbedding1D
 import os
 import logging
 
@@ -109,7 +103,7 @@ def causal_mask(b, h, q_idx, kv_idx):
     return q_idx >= kv_idx
 
 
-class RotaryEmbedding(torch.nn.Module):
+class RotaryEmbedding2D(torch.nn.Module):
     """
     RotaryEmbedding Module
     """
@@ -164,6 +158,10 @@ class DiffusionTransformerArgs(BaseTransformerArgs):
     cfg_drop_ratio: float = 0.1
     num_classes: int = 1000
     pre_trained_path: Optional[str] = None
+    block_type: str = "dit"  # Options: 'dit', 'language_model'.
+    # 1) 'dit': Embeds time using AdaIn.
+    # 2) 'language_model': Embeds time into the sequence input using a special token.
+    max_condition_seqlen: int = 2
 
 
 class DiffusionTransformerBlock(nn.Module):
@@ -238,27 +236,41 @@ class BaseDiffusionTransformer(nn.Module):
         self.init_base_std = args.init_base_std
         self.init_std_factor = InitStdFactor(args.init_std_factor)
         self.max_seqlen = args.max_seqlen
-
+        self.block_type = args.block_type
         self.layers = nn.ModuleList()
+        if args.block_type == "dit":
+            block = DiffusionTransformerBlock
+        elif args.block_type == "language_model":
+            block = TransformerBlock
+        else:
+            raise NotImplementedError(f"Not support {args.block_type}")
+
         for _ in range(args.n_layers):
-            self.layers.append(DiffusionTransformerBlock(args))
+            self.layers.append(block(args))
 
     def forward(
         self,
         h,
         freqs_cis,
-        modulation_signal,
+        modulation_signal: Optional[torch.Tensor] = None,
         mask: Optional[Union[BlockMask, AttentionBias, str]] = None,
         attn_impl: str = "sdpa",
     ):
-
+        assert (self.block_type == "language_model" and modulation_signal == None) or (
+            self.block_type == "dit" and modulation_signal != None
+        )
         for _, layer in enumerate(self.layers):
-            h = layer(h, freqs_cis, modulation_signal, mask=mask, attn_impl=attn_impl)
+            if modulation_signal == None:
+                h = layer(h, freqs_cis, mask=mask, attn_impl=attn_impl)
+            else:
+                h = layer(
+                    h, freqs_cis, modulation_signal, mask=mask, attn_impl=attn_impl
+                )
         return h
 
     def reset_parameters(self):
         # Either use fixed base std or sqrt model dim
-        self.rope_embeddings.reset_parameters()
+        pass
 
     def init_weights(self, pre_trained_path: Optional[str] = None):
         self.reset_parameters()
@@ -305,6 +317,8 @@ class DiffusionTransformer(BaseDiffusionTransformer):
         self.out_channels = args.out_channels
         self.in_channels = args.in_channels
         self.num_classes = args.num_classes
+        if self.block_type == "language_model":
+            assert args.dim == args.ada_dim
         self.tmb_embed = TimestepEmbedder(
             hidden_size=args.ada_dim, time_embedding_size=args.tmb_size
         )
@@ -322,23 +336,32 @@ class DiffusionTransformer(BaseDiffusionTransformer):
             self.patch_size * self.patch_size * args.out_channels,
             bias=False,
         )
-        self.rope_embeddings = RotaryEmbedding(
+        self.rope_embeddings_image = RotaryEmbedding2D(
             theta=args.rope_theta,
             head_dim=args.head_dim or args.dim // args.n_heads,
             max_seqlen=args.max_seqlen,
+        )
+        self.rope_embeddings_global = RotaryEmbedding1D(
+            theta=args.rope_theta,
+            head_dim=args.head_dim or args.dim // args.n_heads,
+            max_seqlen=args.max_condition_seqlen,
         )
         self.norm = RMSNorm(args.dim, eps=args.norm_eps)
 
     def patchify_and_embed_image(
         self, x: torch.Tensor
     ) -> Tuple[torch.Tensor, torch.Tensor, Tuple[int, int], torch.Tensor]:
-        self.rope_embeddings.freqs_cis = self.rope_embeddings.freqs_cis.to(x[0].device)
+        self.rope_embeddings_image.freqs_cis = self.rope_embeddings_image.freqs_cis.to(
+            x[0].device
+        )
         pH = pW = self.patch_size
         B, C, H, W = x.size()
         x = x.view(B, C, H // pH, pH, W // pW, pW).permute(0, 2, 4, 1, 3, 5).flatten(3)
         x = self.img_embed(x)
         x = x.flatten(1, 2)
-        freqs_cis = self.rope_embeddings.freqs_cis[: H // pH, : W // pW].flatten(0, 1)
+        freqs_cis = self.rope_embeddings_image.freqs_cis[: H // pH, : W // pW].flatten(
+            0, 1
+        )
         return (
             x,
             (H, W),
@@ -351,7 +374,9 @@ class DiffusionTransformer(BaseDiffusionTransformer):
         """
         Patchify a video (B,T,C,H,W) into sequences of patches. We consider T*H/pH*W/pW patches.
         """
-        self.rope_embeddings.freqs_cis = self.rope_embeddings.freqs_cis.to(v.device)
+        self.rope_embeddings_image.freqs_cis = self.rope_embeddings_image.freqs_cis.to(
+            v.device
+        )
         pH = pW = self.patch_size
         B, T, C, H, W = v.size()
         # (B,T,C,H,W) -> (B,T,H//pH,W//pW,C*pH*pW)
@@ -359,10 +384,14 @@ class DiffusionTransformer(BaseDiffusionTransformer):
         v = v.permute(0, 1, 3, 5, 2, 4, 6).flatten(-3)
         # (B,T,H//pH,W//pW, C*pH*pW) -> (B, T*(H//pH)*(W//pW), D)
         v = v.flatten(1, 3)
-        v = self.img_embed(v)
+        v = self.img_embed(
+            v
+        )  # TODO here, we consider use a video embedder to embed video a patch size with 2x2x2.
         # v shape now (B, T*(H//pH)*(W//pW), D)
         # For freqs_cis, we consider spatial positions, time can be encoded in the modulation signal
-        freqs_cis = self.rope_embeddings.freqs_cis[: H // pH, : W // pW].flatten(0, 1)
+        freqs_cis = self.rope_embeddings_image.freqs_cis[: H // pH, : W // pW].flatten(
+            0, 1
+        )
         return v, (T, H, W), freqs_cis
 
     def forward(
@@ -383,13 +412,23 @@ class DiffusionTransformer(BaseDiffusionTransformer):
         freqs_cis = freqs_cis.to(x.device)
         t_emb = self.tmb_embed(time_steps)
         cls_emb = self.cls_embed(condition, train=train)
-        modulation_signal = t_emb + cls_emb
-
+        if self.block_type == "dit":
+            modulation_signal = t_emb + cls_emb
+        elif self.block_type == "language_model":
+            modulation_signal = None
+            t_emb = t_emb.unsqueeze(1)
+            cls_emb = cls_emb.unsqueeze(1)
+            x = torch.cat([t_emb, cls_emb, x], dim=1)
+            cond_freqs_cis = self.rope_embeddings_global.freqs_cis.to(freqs_cis.device)
+            cond_freqs_cis = cond_freqs_cis[:2]
+            freqs_cis = torch.cat([cond_freqs_cis, freqs_cis], dim=0)
         h = super().forward(
             x, freqs_cis, modulation_signal, mask=mask, attn_impl=attn_impl
         )
 
         out = self.img_output(self.norm(h))
+        if self.block_type == "language_model":
+            out = out[:, 2:, :]
 
         if not is_video:
             x = self.unpatchify_image(out, img_size)
@@ -424,6 +463,8 @@ class DiffusionTransformer(BaseDiffusionTransformer):
     def reset_parameters(self, init_std=None):
         # Either use fixed base std or sqrt model dim
         super().reset_parameters()
+        self.rope_embeddings_image.reset_parameters()
+        self.rope_embeddings_global.reset_parameters()
         init_std = init_std or (self.dim ** (-0.5))
         self.norm.reset_parameters()
         self.tmb_embed.reset_parameters()
@@ -436,88 +477,3 @@ class DiffusionTransformer(BaseDiffusionTransformer):
             a=-3 * init_std,
             b=3 * init_std,
         )
-
-
-# Optional policy for activation checkpointing. With None, we stick to the default (defined distributed.py: default_no_recompute_ops)
-def get_no_recompute_ops():
-    return None
-
-
-# Optional and only used for fully shard options (fsdp) is choose. Highly recommanded for large models
-def build_fsdp_grouping_plan(model_args: DiffusionTransformerArgs):
-    group_plan: Tuple[int, bool] = []
-    # TODO
-    # Grouping and output seperately
-    # group_plan.append(("tok_embeddings", False))
-
-    # Grouping by layers
-    for i in range(model_args.n_layers):
-        group_plan.append((f"layers.{i}", False))
-
-    group_plan.append(("img_output", True))
-
-    return group_plan
-
-
-# Optional and only used for model/tensor parallelism when tp_size > 1
-def tp_parallelize(
-    model, tp_mesh, model_args: DiffusionTransformerArgs, distributed_args
-):
-    assert model_args.dim % distributed_args.tp_size == 0
-    assert model_args.vocab_size % distributed_args.tp_size == 0
-    assert model_args.n_heads % distributed_args.tp_size == 0
-    assert (model_args.n_kv_heads or 0) % distributed_args.tp_size == 0
-    assert model_args.n_heads % (model_args.n_kv_heads or 1) == 0
-
-    # Embedding layer tp
-    main_plan = {}
-    # TODO
-    # main_plan["tok_embeddings"] = ColwiseParallel(
-    #     input_layouts=Replicate(), output_layouts=Shard(1)
-    # )
-    main_plan["norm"] = SequenceParallel()
-    main_plan["img_output"] = ColwiseParallel(
-        input_layouts=Shard(1), output_layouts=Replicate()
-    )
-
-    parallelize_module(
-        model,
-        tp_mesh,
-        main_plan,
-    )
-
-    # Attention layers tp
-    # TODO Adding more for DiT specific Modules
-    for layer in model.layers:
-        layer_plan = {}
-
-        layer_plan["attention"] = PrepareModuleInput(
-            input_layouts=(Shard(1), None),
-            desired_input_layouts=(Replicate(), None),
-        )
-        layer_plan["attention_norm"] = SequenceParallel()
-        layer_plan["attention.wq"] = ColwiseParallel()
-        layer_plan["attention.wk"] = ColwiseParallel()
-        layer_plan["attention.wv"] = ColwiseParallel()
-        layer_plan["attention.wo"] = RowwiseParallel(output_layouts=Shard(1))
-
-        # Feedforward layers tp
-        layer_plan["feed_forward"] = PrepareModuleInput(
-            input_layouts=(Shard(1),),
-            desired_input_layouts=(Replicate(),),
-        )
-        layer_plan["ffn_norm"] = SequenceParallel()
-        layer_plan["feed_forward.w1"] = ColwiseParallel()
-        layer_plan["feed_forward.w3"] = ColwiseParallel()
-        layer_plan["feed_forward.w2"] = RowwiseParallel(output_layouts=Shard(1))
-
-        parallelize_module(
-            layer,
-            tp_mesh,
-            layer_plan,
-        )
-
-        # Adjusting the number of heads and kv heads according to the tp size
-        attn_layer = layer.attention
-        attn_layer.n_heads = attn_layer.n_heads // distributed_args.tp_size
-        attn_layer.n_kv_heads = attn_layer.n_kv_heads // distributed_args.tp_size
