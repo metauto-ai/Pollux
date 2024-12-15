@@ -96,22 +96,28 @@ def build_fsdp_grouping_plan(model_args: DiffusionTransformerArgs, vae_config: d
     return group_plan
 
 
-# Optional and only used for model/tensor parallelism when tp_size > 1
 def tp_parallelize(
     model, tp_mesh, model_args: DiffusionTransformerArgs, distributed_args
 ):
+
     assert model_args.dim % distributed_args.tp_size == 0
     assert model_args.vocab_size % distributed_args.tp_size == 0
     assert model_args.n_heads % distributed_args.tp_size == 0
     assert (model_args.n_kv_heads or 0) % distributed_args.tp_size == 0
     assert model_args.n_heads % (model_args.n_kv_heads or 1) == 0
 
-    # Embedding layer tp
+    vae_plan = {}
+    for i, block in enumerate(model.compressor.vae.encoder.down_blocks):
+        vae_plan[f"encoder.down_blocks.{i}.conv"] = ColwiseParallel()
+        vae_plan[f"encoder.down_blocks.{i}.norm"] = SequenceParallel()
+        parallelize_module(block, tp_mesh, vae_plan)
+
+    scheduler_plan = {
+        "sigmas": SequenceParallel(), 
+    }
+    parallelize_module(model.scheduler, tp_mesh, scheduler_plan)
+
     main_plan = {}
-    # TODO
-    # main_plan["tok_embeddings"] = ColwiseParallel(
-    #     input_layouts=Replicate(), output_layouts=Shard(1)
-    # )
     main_plan["norm"] = SequenceParallel()
     main_plan["img_output"] = ColwiseParallel(
         input_layouts=Shard(1), output_layouts=Replicate()
@@ -123,8 +129,7 @@ def tp_parallelize(
         main_plan,
     )
 
-    # Attention layers tp
-    # TODO Adding more for DiT specific Modules
+    # TODO: Adding more for DiT specific Modules
     for layer in model.transformer.layers:
         layer_plan = {}
 
@@ -138,7 +143,7 @@ def tp_parallelize(
         layer_plan["attention.wv"] = ColwiseParallel()
         layer_plan["attention.wo"] = RowwiseParallel(output_layouts=Shard(1))
 
-        # Feedforward layers tp
+        # Feedforward layers TP
         layer_plan["feed_forward"] = PrepareModuleInput(
             input_layouts=(Shard(1),),
             desired_input_layouts=(Replicate(),),
