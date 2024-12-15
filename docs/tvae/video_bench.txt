@@ -1,0 +1,1012 @@
+### BDD100K
+BDD100K/bdd100k/videos/test/cabc30fc-e7726578.mp4
+BDD100K/bdd100k/videos/test/cadb5cf7-31d9a0d7.mp4
+BDD100K/bdd100k/videos/test/cafa7c32-0d800808.mp4
+BDD100K/bdd100k/videos/test/cb146e98-6ad6acfd.mp4
+BDD100K/bdd100k/videos/test/cb32ab44-2e476a87.mp4
+BDD100K/bdd100k/videos/test/cb552c07-d96caa28.mp4
+BDD100K/bdd100k/videos/test/cb74a88b-35158084.mp4
+BDD100K/bdd100k/videos/test/cb995f92-89756142.mp4
+BDD100K/bdd100k/videos/test/cbbfa4d0-fe444e30.mp4
+BDD100K/bdd100k/videos/test/cbe7477d-e5bf341e.mp4
+BDD100K/bdd100k/videos/test/cc0e38f5-72db5b25.mp4
+BDD100K/bdd100k/videos/test/cc24b908-85865c46.mp4
+BDD100K/bdd100k/videos/test/cc3bae6a-e9585ae9.mp4
+BDD100K/bdd100k/videos/test/cc54e2ee-61c5c680.mp4
+BDD100K/bdd100k/videos/test/cc70e239-27dc9f54.mp4
+BDD100K/bdd100k/videos/test/cc8dc586-d68d3111.mp4
+BDD100K/bdd100k/videos/test/ccab51fd-590c910d.mp4
+BDD100K/bdd100k/videos/test/ccc90113-89c333d4.mp4
+BDD100K/bdd100k/videos/test/ccdfec32-b738be17.mp4
+BDD100K/bdd100k/videos/test/cd13ecb7-611f6558.mp4
+BDD100K/bdd100k/videos/test/cd35ea13-f49ee278.mp4
+BDD100K/bdd100k/videos/test/cd4deee2-adc7e92a.mp4
+BDD100K/bdd100k/videos/test/cd7470b5-1bd4abb7.mp4
+BDD100K/bdd100k/videos/test/cd8f8f54-e7d915d5.mp4
+BDD100K/bdd100k/videos/test/cdae6e60-0fb06a75.mp4
+BDD100K/bdd100k/videos/test/cdcbdc69-2fe9c3a2.mp4
+BDD100K/bdd100k/videos/test/cddf367c-6c233715.mp4
+BDD100K/bdd100k/videos/test/ce093414-e2d8ba1a.mp4
+BDD100K/bdd100k/videos/test/ce20f7fa-0b7425f0.mp4
+BDD100K/bdd100k/videos/test/ce3fa6fc-36416c4d.mp4
+BDD100K/bdd100k/videos/test/ce601211-0f0d19ea.mp4
+BDD100K/bdd100k/videos/test/ce74f994-67d25782.mp4
+BDD100K/bdd100k/videos/test/ce9f8b49-4b844127.mp4
+BDD100K/bdd100k/videos/test/ceb71da2-b6f6d3d9.mp4
+BDD100K/bdd100k/videos/test/cecda434-d469f0de.mp4
+BDD100K/bdd100k/videos/test/ceed09b8-941581bd.mp4
+BDD100K/bdd100k/videos/test/cf13b346-687b9eed.mp4
+BDD100K/bdd100k/videos/test/cf3b352b-ae49a43b.mp4
+BDD100K/bdd100k/videos/test/cf50294b-9d544be6.mp4
+BDD100K/bdd100k/videos/test/cf79dd28-6cb38d80.mp4
+BDD100K/bdd100k/videos/test/cf8fb4a6-8bfb9723.mp4
+BDD100K/bdd100k/videos/test/cfb29363-3b047d54.mp4
+BDD100K/bdd100k/videos/test/cfccad03-097c2ae6.mp4
+BDD100K/bdd100k/videos/test/cfe87d3c-614fbceb.mp4
+BDD100K/bdd100k/videos/test/d008efca-19b8d932.mp4
+BDD100K/bdd100k/videos/test/d0237cba-62d078db.mp4
+BDD100K/bdd100k/videos/test/d044a36b-a4cc7357.mp4
+BDD100K/bdd100k/videos/test/d05ef1b7-ba0f9453.mp4
+BDD100K/bdd100k/videos/test/d07759c7-ab4ba3d1.mp4
+BDD100K/bdd100k/videos/test/d09b7eb3-bf9bfb1a.mp4
+BDD100K/bdd100k/videos/test/d0bfdf61-846154dd.mp4
+BDD100K/bdd100k/videos/test/d0e3ed0e-9d908139.mp4
+BDD100K/bdd100k/videos/test/d0f83d9e-ded2011b.mp4
+BDD100K/bdd100k/videos/test/d10dc4fa-dc72a5d2.mp4
+BDD100K/bdd100k/videos/test/d133da95-70eb854c.mp4
+BDD100K/bdd100k/videos/test/d14d20c3-74cda513.mp4
+BDD100K/bdd100k/videos/test/d178f7e5-684bf220.mp4
+BDD100K/bdd100k/videos/test/d198988a-bd0e5edf.mp4
+BDD100K/bdd100k/videos/test/d1bb85b7-8130993b.mp4
+BDD100K/bdd100k/videos/test/d1d81a76-d97fd940.mp4
+BDD100K/bdd100k/videos/test/d1f86887-db47a32d.mp4
+BDD100K/bdd100k/videos/test/d21e6120-37e9bfc3.mp4
+BDD100K/bdd100k/videos/test/d23e89fc-4f8fa320.mp4
+BDD100K/bdd100k/videos/test/d263cf26-ac6dbfc5.mp4
+BDD100K/bdd100k/videos/test/d2879688-11ffaf4f.mp4
+BDD100K/bdd100k/videos/test/d2ae25d7-7f64b6d4.mp4
+BDD100K/bdd100k/videos/test/d2cdb093-40a95b8e.mp4
+BDD100K/bdd100k/videos/test/d2f36212-3d800062.mp4
+BDD100K/bdd100k/videos/test/d30c73e4-6f3d7d1c.mp4
+BDD100K/bdd100k/videos/test/d3283c05-39cc131f.mp4
+BDD100K/bdd100k/videos/test/d34b504e-73162bdb.mp4
+BDD100K/bdd100k/videos/test/d372e521-00aa0f24.mp4
+BDD100K/bdd100k/videos/test/d38a745a-b254026c.mp4
+BDD100K/bdd100k/videos/test/d3a32aad-32b78d8f.mp4
+BDD100K/bdd100k/videos/test/d3be1648-807eb6e3.mp4
+BDD100K/bdd100k/videos/test/d3e2dd6c-6b4faa8c.mp4
+BDD100K/bdd100k/videos/test/d3fa52c8-974525fd.mp4
+BDD100K/bdd100k/videos/test/d41a3512-7c3ba209.mp4
+BDD100K/bdd100k/videos/test/d4464909-656bc158.mp4
+BDD100K/bdd100k/videos/test/d463110d-63f518db.mp4
+BDD100K/bdd100k/videos/test/d479e00c-41318723.mp4
+BDD100K/bdd100k/videos/test/d49af90b-f446b6dd.mp4
+BDD100K/bdd100k/videos/test/d4c3bb0d-9b25fff2.mp4
+BDD100K/bdd100k/videos/test/d4df14ea-ba5ae982.mp4
+BDD100K/bdd100k/videos/test/d4fd59b5-49c07bc7.mp4
+BDD100K/bdd100k/videos/test/d5342a65-e19b25a1.mp4
+BDD100K/bdd100k/videos/test/d55a39c0-db1a5c18.mp4
+BDD100K/bdd100k/videos/test/d5712870-49271f8e.mp4
+BDD100K/bdd100k/videos/test/d58d1ff6-26174a48.mp4
+BDD100K/bdd100k/videos/test/d5b255cf-68b49058.mp4
+BDD100K/bdd100k/videos/test/d5d92b95-1dca2d8e.mp4
+BDD100K/bdd100k/videos/test/d600ccb0-5bf93d73.mp4
+BDD100K/bdd100k/videos/test/d618d991-2faa5659.mp4
+BDD100K/bdd100k/videos/test/d63e1966-52503104.mp4
+BDD100K/bdd100k/videos/test/d65a19cd-e57cda70.mp4
+BDD100K/bdd100k/videos/test/d687fc7d-89dca92d.mp4
+BDD100K/bdd100k/videos/test/d6a78403-bea0c6f8.mp4
+BDD100K/bdd100k/videos/test/d6c562e8-83e45045.mp4
+BDD100K/bdd100k/videos/test/d6e57412-151d1adb.mp4
+BDD100K/bdd100k/videos/test/d6f5166a-fb9f835f.mp4
+
+### ego-exo-4d
+ego-exo-4d/cmu_bike01_2/frame_aligned_videos/downscaled/448/448/aria01_214-1.mp4
+ego-exo-4d/cmu_bike01_2/frame_aligned_videos/downscaled/448/448/cam01.mp4
+ego-exo-4d/cmu_bike15_4/frame_aligned_videos/downscaled/448/448/aria01_214-1.mp4
+ego-exo-4d/cmu_bike15_4/frame_aligned_videos/downscaled/448/448/cam01.mp4
+ego-exo-4d/cmu_soccer16_2/frame_aligned_videos/downscaled/448/448/aria01_214-1.mp4
+ego-exo-4d/cmu_soccer16_2/frame_aligned_videos/downscaled/448/448/cam01.mp4
+ego-exo-4d/fair_bike_07_6/frame_aligned_videos/downscaled/448/448/aria01_214-1.mp4
+ego-exo-4d/fair_bike_07_6/frame_aligned_videos/downscaled/448/448/cam01.mp4
+ego-exo-4d/georgiatech_bike_02_8/frame_aligned_videos/downscaled/448/448/aria01_214-1.mp4
+ego-exo-4d/georgiatech_bike_02_8/frame_aligned_videos/downscaled/448/448/cam01.mp4
+ego-exo-4d/georgiatech_bike_10_8/frame_aligned_videos/downscaled/448/448/aria01_214-1.mp4
+ego-exo-4d/georgiatech_bike_10_8/frame_aligned_videos/downscaled/448/448/cam01.mp4
+ego-exo-4d/georgiatech_cooking_01_02_2/frame_aligned_videos/downscaled/448/448/aria01_214-1.mp4
+ego-exo-4d/georgiatech_cooking_01_02_2/frame_aligned_videos/downscaled/448/448/cam01.mp4
+ego-exo-4d/georgiatech_cooking_12_01_4/frame_aligned_videos/downscaled/448/448/aria01_214-1.mp4
+ego-exo-4d/georgiatech_cooking_12_01_4/frame_aligned_videos/downscaled/448/448/cam01.mp4
+ego-exo-4d/georgiatech_covid_07_8/frame_aligned_videos/downscaled/448/448/aria01_214-1.mp4
+ego-exo-4d/georgiatech_covid_07_8/frame_aligned_videos/downscaled/448/448/cam01.mp4
+ego-exo-4d/georgiatech_covid_17_5/frame_aligned_videos/downscaled/448/448/aria01_214-1.mp4
+ego-exo-4d/georgiatech_covid_17_5/frame_aligned_videos/downscaled/448/448/cam01.mp4
+ego-exo-4d/iiith_cooking_113_3/frame_aligned_videos/downscaled/448/448/aria01_214-1.mp4
+ego-exo-4d/iiith_cooking_113_3/frame_aligned_videos/downscaled/448/448/cam01.mp4
+ego-exo-4d/iiith_cooking_146_2/frame_aligned_videos/downscaled/448/448/aria01_214-1.mp4
+ego-exo-4d/iiith_cooking_146_2/frame_aligned_videos/downscaled/448/448/cam01.mp4
+ego-exo-4d/iiith_cooking_52_4/frame_aligned_videos/downscaled/448/448/aria01_214-1.mp4
+ego-exo-4d/iiith_cooking_52_4/frame_aligned_videos/downscaled/448/448/cam01.mp4
+ego-exo-4d/iiith_cooking_76_2/frame_aligned_videos/downscaled/448/448/aria01_214-1.mp4
+ego-exo-4d/iiith_cooking_76_2/frame_aligned_videos/downscaled/448/448/cam01.mp4
+ego-exo-4d/iiith_soccer_002_2/frame_aligned_videos/downscaled/448/448/aria01_214-1.mp4
+ego-exo-4d/iiith_soccer_002_2/frame_aligned_videos/downscaled/448/448/cam01.mp4
+ego-exo-4d/iiith_soccer_031_6/frame_aligned_videos/downscaled/448/448/aria01_214-1.mp4
+ego-exo-4d/iiith_soccer_031_6/frame_aligned_videos/downscaled/448/448/cam01.mp4
+ego-exo-4d/iiith_soccer_051_2/frame_aligned_videos/downscaled/448/448/aria01_214-1.mp4
+ego-exo-4d/iiith_soccer_051_2/frame_aligned_videos/downscaled/448/448/cam01.mp4
+ego-exo-4d/indiana_bike_08_3/frame_aligned_videos/downscaled/448/448/aria01_214-1.mp4
+ego-exo-4d/indiana_bike_08_3/frame_aligned_videos/downscaled/448/448/cam01.mp4
+ego-exo-4d/indiana_bike_13_13/frame_aligned_videos/downscaled/448/448/aria01_214-1.mp4
+ego-exo-4d/indiana_bike_13_13/frame_aligned_videos/downscaled/448/448/cam01.mp4
+ego-exo-4d/indiana_cooking_13_2/frame_aligned_videos/downscaled/448/448/aria01_214-1.mp4
+ego-exo-4d/indiana_cooking_13_2/frame_aligned_videos/downscaled/448/448/cam01.mp4
+ego-exo-4d/indiana_music_04_4/frame_aligned_videos/downscaled/448/448/aria01_214-1.mp4
+ego-exo-4d/indiana_music_04_4/frame_aligned_videos/downscaled/448/448/cam01.mp4
+ego-exo-4d/minnesota_cooking_031_4/frame_aligned_videos/downscaled/448/448/aria01_214-1.mp4
+ego-exo-4d/minnesota_cooking_031_4/frame_aligned_videos/downscaled/448/448/cam01.mp4
+ego-exo-4d/minnesota_rockclimbing_013_4/frame_aligned_videos/downscaled/448/448/aria01_214-1.mp4
+ego-exo-4d/minnesota_rockclimbing_013_4/frame_aligned_videos/downscaled/448/448/cam01.mp4
+ego-exo-4d/minnesota_rockclimbing_030_2/frame_aligned_videos/downscaled/448/448/aria01_214-1.mp4
+ego-exo-4d/minnesota_rockclimbing_030_2/frame_aligned_videos/downscaled/448/448/cam01.mp4
+ego-exo-4d/minnesota_rockclimbing_034_22/frame_aligned_videos/downscaled/448/448/aria01_214-1.mp4
+ego-exo-4d/minnesota_rockclimbing_034_22/frame_aligned_videos/downscaled/448/448/cam01.mp4
+ego-exo-4d/nus_cooking_06_4/frame_aligned_videos/downscaled/448/448/aria01_214-1.mp4
+ego-exo-4d/nus_cooking_06_4/frame_aligned_videos/downscaled/448/448/cam01.mp4
+ego-exo-4d/nus_covidtest_11_1/frame_aligned_videos/downscaled/448/448/aria01_214-1.mp4
+ego-exo-4d/nus_covidtest_11_1/frame_aligned_videos/downscaled/448/448/cam01.mp4
+ego-exo-4d/nus_covidtest_40_2/frame_aligned_videos/downscaled/448/448/aria01_214-1.mp4
+ego-exo-4d/nus_covidtest_40_2/frame_aligned_videos/downscaled/448/448/cam01.mp4
+ego-exo-4d/nus_cpr_14_2/frame_aligned_videos/downscaled/448/448/aria01_214-1.mp4
+ego-exo-4d/nus_cpr_14_2/frame_aligned_videos/downscaled/448/448/cam01.mp4
+ego-exo-4d/nus_cpr_44_3/frame_aligned_videos/downscaled/448/448/aria01_214-1.mp4
+ego-exo-4d/nus_cpr_44_3/frame_aligned_videos/downscaled/448/448/cam01.mp4
+ego-exo-4d/sfu_basketball012_8/frame_aligned_videos/downscaled/448/448/aria01_214-1.mp4
+ego-exo-4d/sfu_basketball012_8/frame_aligned_videos/downscaled/448/448/cam01.mp4
+ego-exo-4d/sfu_basketball015_4/frame_aligned_videos/downscaled/448/448/aria01_214-1.mp4
+ego-exo-4d/sfu_basketball015_4/frame_aligned_videos/downscaled/448/448/cam01.mp4
+ego-exo-4d/sfu_basketball_01_39/frame_aligned_videos/downscaled/448/448/aria01_214-1.mp4
+ego-exo-4d/sfu_basketball_01_39/frame_aligned_videos/downscaled/448/448/cam01.mp4
+ego-exo-4d/sfu_basketball_03_46/frame_aligned_videos/downscaled/448/448/aria01_214-1.mp4
+ego-exo-4d/sfu_basketball_03_46/frame_aligned_videos/downscaled/448/448/cam01.mp4
+ego-exo-4d/sfu_basketball_05_2/frame_aligned_videos/downscaled/448/448/aria01_214-1.mp4
+ego-exo-4d/sfu_basketball_05_2/frame_aligned_videos/downscaled/448/448/cam01.mp4
+ego-exo-4d/sfu_basketball_07_8/frame_aligned_videos/downscaled/448/448/aria01_214-1.mp4
+ego-exo-4d/sfu_basketball_07_8/frame_aligned_videos/downscaled/448/448/cam01.mp4
+ego-exo-4d/sfu_basketball_10_13/frame_aligned_videos/downscaled/448/448/aria01_214-1.mp4
+ego-exo-4d/sfu_basketball_10_13/frame_aligned_videos/downscaled/448/448/cam01.mp4
+ego-exo-4d/sfu_cooking017_2/frame_aligned_videos/downscaled/448/448/aria01_214-1.mp4
+ego-exo-4d/sfu_cooking017_2/frame_aligned_videos/downscaled/448/448/cam01.mp4
+ego-exo-4d/sfu_cooking032_3/frame_aligned_videos/downscaled/448/448/aria01_214-1.mp4
+ego-exo-4d/sfu_cooking032_3/frame_aligned_videos/downscaled/448/448/cam01.mp4
+ego-exo-4d/sfu_covid_001_8/frame_aligned_videos/downscaled/448/448/aria01_214-1.mp4
+ego-exo-4d/sfu_covid_001_8/frame_aligned_videos/downscaled/448/448/cam01.mp4
+ego-exo-4d/unc_basketball_02-24-23_01_18/frame_aligned_videos/downscaled/448/448/aria01_214-1.mp4
+ego-exo-4d/unc_basketball_02-24-23_01_18/frame_aligned_videos/downscaled/448/448/cam01.mp4
+ego-exo-4d/unc_basketball_03-09-23_01_22/frame_aligned_videos/downscaled/448/448/aria01_214-1.mp4
+ego-exo-4d/unc_basketball_03-09-23_01_22/frame_aligned_videos/downscaled/448/448/cam01.mp4
+ego-exo-4d/unc_basketball_03-09-23_02_3/frame_aligned_videos/downscaled/448/448/aria01_214-1.mp4
+ego-exo-4d/unc_basketball_03-09-23_02_3/frame_aligned_videos/downscaled/448/448/cam01.mp4
+ego-exo-4d/unc_basketball_03-16-23_01_5/frame_aligned_videos/downscaled/448/448/aria01_214-1.mp4
+ego-exo-4d/unc_basketball_03-16-23_01_5/frame_aligned_videos/downscaled/448/448/cam01.mp4
+ego-exo-4d/unc_basketball_03-17-23_01_32/frame_aligned_videos/downscaled/448/448/aria01_214-1.mp4
+ego-exo-4d/unc_basketball_03-17-23_01_32/frame_aligned_videos/downscaled/448/448/cam01.mp4
+ego-exo-4d/unc_basketball_03-30-23_02_10/frame_aligned_videos/downscaled/448/448/aria01_214-1.mp4
+ego-exo-4d/unc_basketball_03-30-23_02_10/frame_aligned_videos/downscaled/448/448/cam01.mp4
+ego-exo-4d/unc_basketball_03-31-23_01_25/frame_aligned_videos/downscaled/448/448/aria01_214-1.mp4
+ego-exo-4d/unc_basketball_03-31-23_01_25/frame_aligned_videos/downscaled/448/448/cam01.mp4
+ego-exo-4d/unc_basketball_03-31-23_02_21/frame_aligned_videos/downscaled/448/448/aria01_214-1.mp4
+ego-exo-4d/unc_basketball_03-31-23_02_21/frame_aligned_videos/downscaled/448/448/cam01.mp4
+ego-exo-4d/unc_soccer_09-21-23_01_29/frame_aligned_videos/downscaled/448/448/aria01_214-1.mp4
+ego-exo-4d/unc_soccer_09-21-23_01_29/frame_aligned_videos/downscaled/448/448/cam01.mp4
+ego-exo-4d/unc_soccer_09-22-23_02_18/frame_aligned_videos/downscaled/448/448/aria01_214-1.mp4
+ego-exo-4d/unc_soccer_09-22-23_02_18/frame_aligned_videos/downscaled/448/448/cam01.mp4
+ego-exo-4d/uniandes_basketball_001_7/frame_aligned_videos/downscaled/448/448/aria01_214-1.mp4
+ego-exo-4d/uniandes_basketball_001_7/frame_aligned_videos/downscaled/448/448/cam01.mp4
+ego-exo-4d/uniandes_basketball_003_36/frame_aligned_videos/downscaled/448/448/aria01_214-1.mp4
+ego-exo-4d/uniandes_basketball_003_36/frame_aligned_videos/downscaled/448/448/cam01.mp4
+ego-exo-4d/uniandes_basketball_004_44/frame_aligned_videos/downscaled/448/448/aria01_214-1.mp4
+ego-exo-4d/uniandes_basketball_004_44/frame_aligned_videos/downscaled/448/448/cam01.mp4
+ego-exo-4d/uniandes_bouldering_004_17/frame_aligned_videos/downscaled/448/448/aria01_214-1.mp4
+ego-exo-4d/uniandes_bouldering_004_17/frame_aligned_videos/downscaled/448/448/cam01.mp4
+ego-exo-4d/uniandes_bouldering_012_32/frame_aligned_videos/downscaled/448/448/aria01_214-1.mp4
+ego-exo-4d/uniandes_bouldering_012_32/frame_aligned_videos/downscaled/448/448/cam01.mp4
+ego-exo-4d/uniandes_bouldering_015_14/frame_aligned_videos/downscaled/448/448/aria01_214-1.mp4
+ego-exo-4d/uniandes_bouldering_015_14/frame_aligned_videos/downscaled/448/448/cam01.mp4
+ego-exo-4d/uniandes_bouldering_018_36/frame_aligned_videos/downscaled/448/448/aria01_214-1.mp4
+ego-exo-4d/uniandes_bouldering_018_36/frame_aligned_videos/downscaled/448/448/cam01.mp4
+ego-exo-4d/uniandes_bouldering_022_45/frame_aligned_videos/downscaled/448/448/aria01_214-1.mp4
+ego-exo-4d/uniandes_bouldering_022_45/frame_aligned_videos/downscaled/448/448/cam01.mp4
+ego-exo-4d/uniandes_bouldering_023_4/frame_aligned_videos/downscaled/448/448/aria01_214-1.mp4
+ego-exo-4d/uniandes_bouldering_023_4/frame_aligned_videos/downscaled/448/448/cam01.mp4
+ego-exo-4d/uniandes_bouldering_024_25/frame_aligned_videos/downscaled/448/448/aria01_214-1.mp4
+ego-exo-4d/uniandes_bouldering_024_25/frame_aligned_videos/downscaled/448/448/cam01.mp4
+ego-exo-4d/uniandes_bouldering_025_23/frame_aligned_videos/downscaled/448/448/aria01_214-1.mp4
+ego-exo-4d/uniandes_bouldering_025_23/frame_aligned_videos/downscaled/448/448/cam01.mp4
+ego-exo-4d/uniandes_bouldering_025_78/frame_aligned_videos/downscaled/448/448/aria01_214-1.mp4
+ego-exo-4d/uniandes_bouldering_025_78/frame_aligned_videos/downscaled/448/448/cam01.mp4
+ego-exo-4d/uniandes_bouldering_026_49/frame_aligned_videos/downscaled/448/448/aria01_214-1.mp4
+ego-exo-4d/uniandes_bouldering_026_49/frame_aligned_videos/downscaled/448/448/cam01.mp4
+ego-exo-4d/uniandes_bouldering_027_102/frame_aligned_videos/downscaled/448/448/aria01_214-1.mp4
+ego-exo-4d/uniandes_bouldering_027_102/frame_aligned_videos/downscaled/448/448/cam01.mp4
+ego-exo-4d/uniandes_bouldering_027_49/frame_aligned_videos/downscaled/448/448/aria01_214-1.mp4
+ego-exo-4d/uniandes_bouldering_027_49/frame_aligned_videos/downscaled/448/448/cam01.mp4
+ego-exo-4d/uniandes_bouldering_028_17/frame_aligned_videos/downscaled/448/448/aria01_214-1.mp4
+ego-exo-4d/uniandes_bouldering_028_17/frame_aligned_videos/downscaled/448/448/cam01.mp4
+ego-exo-4d/uniandes_bouldering_029_13/frame_aligned_videos/downscaled/448/448/aria01_214-1.mp4
+ego-exo-4d/uniandes_bouldering_029_13/frame_aligned_videos/downscaled/448/448/cam01.mp4
+ego-exo-4d/uniandes_bouldering_029_73/frame_aligned_videos/downscaled/448/448/aria01_214-1.mp4
+ego-exo-4d/uniandes_bouldering_029_73/frame_aligned_videos/downscaled/448/448/cam01.mp4
+ego-exo-4d/uniandes_bouldering_030_46/frame_aligned_videos/downscaled/448/448/aria01_214-1.mp4
+ego-exo-4d/uniandes_bouldering_030_46/frame_aligned_videos/downscaled/448/448/cam01.mp4
+ego-exo-4d/uniandes_bouldering_031_17/frame_aligned_videos/downscaled/448/448/aria01_214-1.mp4
+ego-exo-4d/uniandes_bouldering_031_17/frame_aligned_videos/downscaled/448/448/cam01.mp4
+ego-exo-4d/uniandes_bouldering_032_25/frame_aligned_videos/downscaled/448/448/aria01_214-1.mp4
+ego-exo-4d/uniandes_bouldering_032_25/frame_aligned_videos/downscaled/448/448/cam01.mp4
+ego-exo-4d/uniandes_bouldering_033_10/frame_aligned_videos/downscaled/448/448/aria01_214-1.mp4
+ego-exo-4d/uniandes_bouldering_033_10/frame_aligned_videos/downscaled/448/448/cam01.mp4
+ego-exo-4d/uniandes_bouldering_034_21/frame_aligned_videos/downscaled/448/448/aria01_214-1.mp4
+ego-exo-4d/uniandes_bouldering_034_21/frame_aligned_videos/downscaled/448/448/cam01.mp4
+ego-exo-4d/uniandes_bouldering_034_80/frame_aligned_videos/downscaled/448/448/aria01_214-1.mp4
+ego-exo-4d/uniandes_bouldering_034_80/frame_aligned_videos/downscaled/448/448/cam01.mp4
+ego-exo-4d/uniandes_bouldering_035_48/frame_aligned_videos/downscaled/448/448/aria01_214-1.mp4
+ego-exo-4d/uniandes_bouldering_035_48/frame_aligned_videos/downscaled/448/448/cam01.mp4
+ego-exo-4d/uniandes_bouldering_036_2/frame_aligned_videos/downscaled/448/448/aria01_214-1.mp4
+ego-exo-4d/uniandes_bouldering_036_2/frame_aligned_videos/downscaled/448/448/cam01.mp4
+ego-exo-4d/uniandes_bouldering_036_80/frame_aligned_videos/downscaled/448/448/aria01_214-1.mp4
+ego-exo-4d/uniandes_bouldering_036_80/frame_aligned_videos/downscaled/448/448/cam01.mp4
+ego-exo-4d/uniandes_cooking_002_6/frame_aligned_videos/downscaled/448/448/aria01_214-1.mp4
+ego-exo-4d/uniandes_cooking_002_6/frame_aligned_videos/downscaled/448/448/cam01.mp4
+ego-exo-4d/uniandes_dance_002_3/frame_aligned_videos/downscaled/448/448/aria01_214-1.mp4
+ego-exo-4d/uniandes_dance_002_3/frame_aligned_videos/downscaled/448/448/cam01.mp4
+ego-exo-4d/uniandes_dance_008_47/frame_aligned_videos/downscaled/448/448/aria01_214-1.mp4
+ego-exo-4d/uniandes_dance_008_47/frame_aligned_videos/downscaled/448/448/cam01.mp4
+ego-exo-4d/uniandes_dance_012_12/frame_aligned_videos/downscaled/448/448/aria01_214-1.mp4
+ego-exo-4d/uniandes_dance_012_12/frame_aligned_videos/downscaled/448/448/cam01.mp4
+ego-exo-4d/uniandes_dance_013_20/frame_aligned_videos/downscaled/448/448/aria01_214-1.mp4
+ego-exo-4d/uniandes_dance_013_20/frame_aligned_videos/downscaled/448/448/cam01.mp4
+ego-exo-4d/uniandes_dance_016_10/frame_aligned_videos/downscaled/448/448/aria01_214-1.mp4
+ego-exo-4d/uniandes_dance_016_10/frame_aligned_videos/downscaled/448/448/cam01.mp4
+ego-exo-4d/uniandes_dance_017_3/frame_aligned_videos/downscaled/448/448/aria01_214-1.mp4
+ego-exo-4d/uniandes_dance_017_3/frame_aligned_videos/downscaled/448/448/cam01.mp4
+ego-exo-4d/uniandes_dance_018_38/frame_aligned_videos/downscaled/448/448/aria01_214-1.mp4
+ego-exo-4d/uniandes_dance_018_38/frame_aligned_videos/downscaled/448/448/cam01.mp4
+ego-exo-4d/uniandes_dance_019_58/frame_aligned_videos/downscaled/448/448/aria01_214-1.mp4
+ego-exo-4d/uniandes_dance_019_58/frame_aligned_videos/downscaled/448/448/cam01.mp4
+ego-exo-4d/uniandes_dance_021_19/frame_aligned_videos/downscaled/448/448/aria01_214-1.mp4
+ego-exo-4d/uniandes_dance_021_19/frame_aligned_videos/downscaled/448/448/cam01.mp4
+ego-exo-4d/uniandes_dance_022_31/frame_aligned_videos/downscaled/448/448/aria01_214-1.mp4
+ego-exo-4d/uniandes_dance_022_31/frame_aligned_videos/downscaled/448/448/cam01.mp4
+ego-exo-4d/uniandes_dance_023_42/frame_aligned_videos/downscaled/448/448/aria01_214-1.mp4
+ego-exo-4d/uniandes_dance_023_42/frame_aligned_videos/downscaled/448/448/cam01.mp4
+ego-exo-4d/uniandes_dance_024_49/frame_aligned_videos/downscaled/448/448/aria01_214-1.mp4
+ego-exo-4d/uniandes_dance_024_49/frame_aligned_videos/downscaled/448/448/cam01.mp4
+ego-exo-4d/upenn_0601_Dance_8/frame_aligned_videos/downscaled/448/448/aria01_214-1.mp4
+ego-exo-4d/upenn_0601_Dance_8/frame_aligned_videos/downscaled/448/448/cam01.mp4
+ego-exo-4d/upenn_0706_Dance_2_5/frame_aligned_videos/downscaled/448/448/aria01_214-1.mp4
+ego-exo-4d/upenn_0706_Dance_2_5/frame_aligned_videos/downscaled/448/448/cam01.mp4
+ego-exo-4d/upenn_0710_Guitar_1_3/frame_aligned_videos/downscaled/448/448/aria01_214-1.mp4
+ego-exo-4d/upenn_0710_Guitar_1_3/frame_aligned_videos/downscaled/448/448/cam01.mp4
+ego-exo-4d/upenn_0713_Dance_3_5/frame_aligned_videos/downscaled/448/448/aria01_214-1.mp4
+ego-exo-4d/upenn_0713_Dance_3_5/frame_aligned_videos/downscaled/448/448/cam01.mp4
+ego-exo-4d/upenn_0719_Piano_1_3/frame_aligned_videos/downscaled/448/448/aria01_214-1.mp4
+ego-exo-4d/upenn_0719_Piano_1_3/frame_aligned_videos/downscaled/448/448/cam01.mp4
+ego-exo-4d/upenn_0722_Guitar_1_4/frame_aligned_videos/downscaled/448/448/aria01_214-1.mp4
+ego-exo-4d/upenn_0722_Guitar_1_4/frame_aligned_videos/downscaled/448/448/cam01.mp4
+ego-exo-4d/upenn_0726_Duet_Violin_1_1_5/frame_aligned_videos/downscaled/448/448/aria01_214-1.mp4
+ego-exo-4d/upenn_0726_Duet_Violin_1_1_5/frame_aligned_videos/downscaled/448/448/cam01.mp4
+ego-exo-4d/upenn_0728_Violin_1_2/frame_aligned_videos/downscaled/448/448/aria01_214-1.mp4
+ego-exo-4d/upenn_0728_Violin_1_2/frame_aligned_videos/downscaled/448/448/cam01.mp4
+ego-exo-4d/utokyo_omelet_4_1001_2/frame_aligned_videos/downscaled/448/448/aria01_214-1.mp4
+ego-exo-4d/utokyo_omelet_4_1001_2/frame_aligned_videos/downscaled/448/448/cam01.mp4
+ego-exo-4d/utokyo_pcr_2001_35_6/frame_aligned_videos/downscaled/448/448/aria01_214-1.mp4
+ego-exo-4d/utokyo_pcr_2001_35_6/frame_aligned_videos/downscaled/448/448/cam01.mp4
+
+### Panda70M
+videoID,url,timestamp,caption,matching_score,desirable_filtering,shot_boundary_detection
+2k_jxJAdGTE,https://www.youtube.com/watch?v=2k_jxJAdGTE,"[('00:01:16.643', '00:01:56.416')]",['A man is standing next to a motorcycle and talking about it.'],['0.454345703125'],['desirable'],"['0:00:00.000', '0:00:39.739']"
+-TfD4eKDfbI,https://www.youtube.com/watch?v=-TfD4eKDfbI,"[('00:02:28.715', '00:02:35.522')]",['A woman is washing her hands in a bathroom.'],['0.4306640625'],['desirable'],"['0:00:00.000', '0:00:06.773']"
+-tAvY8gW8rU,https://www.youtube.com/watch?v=-tAvY8gW8rU,"[('00:04:02.720', '00:04:05.640')]",['The person is wearing a suit and walking up some stairs.'],['0.46728515625'],['desirable'],"['0:00:00.000', '0:00:02.880']"
+0-aW3PKnj8E,https://www.youtube.com/watch?v=0-aW3PKnj8E,"[('00:00:46.413', '00:01:00.593')]",['A man in a suit is talking to the camera while holding a microphone.'],['0.44970703125'],['desirable'],"['0:00:00.000', '0:00:14.147']"
+3UD7v_8lPv4,https://www.youtube.com/watch?v=3UD7v_8lPv4,"[('00:02:15.602', '00:02:18.204')]",['A person is fishing with a rod and reel on a boat in the ocean.'],['0.4453125'],['desirable'],"['0:00:00.000', '0:00:02.569']"
+3Dgpwh5A8R8,https://www.youtube.com/watch?v=3Dgpwh5A8R8,"[('00:00:00.633', '00:00:05.900')]",['A man in a gray shirt standing next to a sink.'],['0.443603515625'],['desirable'],"['0:00:00.000', '0:00:05.233']"
+3Q__bVY6wtk,https://www.youtube.com/watch?v=3Q__bVY6wtk,"[('00:06:01.027', '00:06:05.073')]","['A man wearing a baseball cap, sunglasses, and a chain walks into a locker room.']",['0.453369140625'],['desirable'],"['0:00:00.000', '0:00:04.045']"
+3IIZmiGivRA,https://www.youtube.com/watch?v=3IIZmiGivRA,"[('00:00:00.480', '00:00:04.360')]",['People are sitting at tables in a room at a meeting.'],['0.43896484375'],['desirable'],"['0:00:00.000', '0:00:03.840']"
+-fI-ogq9OC8,https://www.youtube.com/watch?v=-fI-ogq9OC8,"[('00:00:17.684', '00:00:29.662')]",['A man in a blue jacket is talking on a microphone in front of a sign.'],['0.478271484375'],['desirable'],"['0:00:00.000', '0:00:11.945']"
+1ySlUbU_p_0,https://www.youtube.com/watch?v=1ySlUbU_p_0,"[('00:00:43.710', '00:00:48.681')]",['A man is fishing from a boat on a lake and casting his line.'],['0.456787109375'],['desirable'],"['0:00:00.000', '0:00:04.938']"
+09iAWc3WroQ,https://www.youtube.com/watch?v=09iAWc3WroQ,"[('00:01:20.380', '00:02:08.428')]",['A person is wrapping a piece of paper around a pillow.'],['0.4365234375'],['desirable'],"['0:00:00.000', '0:00:48.014']"
+2Wn6E_Vp-30,https://www.youtube.com/watch?v=2Wn6E_Vp-30,"[('00:01:41.251', '00:01:54.564')]","['The speaker is sitting in front of a microphone, wearing a brown suit and a blue tie.']",['0.4443359375'],['desirable'],"['0:00:00.000', '0:00:13.296']"
+351DxQghbh0,https://www.youtube.com/watch?v=351DxQghbh0,"[('00:01:22.874', '00:01:31.966')]",['There are different types of earphones on display in a shop.'],['0.44580078125'],['2_tiny_camera_movement'],"['0:00:00.000', '0:00:09.050']"
+1ySlUbU_p_0,https://www.youtube.com/watch?v=1ySlUbU_p_0,"[('00:00:25.125', '00:00:36.636')]",['The man is fishing from a boat and using a trolling motor with an i-pilot system.'],['0.448974609375'],['desirable'],"['0:00:00.000', '0:00:11.478']"
+28hKF2Rhebs,https://www.youtube.com/watch?v=28hKF2Rhebs,"[('00:02:05.600', '00:02:15.200')]","[""A person's hand is pointing a finger at a tree in a backyard of a house with grass and a fence.""]",['0.477783203125'],['desirable'],"['0:00:00.000', '0:00:09.566']"
+2Wn6E_Vp-30,https://www.youtube.com/watch?v=2Wn6E_Vp-30,"[('00:07:27.630', '00:07:51.204')]",['A man with a bald head wearing a blue shirt and tie is talking to someone.'],['0.44091796875'],['desirable'],"['0:00:00.000', '0:00:23.573']"
+3FYivm45mjs,https://www.youtube.com/watch?v=3FYivm45mjs,"[('00:00:09.909', '00:00:12.312')]",['A man and a woman talking to the media.'],['0.45654296875'],['desirable'],"['0:00:00.000', '0:00:00.767']"
+2sZRw6a2rT0,https://www.youtube.com/watch?v=2sZRw6a2rT0,"[('00:01:12.000', '00:01:15.400')]",['The user is cooking quinoa on a stovetop using a frying pan.'],['0.463134765625'],['desirable'],"['0:00:00.000', '0:00:03.360']"
+-ZsxlUiiOdI,https://www.youtube.com/watch?v=-ZsxlUiiOdI,"[('00:00:56.523', '00:01:23.083')]",['A person using an orange piece of tape to hold a marker.'],['0.4462890625'],['desirable'],"['0:00:00.000', '0:00:06.139']"
+351DxQghbh0,https://www.youtube.com/watch?v=351DxQghbh0,"[('00:00:36.536', '00:00:41.166')]",['A person sitting at a desk with a crown in front of it.'],['0.464111328125'],['desirable'],"['0:00:00.000', '0:00:04.587']"
+22U8P7ZfG8g,https://www.youtube.com/watch?v=22U8P7ZfG8g,"[('00:04:29.143', '00:04:31.604')]",['There is a man and woman standing in front of an open door in a dark room.'],['0.44677734375'],['desirable'],"['0:00:00.000', '0:00:02.460']"
+1tUgMixon2w,https://www.youtube.com/watch?v=1tUgMixon2w,"[('00:03:00.547', '00:03:11.124')]",['A person is preparing meatballs in a metal bowl on a stainless steel tray.'],['0.47314453125'],['desirable'],"['0:00:00.000', '0:00:05.005']"
+-qZM-qxiMQk,https://www.youtube.com/watch?v=-qZM-qxiMQk,"[('00:00:44.440', '00:00:50.480')]",['A man and a woman are standing in a kitchen and talking to each other.'],['0.470947265625'],['desirable'],"['0:00:00.000', '0:00:06.000']"
+28Fx5bVejho,https://www.youtube.com/watch?v=28Fx5bVejho,"[('00:05:47.708', '00:05:53.166')]",['A woman is organizing her craft supplies in a drawer.'],['0.450439453125'],['desirable'],"['0:00:00.000', '0:00:05.416']"
+-XPurrmMnJg,https://www.youtube.com/watch?v=-XPurrmMnJg,"[('00:01:29.856', '00:01:33.893')]",['A person is using a paintbrush to paint an object.'],['0.453125'],['desirable'],"['0:00:00.000', '0:00:04.004']"
+0HujyOjjpZY,https://www.youtube.com/watch?v=0HujyOjjpZY,"[('00:00:48.339', '00:00:51.426')]",['A deer is hiding in the woods among trees covered in snow.'],['0.45703125'],['desirable'],"['0:00:00.000', '0:00:03.044']"
+3cIsikJDcdA,https://www.youtube.com/watch?v=3cIsikJDcdA,"[('00:00:05.666', '00:00:08.333')]",['A group of people playing basketball in a gym.'],['0.430419921875'],['desirable'],"['0:00:00.000', '0:00:02.633']"
+0G3oIqrJync,https://www.youtube.com/watch?v=0G3oIqrJync,"[('00:00:00.433', '00:00:03.937')]",['There are two glasses of chocolate pudding with whipped cream on a table.'],['0.48291015625'],['1_still_foreground_image'],"['0:00:00.000', '0:00:03.503']"
+-qZM-qxiMQk,https://www.youtube.com/watch?v=-qZM-qxiMQk,"[('00:02:17.080', '00:02:22.440')]",['A woman with red hair blending food in a blender.'],['0.456787109375'],['desirable'],"['0:00:00.000', '0:00:03.360']"
+28Fx5bVejho,https://www.youtube.com/watch?v=28Fx5bVejho,"[('00:08:26.916', '00:08:30.458')]",['A white closet with a drawer full of clothes.'],['0.442626953125'],['desirable'],"['0:00:00.000', '0:00:02.666']"
+2m3AG4x2bL8,https://www.youtube.com/watch?v=2m3AG4x2bL8,"[('00:00:51.551', '00:00:57.724')]",['A woman sitting in a chair talking to a man on a television show.'],['0.478515625'],['desirable'],"['0:00:00.000', '0:00:06.139']"
+351DxQghbh0,https://www.youtube.com/watch?v=351DxQghbh0,"[('00:06:36.187', '00:06:40.024')]",['A wall of electronics and wires in plastic boxes.'],['0.47412109375'],['0_low_desirable_score'],"['0:00:00.000', '0:00:03.795']"
+09GG1VGyFsg,https://www.youtube.com/watch?v=09GG1VGyFsg,"[('00:03:16.040', '00:03:20.840')]","['A man and a woman are preparing a dish in a kitchen, they are adding seasoning to a broth and making sure the heat is low.']",['0.43603515625'],['desirable'],"['0:00:00.000', '0:00:04.760']"
+2qrAcoaQzDg,https://www.youtube.com/watch?v=2qrAcoaQzDg,"[('00:00:56.181', '00:01:13.198')]",['A man is mowing his lawn in the driveway of his home.'],['0.4326171875'],['desirable'],"['0:00:00.000', '0:00:01.376']"
+2qrAcoaQzDg,https://www.youtube.com/watch?v=2qrAcoaQzDg,"[('00:00:37.537', '00:00:39.873')]",['A man pushing a red lawn mower in front of a house.'],['0.45068359375'],['desirable'],"['0:00:00.000', '0:00:02.293']"
+0Ai3dTTGvkc,https://www.youtube.com/watch?v=0Ai3dTTGvkc,"[('00:07:48.601', '00:08:02.014')]",['There is a person standing on a staircase in a narrow canyon with walls made of stone.'],['0.45361328125'],['desirable'],"['0:00:00.000', '0:00:13.380']"
+3VcdJlrUrSw,https://www.youtube.com/watch?v=3VcdJlrUrSw,"[('00:00:04.120', '00:00:08.120')]",['A man is walking down an escalator in an airport at night.'],['0.447998046875'],['desirable'],"['0:00:00.000', '0:00:03.960']"
+-ZsxlUiiOdI,https://www.youtube.com/watch?v=-ZsxlUiiOdI,"[('00:00:00.433', '00:00:04.137')]",['A person holding a small toy army on the floor.'],['0.4580078125'],['desirable'],"['0:00:00.000', '0:00:03.703']"
+2m3AG4x2bL8,https://www.youtube.com/watch?v=2m3AG4x2bL8,"[('00:02:27.514', '00:02:32.619')]",['A person sitting in a chair talking to a woman on a show with a full moon in the background.'],['0.49609375'],['desirable'],"['0:00:00.000', '0:00:05.071']"
+-ZsxlUiiOdI,https://www.youtube.com/watch?v=-ZsxlUiiOdI,"[('00:00:05.205', '00:00:10.310')]",['There are toy soldiers and tanks on a rug.'],['0.46630859375'],['desirable'],"['0:00:00.000', '0:00:03.870']"
+2k_jxJAdGTE,https://www.youtube.com/watch?v=2k_jxJAdGTE,"[('00:01:07.167', '00:01:11.204')]",['A man is standing next to a motorcycle and talking to someone.'],['0.4638671875'],['desirable'],"['0:00:00.000', '0:00:04.004']"
+38OE63uRI5k,https://www.youtube.com/watch?v=38OE63uRI5k,"[('00:00:13.833', '00:00:17.833')]","['A car is driving on a dirt road in the mountains, passing by trees and hills.']",['0.453125'],['desirable'],"['0:00:00.000', '0:00:01.250']"
+2m3AG4x2bL8,https://www.youtube.com/watch?v=2m3AG4x2bL8,"[('00:00:01.401', '00:00:12.846')]",['A man wearing a suit and tie is talking.'],['0.4443359375'],['desirable'],"['0:00:00.000', '0:00:11.411']"
+-XPurrmMnJg,https://www.youtube.com/watch?v=-XPurrmMnJg,"[('00:00:33.433', '00:00:37.971')]",['A man standing next to a large pot with steam coming out of it.'],['0.45947265625'],['desirable'],"['0:00:00.000', '0:00:04.537']"
+09GG1VGyFsg,https://www.youtube.com/watch?v=09GG1VGyFsg,"[('00:04:28.240', '00:04:40.800')]","['A man and a woman are standing in a kitchen, smiling at each other as they prepare food together.']",['0.453857421875'],['desirable'],"['0:00:00.000', '0:00:12.520']"
+228zX1vL9bY,https://www.youtube.com/watch?v=228zX1vL9bY,"[('00:00:13.179', '00:00:21.062')]",['Three people are sitting at a table and discussing something.'],['0.47412109375'],['desirable'],"['0:00:00.000', '0:00:07.841']"
+1tUgMixon2w,https://www.youtube.com/watch?v=1tUgMixon2w,"[('00:03:20.200', '00:03:27.874')]",['A tray of meatballs on top of a wooden table.'],['0.45947265625'],['desirable'],"['0:00:00.000', '0:00:01.901']"
+-vmdbpEnPik,https://www.youtube.com/watch?v=-vmdbpEnPik,"[('00:01:07.240', '00:01:09.800')]",['There is a soccer game on the stadium and the players are clapping to the audience.'],['0.453125'],['desirable'],"['0:00:00.000', '0:00:02.520']"
+2MvkB0qNPpk,https://www.youtube.com/watch?v=2MvkB0qNPpk,"[('00:08:16.696', '00:08:28.174')]",['A man kneeling down next to a large lizard.'],['0.472900390625'],['desirable'],"['0:00:00.000', '0:00:11.444']"
+-MiZb4F8mis,https://www.youtube.com/watch?v=-MiZb4F8mis,"[('00:03:14.827', '00:03:22.835')]",['There is a greenhouse in the garden with grass on the ground.'],['0.443115234375'],['desirable'],"['0:00:00.000', '0:00:07.974']"
+2MvkB0qNPpk,https://www.youtube.com/watch?v=2MvkB0qNPpk,"[('00:00:19.753', '00:01:07.801')]",['A man in a blue t-shirt is standing in front of shelves filled with plastic containers and he is talking to the camera.'],['0.50146484375'],['desirable'],"['0:00:00.000', '0:00:48.014']"
+06akl7o7O2s,https://www.youtube.com/watch?v=06akl7o7O2s,"[('00:00:06.633', '00:00:15.700')]","['The man is sitting at a desk with a whiteboard behind him, he is wearing glasses and has a striped shirt on.']",['0.462646484375'],['desirable'],"['0:00:00.000', '0:00:09.033']"
+2sZRw6a2rT0,https://www.youtube.com/watch?v=2sZRw6a2rT0,"[('00:00:46.360', '00:00:49.080')]",['A woman is cooking food in a white pot on a gas stove.'],['0.447021484375'],['desirable'],"['0:00:00.000', '0:00:02.680']"
+-EgW0xV1fsE,https://www.youtube.com/watch?v=-EgW0xV1fsE,"[('00:08:33.100', '00:08:37.100')]",['Two people holding two iphones next to each other.'],['0.478759765625'],['desirable'],"['0:00:00.000', '0:00:03.966']"
+25BOri2peMQ,https://www.youtube.com/watch?v=25BOri2peMQ,"[('00:00:05.939', '00:00:53.720')]","[""It's a winter wonderland with snow on the ground, and there are cars parked on the side of the road.""]",['0.46728515625'],['desirable'],"['0:00:00.000', '0:00:47.747']"
+-XPurrmMnJg,https://www.youtube.com/watch?v=-XPurrmMnJg,"[('00:00:47.213', '00:00:52.852')]",['A person is making paper pulp in a factory.'],['0.43408203125'],['desirable'],"['0:00:00.000', '0:00:01.401']"
+3Y8SvZUZ30U,https://www.youtube.com/watch?v=3Y8SvZUZ30U,"[('00:05:18.251', '00:05:49.248')]",['A woman of arab descent is applying makeup using a beauty blender sponge.'],['0.49169921875'],['desirable'],"['0:00:00.000', '0:00:30.964']"
+25BOri2peMQ,https://www.youtube.com/watch?v=25BOri2peMQ,"[('00:02:57.544', '00:03:09.522')]",['There is a wooden building with glass windows and doors.'],['0.462890625'],['desirable'],"['0:00:00.000', '0:00:11.945']"
+218_U-77XmM,https://www.youtube.com/watch?v=218_U-77XmM,"[('00:02:55.742', '00:02:59.779')]",['Person is using a white substance to create a sculpture on a wooden surface.'],['0.487060546875'],['desirable'],"['0:00:00.000', '0:00:01.301']"
+-fI-ogq9OC8,https://www.youtube.com/watch?v=-fI-ogq9OC8,"[('00:00:37.804', '00:00:41.207')]","['A man is fishing from the shore of a lake, using a fishing rod. he is wearing a black jacket and is standing on the grassy bank of the lake.']",['0.468994140625'],['desirable'],"['0:00:00.000', '0:00:03.370']"
+228zX1vL9bY,https://www.youtube.com/watch?v=228zX1vL9bY,"[('00:00:31.614', '00:00:35.285')]","['A group of people are sitting around a black table in a dark room, and they appear to be discussing something.']",['0.46923828125'],['desirable'],"['0:00:00.000', '0:00:03.670']"
+2qrAcoaQzDg,https://www.youtube.com/watch?v=2qrAcoaQzDg,"[('00:02:13.842', '00:02:17.178')]",['A man is standing in a garage and talking to the camera.'],['0.485595703125'],['desirable'],"['0:00:00.000', '0:00:03.294']"
+28hKF2Rhebs,https://www.youtube.com/watch?v=28hKF2Rhebs,"[('00:08:59.733', '00:09:47.733')]",['A person touching a wooden fence with their finger.'],['0.475341796875'],['desirable'],"['0:00:00.000', '0:00:44.466']"
+1tUgMixon2w,https://www.youtube.com/watch?v=1tUgMixon2w,"[('00:00:19.686', '00:00:42.142')]",['A chef is standing in front of a kitchen and talking to the camera.'],['0.471435546875'],['desirable'],"['0:00:00.000', '0:00:22.422']"
+-TfD4eKDfbI,https://www.youtube.com/watch?v=-TfD4eKDfbI,"[('00:02:04.357', '00:02:10.196')]",['A person is cleaning a kitchen drawer with a damp cloth.'],['0.439208984375'],['desirable'],"['0:00:00.000', '0:00:05.805']"
+39Mlhp_z6JA,https://www.youtube.com/watch?v=39Mlhp_z6JA,"[('00:00:31.164', '00:00:34.134')]",['A woman is sitting in front of a news station.'],['0.4345703125'],['desirable'],"['0:00:00.000', '0:00:02.936']"
+2MvkB0qNPpk,https://www.youtube.com/watch?v=2MvkB0qNPpk,"[('00:03:58.905', '00:04:00.974')]","['A group of men are standing in front of each other, with one man holding his arm out.']",['0.46484375'],['desirable'],"['0:00:00.000', '0:00:02.035']"
+25BOri2peMQ,https://www.youtube.com/watch?v=25BOri2peMQ,"[('00:03:12.192', '00:03:22.101')]",['A large window with a reflection of a bridge and mountains in the glass.'],['0.487548828125'],['desirable'],"['0:00:00.000', '0:00:09.876']"
+3K8zBpQr4Vc,https://www.youtube.com/watch?v=3K8zBpQr4Vc,"[('00:00:11.920', '00:00:14.760')]",['A middle-aged asian woman wearing glasses is smiling and talking to the camera.'],['0.473876953125'],['desirable'],"['0:00:00.000', '0:00:02.800']"
+081ILYBU1pw,https://www.youtube.com/watch?v=081ILYBU1pw,"[('00:00:42.866', '00:00:47.866')]",['The person is cutting a piece of fabric on a rotating cutting mat.'],['0.456787109375'],['desirable'],"['0:00:00.000', '0:00:04.966']"
+-q7jbZkOa0o,https://www.youtube.com/watch?v=-q7jbZkOa0o,"[('00:02:19.347', '00:02:23.393')]",['A black and white dog is laying on a bed with a blanket on the floor and a ball under his paw.'],['0.4560546875'],['desirable'],"['0:00:00.000', '0:00:04.004']"
+22U8P7ZfG8g,https://www.youtube.com/watch?v=22U8P7ZfG8g,"[('00:06:06.616', '00:06:11.537')]",['There is a person in a blue dress walking in a forest and there is a fallen tree in the forest.'],['0.47119140625'],['desirable'],"['0:00:00.000', '0:00:04.879']"
+-vmdbpEnPik,https://www.youtube.com/watch?v=-vmdbpEnPik,"[('00:01:30.600', '00:01:38.960')]","['A soccer game is being played on the field, and the players are wearing different colors such as red and white jerseys.']",['0.44482421875'],['desirable'],"['0:00:00.000', '0:00:03.480']"
+28Fx5bVejho,https://www.youtube.com/watch?v=28Fx5bVejho,"[('00:04:43.833', '00:05:03.833')]",['A woman is putting nail polish bottles into a drawer with dividers.'],['0.450439453125'],['desirable'],"['0:00:00.000', '0:00:01.166']"
+-BA_ifeRHxs,https://www.youtube.com/watch?v=-BA_ifeRHxs,"[('00:01:01.933', '00:01:17.666')]",['There is a dish of lasagna in a rectangular baking dish with tomato sauce and cheese.'],['0.45068359375'],['0_low_desirable_score'],"['0:00:00.000', '0:00:15.700']"
+081ILYBU1pw,https://www.youtube.com/watch?v=081ILYBU1pw,"[('00:08:27.200', '00:08:39.200')]",['A person is folding a piece of white cloth on a table.'],['0.47119140625'],['desirable'],"['0:00:00.000', '0:00:11.966']"
+1ySlUbU_p_0,https://www.youtube.com/watch?v=1ySlUbU_p_0,"[('00:00:40.240', '00:00:42.809')]",['There is a fish finder on a boat and it is displaying the depth of the water in real-time.'],['0.448974609375'],['desirable'],"['0:00:00.000', '0:00:02.535']"
+09GG1VGyFsg,https://www.youtube.com/watch?v=09GG1VGyFsg,"[('00:05:39.760', '00:05:42.040')]",['A white bowl filled with vegetables on a wooden cutting board.'],['0.454833984375'],['desirable'],"['0:00:00.000', '0:00:02.240']"
+0C4oY_6A4co,https://www.youtube.com/watch?v=0C4oY_6A4co,"[('00:00:23.040', '00:00:32.600')]",['There are people walking on a street and some of them are carrying shopping bags.'],['0.450927734375'],['desirable'],"['0:00:00.000', '0:00:05.320']"
+218_U-77XmM,https://www.youtube.com/watch?v=218_U-77XmM,"[('00:03:12.659', '00:03:25.271')]","['The person is holding a white object that appears to be made of clay or plaster, and they are using their hands to shape it into a sphere.']",['0.46533203125'],['desirable'],"['0:00:00.000', '0:00:12.579']"
+3S-7-KeCpNE,https://www.youtube.com/watch?v=3S-7-KeCpNE,"[('00:00:47.366', '00:00:52.066')]",['A person is cooking food in a frying pan on a gas stove.'],['0.44580078125'],['desirable'],"['0:00:00.000', '0:00:04.666']"
+36k4x2ExEJQ,https://www.youtube.com/watch?v=36k4x2ExEJQ,"[('00:00:02.068', '00:00:18.651')]",['A woman talking to a man in front of a white van.'],['0.46142578125'],['desirable'],"['0:00:00.000', '0:00:16.549']"
+-tAvY8gW8rU,https://www.youtube.com/watch?v=-tAvY8gW8rU,"[('00:03:05.000', '00:03:11.680')]",['A woman is using her hands to decorate a cake with frosting.'],['0.43310546875'],['desirable'],"['0:00:00.000', '0:00:06.640']"
+22U8P7ZfG8g,https://www.youtube.com/watch?v=22U8P7ZfG8g,"[('00:04:32.272', '00:04:35.566')]",['A man and a woman are having a conversation.'],['0.461669921875'],['desirable'],"['0:00:00.000', '0:00:03.253']"
+2Wn6E_Vp-30,https://www.youtube.com/watch?v=2Wn6E_Vp-30,"[('00:04:59.882', '00:05:10.526')]",['A woman with glasses is talking to a man at an event.'],['0.448974609375'],['desirable'],"['0:00:00.000', '0:00:10.643']"
+-q7jbZkOa0o,https://www.youtube.com/watch?v=-q7jbZkOa0o,"[('00:02:39.200', '00:02:43.246')]",['A black and white dog is chewing on a toy underneath a wooden table.'],['0.469970703125'],['desirable'],"['0:00:00.000', '0:00:04.004']"
+-MiZb4F8mis,https://www.youtube.com/watch?v=-MiZb4F8mis,"[('00:02:46.866', '00:02:50.904')]",['A person is pointing to a box under a table.'],['0.4609375'],['desirable'],"['0:00:00.000', '0:00:04.037']"
+BeNwloO546Y,https://www.youtube.com/watch?v=BeNwloO546Y,"[('00:01:05.965', '00:01:08.535')]",['A couple of people standing on a ladder on top of an adobe building.'],['0.44384765625'],['desirable'],"['0:00:00.000', '0:00:02.569']"
+2k_jxJAdGTE,https://www.youtube.com/watch?v=2k_jxJAdGTE,"[('00:00:08.708', '00:00:50.383')]",['A man is standing next to a black motorcycle in a parking lot.'],['0.459228515625'],['desirable'],"['0:00:00.000', '0:00:41.641']"
+-qZM-qxiMQk,https://www.youtube.com/watch?v=-qZM-qxiMQk,"[('00:02:01.680', '00:02:14.840')]","['A young woman is standing in front of a blender in a kitchen, preparing a smoothie.']",['0.44677734375'],['desirable'],"['0:00:00.000', '0:00:06.160']"
+-TfD4eKDfbI,https://www.youtube.com/watch?v=-TfD4eKDfbI,"[('00:00:00.600', '00:00:05.672')]","['A woman is standing in front of a kitchen counter, holding a spray bottle filled with cleaning solution and talking to the camera.']",['0.456787109375'],['desirable'],"['0:00:00.000', '0:00:05.038']"
+-vmdbpEnPik,https://www.youtube.com/watch?v=-vmdbpEnPik,"[('00:00:25.240', '00:00:35.040')]",['A soccer game is being played on a stadium and the players are running on the field.'],['0.4755859375'],['desirable'],"['0:00:00.000', '0:00:07.880']"
+2sZRw6a2rT0,https://www.youtube.com/watch?v=2sZRw6a2rT0,"[('00:00:34.920', '00:00:37.520')]",['A woman is cooking food in a frying pan on a stove.'],['0.438232421875'],['desirable'],"['0:00:00.000', '0:00:02.560']"
+0-aW3PKnj8E,https://www.youtube.com/watch?v=0-aW3PKnj8E,"[('00:01:29.923', '00:01:33.993')]",['A man in a suit and tie is talking into a microphone.'],['0.466796875'],['desirable'],"['0:00:00.000', '0:00:04.037']"
+28hKF2Rhebs,https://www.youtube.com/watch?v=28hKF2Rhebs,"[('00:10:08.666', '00:10:24.766')]",['There is a fence with a gate in the foreground and a house in the background.'],['0.43994140625'],['desirable'],"['0:00:00.000', '0:00:13.666']"
+3FHyqjEMsN4,https://www.youtube.com/watch?v=3FHyqjEMsN4,"[('00:01:54.760', '00:02:01.600')]",['There is a game of rugby being played in a stadium with many people watching.'],['0.45556640625'],['desirable'],"['0:00:00.000', '0:00:06.800']"
+3bLno9ZGFUU,https://www.youtube.com/watch?v=3bLno9ZGFUU,"[('00:00:50.500', '00:01:03.266')]",['The person is walking into a modern kitchen and pointing out various features of the room.'],['0.440673828125'],['desirable'],"['0:00:00.000', '0:00:12.733']"
+-6r04gCLMWw,https://www.youtube.com/watch?v=-6r04gCLMWw,"[('00:01:31.600', '00:01:41.560')]","['The person is holding a flip wallet case for the samsung galaxy s5 mini, and they are reviewing it in a vlog.']",['0.440185546875'],['desirable'],"['0:00:00.000', '0:00:09.920']"
+-fI-ogq9OC8,https://www.youtube.com/watch?v=-fI-ogq9OC8,"[('00:01:02.829', '00:01:05.765')]","['People are walking in the rain on a city street, and there is water flowing from a drain.']",['0.432861328125'],['desirable'],"['0:00:00.000', '0:00:02.902']"
+0-aFxUUa04o,https://www.youtube.com/watch?v=0-aFxUUa04o,"[('00:00:00.733', '00:00:06.700')]",['A news tv screen with a woman on it.'],['0.45166015625'],['desirable'],"['0:00:00.000', '0:00:05.933']"
+
+
+### real10k
+real10k/train_video/seq_frame/0000cc6d8b108390/video.mp4
+real10k/train_video/seq_frame/00028da87cc5a4c4/video.mp4
+real10k/train_video/seq_frame/0002b126b0a8a685/video.mp4
+real10k/train_video/seq_frame/000465ebe46a98d2/video.mp4
+real10k/train_video/seq_frame/0004866ca872087c/video.mp4
+real10k/train_video/seq_frame/0005c41463fe5e01/video.mp4
+real10k/train_video/seq_frame/00066b3649cc07e5/video.mp4
+real10k/train_video/seq_frame/0006e8e3eaa8cd39/video.mp4
+real10k/train_video/seq_frame/0007fe14c86c4a78/video.mp4
+real10k/train_video/seq_frame/0008631059fd7ba6/video.mp4
+real10k/train_video/seq_frame/00087de44e487f80/video.mp4
+real10k/train_video/seq_frame/000d2139ad05dc85/video.mp4
+real10k/train_video/seq_frame/000d73d2405332df/video.mp4
+real10k/train_video/seq_frame/000e285b03f3fddf/video.mp4
+real10k/train_video/seq_frame/00104677f98ca3c9/video.mp4
+real10k/train_video/seq_frame/0010533d5f176d7b/video.mp4
+real10k/train_video/seq_frame/0013a39f3a02b5c3/video.mp4
+real10k/train_video/seq_frame/0014287f39e4686f/video.mp4
+real10k/train_video/seq_frame/001511b4a282e504/video.mp4
+real10k/train_video/seq_frame/001573921974bc70/video.mp4
+real10k/train_video/seq_frame/00168ec12dda389c/video.mp4
+real10k/train_video/seq_frame/0016d89da2d78196/video.mp4
+real10k/train_video/seq_frame/00182dd4c74ab052/video.mp4
+real10k/train_video/seq_frame/001c43a59a9e0b16/video.mp4
+real10k/train_video/seq_frame/001cf02b7625a4cc/video.mp4
+real10k/train_video/seq_frame/001d2c4c4b356c43/video.mp4
+real10k/train_video/seq_frame/001d7dab76c43f91/video.mp4
+real10k/train_video/seq_frame/0020e1f0ec424295/video.mp4
+real10k/train_video/seq_frame/00210fcc783d3fcf/video.mp4
+real10k/train_video/seq_frame/0021e3be0043c3b3/video.mp4
+real10k/train_video/seq_frame/00236fcca80c95a0/video.mp4
+real10k/train_video/seq_frame/0023bb285c3d0e11/video.mp4
+real10k/train_video/seq_frame/0024e835f897f4f2/video.mp4
+real10k/train_video/seq_frame/002554f1f92ac083/video.mp4
+real10k/train_video/seq_frame/00259da07b0dba33/video.mp4
+real10k/train_video/seq_frame/0027e46f749ac7ec/video.mp4
+real10k/train_video/seq_frame/0029e9169a167c4f/video.mp4
+real10k/train_video/seq_frame/002a58afaeaf24c9/video.mp4
+real10k/train_video/seq_frame/002a9cc50fe5b6c4/video.mp4
+real10k/train_video/seq_frame/002bdb7ee61c492b/video.mp4
+real10k/train_video/seq_frame/0032c663bb6d838e/video.mp4
+real10k/train_video/seq_frame/00336b9590b313a2/video.mp4
+real10k/train_video/seq_frame/00336da5ecce4cb3/video.mp4
+real10k/train_video/seq_frame/0033718a869b4d17/video.mp4
+real10k/train_video/seq_frame/0036e213573f76a5/video.mp4
+real10k/train_video/seq_frame/003908a8fa818d50/video.mp4
+real10k/train_video/seq_frame/003977c5456b561e/video.mp4
+real10k/train_video/seq_frame/00399697cc95c81e/video.mp4
+real10k/train_video/seq_frame/003a243e0d37b315/video.mp4
+real10k/train_video/seq_frame/003c67ed6be72aeb/video.mp4
+real10k/train_video/seq_frame/003d2563b3c1023e/video.mp4
+real10k/train_video/seq_frame/00407b3f1bad1493/video.mp4
+real10k/train_video/seq_frame/00409fffa8d6f559/video.mp4
+real10k/train_video/seq_frame/0040ff89cd583609/video.mp4
+real10k/train_video/seq_frame/00415ec2f505e8c3/video.mp4
+real10k/train_video/seq_frame/00418328841b51e6/video.mp4
+real10k/train_video/seq_frame/00419dfa0b973e11/video.mp4
+real10k/train_video/seq_frame/00438c154e81cbd1/video.mp4
+real10k/train_video/seq_frame/0045483c1473d6a7/video.mp4
+real10k/train_video/seq_frame/00454b8bf9209de8/video.mp4
+real10k/train_video/seq_frame/004673337d29eb87/video.mp4
+real10k/train_video/seq_frame/00469966d50c2b97/video.mp4
+real10k/train_video/seq_frame/0048fce686bb184d/video.mp4
+real10k/train_video/seq_frame/0049c83bad21bbdf/video.mp4
+real10k/train_video/seq_frame/004a40da569ee807/video.mp4
+real10k/train_video/seq_frame/004afb07c2352370/video.mp4
+real10k/train_video/seq_frame/004bd1e952dc1df8/video.mp4
+real10k/train_video/seq_frame/004c65679ce85f03/video.mp4
+real10k/train_video/seq_frame/004d2899ce6cfd7e/video.mp4
+real10k/train_video/seq_frame/004d9274e286b4df/video.mp4
+real10k/train_video/seq_frame/004daabedd090309/video.mp4
+real10k/train_video/seq_frame/004ed278c2b168f1/video.mp4
+real10k/train_video/seq_frame/004f2522f3d42f94/video.mp4
+real10k/train_video/seq_frame/004f7056eddd68b8/video.mp4
+real10k/train_video/seq_frame/00513a2e0e404c0e/video.mp4
+real10k/train_video/seq_frame/0051ae563152ac76/video.mp4
+real10k/train_video/seq_frame/0051d3a3ada580af/video.mp4
+real10k/train_video/seq_frame/0051dfdcdc3050dc/video.mp4
+real10k/train_video/seq_frame/00552c0c18b00e98/video.mp4
+real10k/train_video/seq_frame/00559a2a16636897/video.mp4
+real10k/train_video/seq_frame/00560d9f99a6f200/video.mp4
+real10k/train_video/seq_frame/0056df7a0d0739e1/video.mp4
+real10k/train_video/seq_frame/005758861029cf83/video.mp4
+real10k/train_video/seq_frame/0059080010e0a279/video.mp4
+real10k/train_video/seq_frame/005935bbd1c0cf38/video.mp4
+real10k/train_video/seq_frame/0059ff3bc0a9b4c6/video.mp4
+real10k/train_video/seq_frame/005a62ed640d829f/video.mp4
+real10k/train_video/seq_frame/005b68f45317a0b5/video.mp4
+real10k/train_video/seq_frame/005c440a72e93b03/video.mp4
+real10k/train_video/seq_frame/005ee91e6c694114/video.mp4
+real10k/train_video/seq_frame/005ffc1aae84bdbf/video.mp4
+real10k/train_video/seq_frame/00611063bacaa167/video.mp4
+
+### bridgedata_v2
+bridgedata_v2/2022-12-08_pnp_rigid_objects/2022-12-08_15-22-17/raw/traj_group0/traj36/images0/video.mp4
+bridgedata_v2/2022-12-08_pnp_rigid_objects/2022-12-08_15-33-58/raw/traj_group0/traj32/images0/video.mp4
+bridgedata_v2/2022-12-08_pnp_rigid_objects/2022-12-08_15-56-53/raw/traj_group0/traj125/images0/video.mp4
+bridgedata_v2/2022-12-08_pnp_rigid_objects/2022-12-08_15-56-53/raw/traj_group0/traj72/images0/video.mp4
+bridgedata_v2/2022-12-08_pnp_rigid_objects/2022-12-08_15-56-53/raw/traj_group0/traj82/images0/video.mp4
+bridgedata_v2/2022-12-08_pnp_rigid_objects/2022-12-08_17-35-17/raw/traj_group0/traj19/images0/video.mp4
+bridgedata_v2/2022-12-08_pnp_soft_toys/2022-12-08_18-46-36/raw/traj_group0/traj32/images0/video.mp4
+bridgedata_v2/2022-12-08_pnp_soft_toys/2022-12-08_19-13-18/raw/traj_group0/traj82/images0/video.mp4
+bridgedata_v2/2022-12-08_pnp_soft_toys/2022-12-08_19-13-18/raw/traj_group0/traj89/images0/video.mp4
+bridgedata_v2/2022-12-08_pnp_soft_toys/2022-12-08_19-41-31/raw/traj_group0/traj21/images0/video.mp4
+bridgedata_v2/2022-12-08_pnp_soft_toys/2022-12-08_19-41-31/raw/traj_group0/traj95/images0/video.mp4
+bridgedata_v2/2022-12-08_pnp_soft_toys/2022-12-08_20-07-41/raw/traj_group0/traj13/images0/video.mp4
+bridgedata_v2/2022-12-09_pnp_soft_toys/2022-12-09_15-16-08/raw/traj_group0/traj89/images0/video.mp4
+bridgedata_v2/2022-12-09_pnp_soft_toys/2022-12-09_15-54-53/raw/traj_group0/traj59/images0/video.mp4
+bridgedata_v2/2022-12-09_pnp_soft_toys/2022-12-09_15-54-53/raw/traj_group0/traj81/images0/video.mp4
+bridgedata_v2/2022-12-09_pnp_soft_toys/2022-12-09_16-31-56/raw/traj_group0/traj199/images0/video.mp4
+bridgedata_v2/2022-12-09_pnp_soft_toys/2022-12-09_16-31-56/raw/traj_group0/traj65/images0/video.mp4
+bridgedata_v2/2022-12-11_pnp_soft_toys/2022-12-11_14-29-56/raw/traj_group0/traj22/images0/video.mp4
+bridgedata_v2/2022-12-11_pnp_soft_toys/2022-12-11_15-06-10/raw/traj_group0/traj143/images0/video.mp4
+bridgedata_v2/2022-12-11_pnp_soft_toys/2022-12-11_15-06-10/raw/traj_group0/traj87/images0/video.mp4
+bridgedata_v2/2022-12-11_pnp_soft_toys/2022-12-11_15-54-32/raw/traj_group0/traj5/images0/video.mp4
+bridgedata_v2/2022-12-11_pnp_soft_toys/2022-12-11_16-23-59/raw/traj_group0/traj124/images0/video.mp4
+bridgedata_v2/2022-12-11_pnp_soft_toys/2022-12-11_16-23-59/raw/traj_group0/traj35/images0/video.mp4
+bridgedata_v2/2022-12-14_pnp_utensils/2022-12-13_14-06-40/raw/traj_group0/traj35/images0/video.mp4
+bridgedata_v2/2022-12-14_pnp_utensils/2022-12-13_14-34-58/raw/traj_group0/traj12/images0/video.mp4
+bridgedata_v2/2022-12-14_pnp_utensils/2022-12-13_14-46-48/raw/traj_group0/traj55/images0/video.mp4
+bridgedata_v2/2022-12-14_pnp_utensils/2022-12-13_14-46-48/raw/traj_group0/traj6/images0/video.mp4
+bridgedata_v2/2022-12-14_pnp_utensils/2022-12-13_15-05-42/raw/traj_group0/traj21/images0/video.mp4
+bridgedata_v2/2022-12-15_pnp_many_objects_in_env/2022-12-15_14-35-10/raw/traj_group0/traj27/images0/video.mp4
+bridgedata_v2/2022-12-15_pnp_many_objects_in_env/2022-12-15_14-48-54/raw/traj_group0/traj100/images0/video.mp4
+bridgedata_v2/2022-12-15_pnp_many_objects_in_env/2022-12-15_14-48-54/raw/traj_group0/traj39/images0/video.mp4
+bridgedata_v2/2022-12-15_pnp_many_objects_in_env/2022-12-15_15-35-45/raw/traj_group0/traj31/images0/video.mp4
+bridgedata_v2/2022-12-15_pnp_many_objects_in_env/2022-12-15_15-35-45/raw/traj_group0/traj66/images0/video.mp4
+bridgedata_v2/2023-01-04_pnp_objects/2023-01-04_12-52-41/raw/traj_group0/traj37/images0/video.mp4
+bridgedata_v2/2023-01-04_pnp_objects/2023-01-04_17-51-10/raw/traj_group0/traj160/images0/video.mp4
+bridgedata_v2/2023-01-04_pnp_objects/2023-01-04_17-51-10/raw/traj_group0/traj266/images0/video.mp4
+bridgedata_v2/2023-01-04_pnp_objects/2023-01-04_17-51-10/raw/traj_group0/traj296/images0/video.mp4
+bridgedata_v2/2023-01-04_pnp_objects/2023-01-04_17-51-10/raw/traj_group0/traj77/images0/video.mp4
+bridgedata_v2/2023-01-05_pnp_objects/2023-01-05_14-19-06/raw/traj_group0/traj17/images0/video.mp4
+bridgedata_v2/2023-01-05_pnp_objects/2023-01-05_14-19-06/raw/traj_group0/traj61/images0/video.mp4
+bridgedata_v2/2023-01-05_pnp_objects/2023-01-05_14-19-06/raw/traj_group0/traj75/images0/video.mp4
+bridgedata_v2/2023-01-05_pnp_objects/2023-01-05_14-19-06/raw/traj_group0/traj79/images0/video.mp4
+bridgedata_v2/2023-01-05_pnp_objects/2023-01-05_14-19-06/raw/traj_group0/traj9/images0/video.mp4
+bridgedata_v2/2023-01-05_pnp_objects/2023-01-05_14-19-06/raw/traj_group0/traj97/images0/video.mp4
+bridgedata_v2/2023-01-09_pnp_rigid_objects/2023-01-09_15-18-10/raw/traj_group0/traj20/images0/video.mp4
+bridgedata_v2/2023-01-09_pnp_rigid_objects/2023-01-09_16-45-46/raw/traj_group0/traj29/images0/video.mp4
+bridgedata_v2/2023-01-09_pnp_rigid_objects/2023-01-10_13-53-33/raw/traj_group0/traj209/images0/video.mp4
+bridgedata_v2/2023-01-09_pnp_rigid_objects/2023-01-10_16-11-27/raw/traj_group0/traj37/images0/video.mp4
+bridgedata_v2/2023-01-09_pnp_rigid_objects/2023-01-10_16-27-55/raw/traj_group0/traj19/images0/video.mp4
+bridgedata_v2/2023-01-09_pnp_rigid_objects/2023-01-10_17-22-26/raw/traj_group0/traj12/images0/video.mp4
+bridgedata_v2/2023-01-11_pnp_objects/2023-01-11_14-01-01/raw/traj_group0/traj10/images0/video.mp4
+bridgedata_v2/2023-01-11_pnp_objects/2023-01-11_14-46-44/raw/traj_group0/traj45/images0/video.mp4
+bridgedata_v2/2023-01-11_pnp_objects/2023-01-11_15-27-42/raw/traj_group0/traj0/images0/video.mp4
+bridgedata_v2/2023-01-11_pnp_objects/2023-01-11_15-48-05/raw/traj_group0/traj49/images0/video.mp4
+bridgedata_v2/2023-01-11_pnp_objects/2023-01-22_14-50-42/raw/traj_group0/traj3/images0/video.mp4
+bridgedata_v2/2023-01-11_pnp_objects/2023-01-22_15-06-10/raw/traj_group0/traj44/images0/video.mp4
+bridgedata_v2/2023-05-25_bin_pnp/2023-05-25_16-26-29/raw/traj_group0/traj30/images0/video.mp4
+bridgedata_v2/2023-05-25_bin_pnp/2023-05-25_17-06-00/raw/traj_group0/traj45/images0/video.mp4
+bridgedata_v2/2023-05-25_bin_pnp/2023-05-26_10-40-38/raw/traj_group0/traj2/images0/video.mp4
+bridgedata_v2/2023-05-25_bin_pnp/2023-05-26_10-44-09/raw/traj_group0/traj28/images0/video.mp4
+bridgedata_v2/2023-05-25_bin_pnp/2023-05-26_11-58-22/raw/traj_group0/traj125/images0/video.mp4
+bridgedata_v2/2023-05-25_bin_pnp/2023-05-26_13-50-14/raw/traj_group0/traj86/images0/video.mp4
+bridgedata_v2/pnp_utensils_11-18/2022-11-18_16-32-03/raw/traj_group0/traj3/images0/video.mp4
+bridgedata_v2/pnp_utensils_11-18/2022-11-18_19-08-02/raw/traj_group0/traj21/images0/video.mp4
+bridgedata_v2/pnp_utensils_11-18/2022-11-18_19-08-02/raw/traj_group0/traj87/images0/video.mp4
+bridgedata_v2/pnp_utensils_11-18/2022-11-18_19-50-14/raw/traj_group0/traj10/images0/video.mp4
+bridgedata_v2/pnp_utensils_11-18/2022-11-18_20-05-03/raw/traj_group0/traj42/images0/video.mp4
+bridgedata_v2/pnp_utensils_11-28/2022-11-22_17-15-07/raw/traj_group0/traj1/images0/video.mp4
+bridgedata_v2/pnp_utensils_11-28/2022-11-28_17-14-14/raw/traj_group0/traj105/images0/video.mp4
+bridgedata_v2/pnp_utensils_11-28/2022-11-28_17-14-14/raw/traj_group0/traj108/images0/video.mp4
+bridgedata_v2/pnp_utensils_11-28/2022-11-28_17-14-14/raw/traj_group0/traj173/images0/video.mp4
+bridgedata_v2/pnp_utensils_11-28/2022-11-28_17-14-14/raw/traj_group0/traj280/images0/video.mp4
+bridgedata_v2/pnp_utensils_11-29/2022-11-29_14-24-50/raw/traj_group0/traj21/images0/video.mp4
+bridgedata_v2/pnp_utensils_11-29/2022-11-29_14-24-50/raw/traj_group0/traj28/images0/video.mp4
+bridgedata_v2/pnp_utensils_11-29/2022-11-29_15-24-23/raw/traj_group0/traj131/images0/video.mp4
+bridgedata_v2/pnp_utensils_11-29/2022-11-29_15-24-23/raw/traj_group0/traj2/images0/video.mp4
+bridgedata_v2/pnp_utensils_11-29/2022-11-29_15-24-23/raw/traj_group0/traj234/images0/video.mp4
+bridgedata_v2/pnp_utensils_12-01/2022-12-01_15-40-03/raw/traj_group0/traj68/images0/video.mp4
+bridgedata_v2/pnp_utensils_12-01/2022-12-01_16-46-15/raw/traj_group0/traj35/images0/video.mp4
+bridgedata_v2/pnp_utensils_12-01/2022-12-01_17-19-37/raw/traj_group0/traj107/images0/video.mp4
+bridgedata_v2/pnp_utensils_12-01/2022-12-01_17-19-37/raw/traj_group0/traj175/images0/video.mp4
+bridgedata_v2/pnp_utensils_12-01/2022-12-01_17-19-37/raw/traj_group0/traj57/images0/video.mp4
+bridgedata_v2/pnp_utensils_12-06_gripper_start_closed/2022-12-06_21-24-47/raw/traj_group0/traj109/images0/video.mp4
+bridgedata_v2/pnp_utensils_12-06_gripper_start_closed/2022-12-06_21-24-47/raw/traj_group0/traj110/images0/video.mp4
+bridgedata_v2/pnp_utensils_12-06_gripper_start_closed/2022-12-06_21-24-47/raw/traj_group0/traj138/images0/video.mp4
+bridgedata_v2/pnp_utensils_12-06_gripper_start_closed/2022-12-06_21-24-47/raw/traj_group0/traj165/images0/video.mp4
+bridgedata_v2/pnp_utensils_12-06_gripper_start_closed/2022-12-06_21-24-47/raw/traj_group0/traj173/images0/video.mp4
+bridgedata_v2/pnp_utensils_12-06_gripper_start_closed/2022-12-06_21-24-47/raw/traj_group0/traj51/images0/video.mp4
+bridgedata_v2/pnp_utensils_12-07_rigid_objects/2022-12-07_18-15-43/raw/traj_group0/traj140/images0/video.mp4
+bridgedata_v2/pnp_utensils_12-07_rigid_objects/2022-12-07_18-15-43/raw/traj_group0/traj292/images0/video.mp4
+bridgedata_v2/pnp_utensils_12-07_rigid_objects/2022-12-07_20-28-17/raw/traj_group0/traj125/images0/video.mp4
+bridgedata_v2/pnp_utensils_12-07_rigid_objects/2022-12-07_20-28-17/raw/traj_group0/traj46/images0/video.mp4
+bridgedata_v2/pnp_utensils_12-07_rigid_objects/2022-12-08_13-54-43/raw/traj_group0/traj10/images0/video.mp4
+bridgedata_v2/pnp_utensils_12-07_rigid_objects/2022-12-08_14-21-43/raw/traj_group0/traj3/images0/video.mp4
+bridgedata_v2/sweep_12-03/2022-12-04_15-02-11/raw/traj_group0/traj35/images0/video.mp4
+bridgedata_v2/sweep_12-03/2022-12-05_13-16-57/raw/traj_group0/traj5/images0/video.mp4
+bridgedata_v2/sweep_12-03/2022-12-05_13-20-15/raw/traj_group0/traj227/images0/video.mp4
+bridgedata_v2/sweep_12-03/2022-12-05_13-20-15/raw/traj_group0/traj246/images0/video.mp4
+bridgedata_v2/sweep_12-03/2022-12-05_13-20-15/raw/traj_group0/traj379/images0/video.mp4
+bridgedata_v2/sweep_12-03/2022-12-05_13-20-15/raw/traj_group0/traj8/images0/video.mp4
+
+### objaverse
+objaverse/01bfadb1f65046478c61ada76e4e8130/motion/01bfadb1f65046478c61ada76e4e8130/rgba/video.mp4
+objaverse/02c3264190234d00b7cfd095d06a03c3/motion/02c3264190234d00b7cfd095d06a03c3/rgba/video.mp4
+objaverse/02c3264190234d00b7cfd095d06a03c3/static/02c3264190234d00b7cfd095d06a03c3/rgba/video.mp4
+objaverse/033d388d67414e4c823260b69c735634/motion/033d388d67414e4c823260b69c735634/rgba/video.mp4
+objaverse/03a968286fef4c79a03ce0d3b1539f73/motion/03a968286fef4c79a03ce0d3b1539f73/rgba/video.mp4
+objaverse/048c4728d8fd4f9b9bc97cfbaea48810/motion/048c4728d8fd4f9b9bc97cfbaea48810/rgba/video.mp4
+objaverse/0557e97210d1419dbcacf2c88c014252/motion/0557e97210d1419dbcacf2c88c014252/rgba/video.mp4
+objaverse/0557e97210d1419dbcacf2c88c014252/static/0557e97210d1419dbcacf2c88c014252/rgba/video.mp4
+objaverse/055f90ea4f2a4d30b5f38cf95d4112b6/motion/055f90ea4f2a4d30b5f38cf95d4112b6/rgba/video.mp4
+objaverse/05749093b20340ce889f7d6d5b4005d1/motion/05749093b20340ce889f7d6d5b4005d1/rgba/video.mp4
+objaverse/05c76ba760c34e12928816329ca20a44/static/05c76ba760c34e12928816329ca20a44/rgba/video.mp4
+objaverse/05d411855efa4aa28a40dfbb48c90a18/motion/05d411855efa4aa28a40dfbb48c90a18/rgba/video.mp4
+objaverse/08aaa1e7e09d494fa8e9af6b1e932612/motion/08aaa1e7e09d494fa8e9af6b1e932612/rgba/video.mp4
+objaverse/08aaa1e7e09d494fa8e9af6b1e932612/static/08aaa1e7e09d494fa8e9af6b1e932612/rgba/video.mp4
+objaverse/08bd5890a7504bdc8046a7bd160aa462/motion/08bd5890a7504bdc8046a7bd160aa462/rgba/video.mp4
+objaverse/08bd5890a7504bdc8046a7bd160aa462/static/08bd5890a7504bdc8046a7bd160aa462/rgba/video.mp4
+objaverse/098528ec259946748e70b9dbb826a081/motion/098528ec259946748e70b9dbb826a081/rgba/video.mp4
+objaverse/09a3ca8d83394ff493955ab6dea34d8d/motion/09a3ca8d83394ff493955ab6dea34d8d/rgba/video.mp4
+objaverse/09aac2ed4e58415885a1fadcb83ddb94/motion/09aac2ed4e58415885a1fadcb83ddb94/rgba/video.mp4
+objaverse/09aac2ed4e58415885a1fadcb83ddb94/static/09aac2ed4e58415885a1fadcb83ddb94/rgba/video.mp4
+objaverse/0a7a8958d49944f1aef057951daa8fd3/motion/0a7a8958d49944f1aef057951daa8fd3/rgba/video.mp4
+objaverse/0aa1b22de6544befad852665fa21b02e/static/0aa1b22de6544befad852665fa21b02e/rgba/video.mp4
+objaverse/0ab1956f19c94695962e52a6e4bc7ada/motion/0ab1956f19c94695962e52a6e4bc7ada/rgba/video.mp4
+objaverse/0ab1956f19c94695962e52a6e4bc7ada/static/0ab1956f19c94695962e52a6e4bc7ada/rgba/video.mp4
+objaverse/0bb25b329e114160b58527281b0a8088/static/0bb25b329e114160b58527281b0a8088/rgba/video.mp4
+objaverse/0bf9775f949e4b5e9d20b467482995b0/motion/0bf9775f949e4b5e9d20b467482995b0/rgba/video.mp4
+objaverse/0d4a3f6123eb409a9ce6391ddcd72048/motion/0d4a3f6123eb409a9ce6391ddcd72048/rgba/video.mp4
+objaverse/0e50f094a84f4a2ca4308748f6ba5cdf/motion/0e50f094a84f4a2ca4308748f6ba5cdf/rgba/video.mp4
+objaverse/0f6df3af350746f980e5f43e718bb11f/motion/0f6df3af350746f980e5f43e718bb11f/rgba/video.mp4
+objaverse/0f725d4307df4d40920556a0849a0a46/motion/0f725d4307df4d40920556a0849a0a46/rgba/video.mp4
+objaverse/0f924a90dc3149528c9c484e4b42b089/motion/0f924a90dc3149528c9c484e4b42b089/rgba/video.mp4
+objaverse/1195efa33b3346e0890b2dfa66bfd602/motion/1195efa33b3346e0890b2dfa66bfd602/rgba/video.mp4
+objaverse/11b99731df0649cb805227df0d78cb76/motion/11b99731df0649cb805227df0d78cb76/rgba/video.mp4
+objaverse/121529a8084649d6984c4984254af368/motion/121529a8084649d6984c4984254af368/rgba/video.mp4
+objaverse/12be48147ad94473994dbb9801247ec6/motion/12be48147ad94473994dbb9801247ec6/rgba/video.mp4
+objaverse/133c97d813f748af91da4b594ff0e3f6/motion/133c97d813f748af91da4b594ff0e3f6/rgba/video.mp4
+objaverse/14f39408ecd943009cfcb273e5e7f691/motion/14f39408ecd943009cfcb273e5e7f691/rgba/video.mp4
+objaverse/14f39408ecd943009cfcb273e5e7f691/static/14f39408ecd943009cfcb273e5e7f691/rgba/video.mp4
+objaverse/150dc8ac08434c8f823470c57cc9274c/motion/150dc8ac08434c8f823470c57cc9274c/rgba/video.mp4
+objaverse/150dc8ac08434c8f823470c57cc9274c/static/150dc8ac08434c8f823470c57cc9274c/rgba/video.mp4
+objaverse/153afe9fbea4464c9753c37883061fb1/motion/153afe9fbea4464c9753c37883061fb1/rgba/video.mp4
+objaverse/15db7644c5b645f195f4d2dc0c5154ec/motion/15db7644c5b645f195f4d2dc0c5154ec/rgba/video.mp4
+objaverse/15db7644c5b645f195f4d2dc0c5154ec/static/15db7644c5b645f195f4d2dc0c5154ec/rgba/video.mp4
+objaverse/16bb4f352e714c50b6fd5f11e0ed60c5/motion/16bb4f352e714c50b6fd5f11e0ed60c5/rgba/video.mp4
+objaverse/17592eb4c67e48d3a13b36436b5b747f/motion/17592eb4c67e48d3a13b36436b5b747f/rgba/video.mp4
+objaverse/178312810e8c4c418616ff1733b4f275/motion/178312810e8c4c418616ff1733b4f275/rgba/video.mp4
+objaverse/178312810e8c4c418616ff1733b4f275/static/178312810e8c4c418616ff1733b4f275/rgba/video.mp4
+objaverse/17a2aaa87f7e4861b1c07afa857066a1/motion/17a2aaa87f7e4861b1c07afa857066a1/rgba/video.mp4
+objaverse/186b933dba094192b0a35c30e41a5e65/motion/186b933dba094192b0a35c30e41a5e65/rgba/video.mp4
+objaverse/1873310a33794df2aaeccfa9417fb22f/motion/1873310a33794df2aaeccfa9417fb22f/rgba/video.mp4
+objaverse/18bc0fef83a34340806334dd76880f8d/static/18bc0fef83a34340806334dd76880f8d/rgba/video.mp4
+objaverse/199e776b56a64e75b251cbe536ff2142/motion/199e776b56a64e75b251cbe536ff2142/rgba/video.mp4
+objaverse/199e776b56a64e75b251cbe536ff2142/static/199e776b56a64e75b251cbe536ff2142/rgba/video.mp4
+objaverse/1b372dae44d4431192b9f621f79445c0/motion/1b372dae44d4431192b9f621f79445c0/rgba/video.mp4
+objaverse/1be2900775be4d19a920d3ab00b5cdc5/motion/1be2900775be4d19a920d3ab00b5cdc5/rgba/video.mp4
+objaverse/1d1b22cd1e7b448e8977e8f0c146393c/motion/1d1b22cd1e7b448e8977e8f0c146393c/rgba/video.mp4
+objaverse/1d1b22cd1e7b448e8977e8f0c146393c/static/1d1b22cd1e7b448e8977e8f0c146393c/rgba/video.mp4
+objaverse/1e01f955f4564406bc215ab82f408291/motion/1e01f955f4564406bc215ab82f408291/rgba/video.mp4
+objaverse/1e6313917a744d02b20a1eb418919ba6/motion/1e6313917a744d02b20a1eb418919ba6/rgba/video.mp4
+objaverse/1e70e723cba843a6a2c0a5fa151a1e9c/motion/1e70e723cba843a6a2c0a5fa151a1e9c/rgba/video.mp4
+objaverse/200c11fab52a4c01904d22096219dda8/motion/200c11fab52a4c01904d22096219dda8/rgba/video.mp4
+objaverse/201f9276458c49a79d18759abbb98302/motion/201f9276458c49a79d18759abbb98302/rgba/video.mp4
+objaverse/201f9276458c49a79d18759abbb98302/static/201f9276458c49a79d18759abbb98302/rgba/video.mp4
+objaverse/202a8428814643f8b7650b492edc5436/motion/202a8428814643f8b7650b492edc5436/rgba/video.mp4
+objaverse/202a8428814643f8b7650b492edc5436/static/202a8428814643f8b7650b492edc5436/rgba/video.mp4
+objaverse/216f855f4f9d432aa29e92c1d1b08378/motion/216f855f4f9d432aa29e92c1d1b08378/rgba/video.mp4
+objaverse/21ddf470a3fe4095a0ef58778e897187/motion/21ddf470a3fe4095a0ef58778e897187/rgba/video.mp4
+objaverse/21ddf470a3fe4095a0ef58778e897187/static/21ddf470a3fe4095a0ef58778e897187/rgba/video.mp4
+objaverse/21eda592b4594b44804a5cb7dfb7ffd0/motion/21eda592b4594b44804a5cb7dfb7ffd0/rgba/video.mp4
+objaverse/21eda592b4594b44804a5cb7dfb7ffd0/static/21eda592b4594b44804a5cb7dfb7ffd0/rgba/video.mp4
+objaverse/22911a7638b04a9197be5f17b28ea039/motion/22911a7638b04a9197be5f17b28ea039/rgba/video.mp4
+objaverse/22ccd7adfa7c4d8c8318f3b25a968eab/motion/22ccd7adfa7c4d8c8318f3b25a968eab/rgba/video.mp4
+objaverse/22d13b14e0a4455db9e4fb37cda960cc/motion/22d13b14e0a4455db9e4fb37cda960cc/rgba/video.mp4
+objaverse/22d9190fbcb4466e831ba0233eb3b73f/motion/22d9190fbcb4466e831ba0233eb3b73f/rgba/video.mp4
+objaverse/22d9190fbcb4466e831ba0233eb3b73f/static/22d9190fbcb4466e831ba0233eb3b73f/rgba/video.mp4
+objaverse/23207aea7d324b9589cd57a24966e1ea/motion/23207aea7d324b9589cd57a24966e1ea/rgba/video.mp4
+objaverse/23ef508dd39548519ac444e808da095b/motion/23ef508dd39548519ac444e808da095b/rgba/video.mp4
+objaverse/241cefe2707244b18c162710f71bb6b2/motion/241cefe2707244b18c162710f71bb6b2/rgba/video.mp4
+objaverse/242c4e939bfd4c8b91143594328bb532/motion/242c4e939bfd4c8b91143594328bb532/rgba/video.mp4
+objaverse/25f55345322544eeb4c960c15bbf235d/motion/25f55345322544eeb4c960c15bbf235d/rgba/video.mp4
+objaverse/267b085628484dc79452ef6344fb0235/motion/267b085628484dc79452ef6344fb0235/rgba/video.mp4
+objaverse/26fcc53af41a439085e128c793f6a6de/motion/26fcc53af41a439085e128c793f6a6de/rgba/video.mp4
+objaverse/26fcc53af41a439085e128c793f6a6de/static/26fcc53af41a439085e128c793f6a6de/rgba/video.mp4
+objaverse/28abdb06d5604b3daadcb852e7b9c95d/motion/28abdb06d5604b3daadcb852e7b9c95d/rgba/video.mp4
+objaverse/29a6e18872234df4815b1ff8caed09da/motion/29a6e18872234df4815b1ff8caed09da/rgba/video.mp4
+objaverse/29a6e18872234df4815b1ff8caed09da/static/29a6e18872234df4815b1ff8caed09da/rgba/video.mp4
+objaverse/2a3da1774af644b29424f6f5d707f556/motion/2a3da1774af644b29424f6f5d707f556/rgba/video.mp4
+objaverse/2a837754380448eda0526635d293213d/motion/2a837754380448eda0526635d293213d/rgba/video.mp4
+objaverse/2a8ff62341f2482f9eb28953d764e1f1/motion/2a8ff62341f2482f9eb28953d764e1f1/rgba/video.mp4
+objaverse/2ab60b659e12412a85fb605bf225c74b/motion/2ab60b659e12412a85fb605bf225c74b/rgba/video.mp4
+objaverse/2ab60b659e12412a85fb605bf225c74b/static/2ab60b659e12412a85fb605bf225c74b/rgba/video.mp4
+objaverse/2ad284cfbc7545a396430d5bc5989b8a/motion/2ad284cfbc7545a396430d5bc5989b8a/rgba/video.mp4
+objaverse/2bc70eb037bc4c3d9a2595b9987bc3f4/motion/2bc70eb037bc4c3d9a2595b9987bc3f4/rgba/video.mp4
+objaverse/2bc70eb037bc4c3d9a2595b9987bc3f4/static/2bc70eb037bc4c3d9a2595b9987bc3f4/rgba/video.mp4
+objaverse/2d85ffeffe9b47619caf1822ff736487/motion/2d85ffeffe9b47619caf1822ff736487/rgba/video.mp4
+objaverse/2f14c86e969447378d70a786521cfd98/motion/2f14c86e969447378d70a786521cfd98/rgba/video.mp4
+objaverse/2f3bea70178345c8b7cc4424886f9386/motion/2f3bea70178345c8b7cc4424886f9386/rgba/video.mp4
+objaverse/314155de378c467da29271a27fb75882/motion/314155de378c467da29271a27fb75882/rgba/video.mp4
+objaverse/3173389207fd4cafaf3e70301eb3e3bf/motion/3173389207fd4cafaf3e70301eb3e3bf/rgba/video.mp4
+objaverse/3383976170f54368b3aecc2b9e28996c/motion/3383976170f54368b3aecc2b9e28996c/rgba/video.mp4
+
+### tartanair
+tartanair/abandonedfactory/Easy/P000/image_left/video.mp4
+tartanair/abandonedfactory/Easy/P001/image_left/video.mp4
+tartanair/abandonedfactory/Easy/P002/image_left/video.mp4
+tartanair/abandonedfactory/Easy/P004/image_left/video.mp4
+tartanair/abandonedfactory/Easy/P005/image_left/video.mp4
+tartanair/abandonedfactory/Easy/P006/image_left/video.mp4
+tartanair/abandonedfactory_night/Easy/P001/image_left/video.mp4
+tartanair/abandonedfactory_night/Easy/P002/image_left/video.mp4
+tartanair/abandonedfactory_night/Easy/P003/image_left/video.mp4
+tartanair/abandonedfactory_night/Easy/P004/image_left/video.mp4
+tartanair/abandonedfactory_night/Easy/P005/image_left/video.mp4
+tartanair/abandonedfactory_night/Easy/P006/image_left/video.mp4
+tartanair/amusement/Easy/P001/image_left/video.mp4
+tartanair/amusement/Easy/P002/image_left/video.mp4
+tartanair/amusement/Easy/P003/image_left/video.mp4
+tartanair/amusement/Easy/P004/image_left/video.mp4
+tartanair/amusement/Easy/P006/image_left/video.mp4
+tartanair/amusement/Easy/P007/image_left/video.mp4
+tartanair/carwelding/Easy/P001/image_left/video.mp4
+tartanair/carwelding/Easy/P002/image_left/video.mp4
+tartanair/carwelding/Easy/P004/image_left/video.mp4
+tartanair/carwelding/Easy/P005/image_left/video.mp4
+tartanair/carwelding/Easy/P006/image_left/video.mp4
+tartanair/carwelding/Easy/P007/image_left/video.mp4
+tartanair/endofworld/Easy/P000/image_left/video.mp4
+tartanair/endofworld/Easy/P001/image_left/video.mp4
+tartanair/endofworld/Easy/P002/image_left/video.mp4
+tartanair/endofworld/Easy/P003/image_left/video.mp4
+tartanair/endofworld/Easy/P004/image_left/video.mp4
+tartanair/endofworld/Easy/P005/image_left/video.mp4
+tartanair/gascola/Easy/P001/image_left/video.mp4
+tartanair/gascola/Easy/P003/image_left/video.mp4
+tartanair/gascola/Easy/P004/image_left/video.mp4
+tartanair/gascola/Easy/P005/image_left/video.mp4
+tartanair/gascola/Easy/P006/image_left/video.mp4
+tartanair/gascola/Easy/P007/image_left/video.mp4
+tartanair/hospital/Easy/P000/image_left/video.mp4
+tartanair/hospital/Easy/P001/image_left/video.mp4
+tartanair/hospital/Easy/P002/image_left/video.mp4
+tartanair/hospital/Easy/P003/image_left/video.mp4
+tartanair/hospital/Easy/P004/image_left/video.mp4
+tartanair/hospital/Easy/P005/image_left/video.mp4
+tartanair/japanesealley/Easy/P001/image_left/video.mp4
+tartanair/japanesealley/Easy/P002/image_left/video.mp4
+tartanair/japanesealley/Easy/P003/image_left/video.mp4
+tartanair/japanesealley/Easy/P004/image_left/video.mp4
+tartanair/japanesealley/Easy/P005/image_left/video.mp4
+tartanair/japanesealley/Easy/P007/image_left/video.mp4
+tartanair/neighborhood/Easy/P000/image_left/video.mp4
+tartanair/neighborhood/Easy/P001/image_left/video.mp4
+tartanair/neighborhood/Easy/P002/image_left/video.mp4
+tartanair/neighborhood/Easy/P003/image_left/video.mp4
+tartanair/neighborhood/Easy/P004/image_left/video.mp4
+tartanair/neighborhood/Easy/P005/image_left/video.mp4
+tartanair/ocean/Easy/P000/image_left/video.mp4
+tartanair/ocean/Easy/P001/image_left/video.mp4
+tartanair/ocean/Easy/P002/image_left/video.mp4
+tartanair/ocean/Easy/P004/image_left/video.mp4
+tartanair/ocean/Easy/P005/image_left/video.mp4
+tartanair/ocean/Easy/P006/image_left/video.mp4
+tartanair/office/Easy/P000/image_left/video.mp4
+tartanair/office/Easy/P001/image_left/video.mp4
+tartanair/office/Easy/P002/image_left/video.mp4
+tartanair/office/Easy/P003/image_left/video.mp4
+tartanair/office/Easy/P004/image_left/video.mp4
+tartanair/office2/Easy/P000/image_left/video.mp4
+tartanair/office2/Easy/P003/image_left/video.mp4
+tartanair/office2/Easy/P004/image_left/video.mp4
+tartanair/office2/Easy/P005/image_left/video.mp4
+tartanair/office2/Easy/P006/image_left/video.mp4
+tartanair/oldtown/Easy/P000/image_left/video.mp4
+tartanair/oldtown/Easy/P001/image_left/video.mp4
+tartanair/oldtown/Easy/P002/image_left/video.mp4
+tartanair/oldtown/Easy/P004/image_left/video.mp4
+tartanair/oldtown/Easy/P005/image_left/video.mp4
+tartanair/seasidetown/Easy/P000/image_left/video.mp4
+tartanair/seasidetown/Easy/P001/image_left/video.mp4
+tartanair/seasidetown/Easy/P002/image_left/video.mp4
+tartanair/seasidetown/Easy/P003/image_left/video.mp4
+tartanair/seasidetown/Easy/P004/image_left/video.mp4
+tartanair/seasonsforest/Easy/P001/image_left/video.mp4
+tartanair/seasonsforest/Easy/P002/image_left/video.mp4
+tartanair/seasonsforest/Easy/P003/image_left/video.mp4
+tartanair/seasonsforest/Easy/P004/image_left/video.mp4
+tartanair/seasonsforest/Easy/P005/image_left/video.mp4
+tartanair/seasonsforest_winter/Easy/P000/image_left/video.mp4
+tartanair/seasonsforest_winter/Easy/P001/image_left/video.mp4
+tartanair/seasonsforest_winter/Easy/P002/image_left/video.mp4
+tartanair/seasonsforest_winter/Easy/P003/image_left/video.mp4
+tartanair/seasonsforest_winter/Easy/P004/image_left/video.mp4
+tartanair/soulcity/Easy/P000/image_left/video.mp4
+tartanair/soulcity/Easy/P001/image_left/video.mp4
+tartanair/soulcity/Easy/P002/image_left/video.mp4
+tartanair/soulcity/Easy/P003/image_left/video.mp4
+tartanair/soulcity/Easy/P004/image_left/video.mp4
+tartanair/westerndesert/Easy/P001/image_left/video.mp4
+tartanair/westerndesert/Easy/P002/image_left/video.mp4
+tartanair/westerndesert/Easy/P004/image_left/video.mp4
+tartanair/westerndesert/Easy/P005/image_left/video.mp4
+tartanair/westerndesert/Easy/P006/image_left/video.mp4
+
+### dynamic_replica
+dynamic_replica/009850-3_obj_source_left/images/video.mp4
+dynamic_replica/00e2a3-3_obj_source_left/images/video.mp4
+dynamic_replica/0100a8-4_obj_source_left/images/video.mp4
+dynamic_replica/01bbd4-4_obj_source_left/images/video.mp4
+dynamic_replica/024745-7_obj_source_left/images/video.mp4
+dynamic_replica/02775b-3_obj_source_left/images/video.mp4
+dynamic_replica/02daee-3_obj_source_left/images/video.mp4
+dynamic_replica/0358da-3_obj_source_left/images/video.mp4
+dynamic_replica/035dde-7_obj_source_left/images/video.mp4
+dynamic_replica/0388bc-4_obj_source_left/images/video.mp4
+dynamic_replica/03aaff-3_obj_source_left/images/video.mp4
+dynamic_replica/0423c7-3_obj_source_left/images/video.mp4
+dynamic_replica/046ac8-3_obj_source_left/images/video.mp4
+dynamic_replica/04dcce-3_obj_source_left/images/video.mp4
+dynamic_replica/04ef47-4_obj_source_left/images/video.mp4
+dynamic_replica/04fa5b-3_obj_source_left/images/video.mp4
+dynamic_replica/04ff5e-4_obj_source_left/images/video.mp4
+dynamic_replica/055693-3_obj_source_left/images/video.mp4
+dynamic_replica/055a20-1_obj_source_left/images/video.mp4
+dynamic_replica/058b87-3_obj_source_left/images/video.mp4
+dynamic_replica/05ac25-3_obj_source_left/images/video.mp4
+dynamic_replica/0637e6-3_obj_source_left/images/video.mp4
+dynamic_replica/06934d-1_obj_source_left/images/video.mp4
+dynamic_replica/0695f5-4_obj_source_left/images/video.mp4
+dynamic_replica/06bc33-3_obj_source_left/images/video.mp4
+dynamic_replica/06f9ac-3_obj_source_left/images/video.mp4
+dynamic_replica/07056e-4_obj_source_left/images/video.mp4
+dynamic_replica/071af6-7_obj_source_left/images/video.mp4
+dynamic_replica/072eba-3_obj_source_left/images/video.mp4
+dynamic_replica/076884-7_obj_source_left/images/video.mp4
+dynamic_replica/07973f-3_obj_source_left/images/video.mp4
+dynamic_replica/081b35-4_obj_source_left/images/video.mp4
+dynamic_replica/085591-1_obj_source_left/images/video.mp4
+dynamic_replica/0885c2-7_obj_source_left/images/video.mp4
+dynamic_replica/088941-4_obj_source_left/images/video.mp4
+dynamic_replica/08a215-3_obj_source_left/images/video.mp4
+dynamic_replica/090268-3_obj_source_left/images/video.mp4
+dynamic_replica/091846-4_obj_source_left/images/video.mp4
+dynamic_replica/0965b7-7_obj_source_left/images/video.mp4
+dynamic_replica/0a14a7-3_obj_source_left/images/video.mp4
+dynamic_replica/0a54d6-3_obj_source_left/images/video.mp4
+dynamic_replica/0a5b4c-3_obj_source_left/images/video.mp4
+dynamic_replica/0a5bfb-4_obj_source_left/images/video.mp4
+dynamic_replica/0a66f7-3_obj_source_left/images/video.mp4
+dynamic_replica/0aa88d-3_obj_source_left/images/video.mp4
+dynamic_replica/0b03a0-4_obj_source_left/images/video.mp4
+dynamic_replica/0b10c6-3_obj_source_left/images/video.mp4
+dynamic_replica/0b6d88-4_obj_source_left/images/video.mp4
+dynamic_replica/0bc50d-4_obj_source_left/images/video.mp4
+dynamic_replica/0bdca7-1_obj_source_left/images/video.mp4
+dynamic_replica/0c4449-7_obj_source_left/images/video.mp4
+dynamic_replica/0cf56b-3_obj_source_left/images/video.mp4
+dynamic_replica/0d49f6-3_obj_source_left/images/video.mp4
+dynamic_replica/0d718f-3_obj_source_left/images/video.mp4
+dynamic_replica/0daa4d-3_obj_source_left/images/video.mp4
+dynamic_replica/0dc60d-3_obj_source_left/images/video.mp4
+dynamic_replica/0de5e9-3_obj_source_left/images/video.mp4
+dynamic_replica/0e7124-3_obj_source_left/images/video.mp4
+dynamic_replica/0ee7a5-3_obj_source_left/images/video.mp4
+dynamic_replica/0f123c-4_obj_source_left/images/video.mp4
+dynamic_replica/0f1b3b-4_obj_source_left/images/video.mp4
+dynamic_replica/0f490a-3_obj_source_left/images/video.mp4
+dynamic_replica/0fd775-3_obj_source_left/images/video.mp4
+dynamic_replica/1035f8-3_obj_source_left/images/video.mp4
+dynamic_replica/103efe-3_obj_source_left/images/video.mp4
+dynamic_replica/10e499-3_obj_source_left/images/video.mp4
+dynamic_replica/11a245-1_obj_source_left/images/video.mp4
+dynamic_replica/120c6e-3_obj_source_left/images/video.mp4
+dynamic_replica/124ead-4_obj_source_left/images/video.mp4
+dynamic_replica/129de2-3_obj_source_left/images/video.mp4
+dynamic_replica/12b741-3_obj_source_left/images/video.mp4
+dynamic_replica/12bdd6-3_obj_source_left/images/video.mp4
+dynamic_replica/1334be-3_obj_source_left/images/video.mp4
+dynamic_replica/133b3d-3_obj_source_left/images/video.mp4
+dynamic_replica/13a144-3_obj_source_left/images/video.mp4
+dynamic_replica/13c709-3_obj_source_left/images/video.mp4
+dynamic_replica/13d72c-3_obj_source_left/images/video.mp4
+dynamic_replica/13e7f1-3_obj_source_left/images/video.mp4
+dynamic_replica/13f0d1-3_obj_source_left/images/video.mp4
+dynamic_replica/13f3c2-4_obj_source_left/images/video.mp4
+dynamic_replica/14133e-4_obj_source_left/images/video.mp4
+dynamic_replica/146e05-3_obj_source_left/images/video.mp4
+dynamic_replica/14d627-3_obj_source_left/images/video.mp4
+dynamic_replica/151de4-7_obj_source_left/images/video.mp4
+dynamic_replica/1582bc-3_obj_source_left/images/video.mp4
+dynamic_replica/15b1d6-3_obj_source_left/images/video.mp4
+dynamic_replica/15b5fb-4_obj_source_left/images/video.mp4
+dynamic_replica/15d4dc-3_obj_source_left/images/video.mp4
+dynamic_replica/15ec72-7_obj_source_left/images/video.mp4
+dynamic_replica/161384-3_obj_source_left/images/video.mp4
+dynamic_replica/162eb1-3_obj_source_left/images/video.mp4
+dynamic_replica/1640bf-3_obj_source_left/images/video.mp4
+dynamic_replica/1663b3-1_obj_source_left/images/video.mp4
+dynamic_replica/168689-3_obj_source_left/images/video.mp4
+dynamic_replica/16c557-1_obj_source_left/images/video.mp4
+dynamic_replica/1709c9-3_obj_source_left/images/video.mp4
+dynamic_replica/1731ba-4_obj_source_left/images/video.mp4
+dynamic_replica/174239-7_obj_source_left/images/video.mp4
+dynamic_replica/175933-1_obj_source_left/images/video.mp4
+dynamic_replica/1772fc-3_obj_source_left/images/video.mp4
+
+### point_odyssey
+point_odyssey/ani/rgbs/video.mp4
+point_odyssey/ani11_new_/rgbs/video.mp4
+point_odyssey/ani11_new_f/rgbs/video.mp4
+point_odyssey/ani12_new_/rgbs/video.mp4
+point_odyssey/ani13_new_/rgbs/video.mp4
+point_odyssey/ani13_new_f/rgbs/video.mp4
+point_odyssey/ani15_new_/rgbs/video.mp4
+point_odyssey/ani15_new_f/rgbs/video.mp4
+point_odyssey/ani16_new_f/rgbs/video.mp4
+point_odyssey/ani17_new_/rgbs/video.mp4
+point_odyssey/ani17_new_f/rgbs/video.mp4
+point_odyssey/ani18_new_/rgbs/video.mp4
+point_odyssey/ani18_new_f/rgbs/video.mp4
+point_odyssey/ani2_s/rgbs/video.mp4
+point_odyssey/ani3_new_f/rgbs/video.mp4
+point_odyssey/ani4_new_/rgbs/video.mp4
+point_odyssey/ani4_new_f/rgbs/video.mp4
+point_odyssey/ani5_new_/rgbs/video.mp4
+point_odyssey/ani5_new_f/rgbs/video.mp4
+point_odyssey/ani6_new_/rgbs/video.mp4
+point_odyssey/ani6_new_f/rgbs/video.mp4
+point_odyssey/ani7_new_/rgbs/video.mp4
+point_odyssey/ani7_new_f/rgbs/video.mp4
+point_odyssey/ani8_new_/rgbs/video.mp4
+point_odyssey/ani8_new_f/rgbs/video.mp4
+point_odyssey/ani9_new_/rgbs/video.mp4
+point_odyssey/ani9_new_f/rgbs/video.mp4
+point_odyssey/ani_new_/rgbs/video.mp4
+point_odyssey/ani_new_2/rgbs/video.mp4
+point_odyssey/ani_s/rgbs/video.mp4
+point_odyssey/animal/rgbs/video.mp4
+point_odyssey/animal1_/rgbs/video.mp4
+point_odyssey/animal1_s/rgbs/video.mp4
+point_odyssey/animal1_s_/rgbs/video.mp4
+point_odyssey/animal2_/rgbs/video.mp4
+point_odyssey/animal2_s/rgbs/video.mp4
+point_odyssey/animal3/rgbs/video.mp4
+point_odyssey/animal3_s/rgbs/video.mp4
+point_odyssey/animal4/rgbs/video.mp4
+point_odyssey/animal4_s/rgbs/video.mp4
+point_odyssey/animal5/rgbs/video.mp4
+point_odyssey/animal6/rgbs/video.mp4
+point_odyssey/animal6_s/rgbs/video.mp4
+point_odyssey/animal8/rgbs/video.mp4
+point_odyssey/animal_/rgbs/video.mp4
+point_odyssey/animal_rabbit/rgbs/video.mp4
+point_odyssey/animal_s/rgbs/video.mp4
+point_odyssey/animal_smoke_/rgbs/video.mp4
+point_odyssey/cab_e1_3rd/rgbs/video.mp4
+point_odyssey/cab_e1_ego2/rgbs/video.mp4
+point_odyssey/cab_e_ego2/rgbs/video.mp4
+point_odyssey/cab_h_bench_3rd/rgbs/video.mp4
+point_odyssey/cab_h_bench_ego1/rgbs/video.mp4
+point_odyssey/cab_h_bench_ego2/rgbs/video.mp4
+point_odyssey/character/rgbs/video.mp4
+point_odyssey/character0/rgbs/video.mp4
+point_odyssey/character0_/rgbs/video.mp4
+point_odyssey/character0_f/rgbs/video.mp4
+point_odyssey/character0_f2/rgbs/video.mp4
+point_odyssey/character1/rgbs/video.mp4
+point_odyssey/character1_f/rgbs/video.mp4
+point_odyssey/character2/rgbs/video.mp4
+point_odyssey/character2_/rgbs/video.mp4
+point_odyssey/character2_f/rgbs/video.mp4
+point_odyssey/character3/rgbs/video.mp4
+point_odyssey/character3_f/rgbs/video.mp4
+point_odyssey/character4/rgbs/video.mp4
+point_odyssey/character4_/rgbs/video.mp4
+point_odyssey/character4_f/rgbs/video.mp4
+point_odyssey/character5/rgbs/video.mp4
+point_odyssey/character5_/rgbs/video.mp4
+point_odyssey/character5_f/rgbs/video.mp4
+point_odyssey/character6/rgbs/video.mp4
+point_odyssey/character6_f/rgbs/video.mp4
+point_odyssey/cnb_dlab_0215_3rd/rgbs/video.mp4
+point_odyssey/cnb_dlab_0215_ego1/rgbs/video.mp4
+point_odyssey/cnb_dlab_0225_3rd/rgbs/video.mp4
+point_odyssey/cnb_dlab_0225_ego1/rgbs/video.mp4
+point_odyssey/dancing/rgbs/video.mp4
+point_odyssey/dancingroom0_3rd/rgbs/video.mp4
+point_odyssey/dancingroom_3rd/rgbs/video.mp4
+point_odyssey/footlab_3rd/rgbs/video.mp4
+point_odyssey/footlab_ego1/rgbs/video.mp4
+point_odyssey/footlab_ego2/rgbs/video.mp4
+point_odyssey/girl/rgbs/video.mp4
+point_odyssey/girl_egocentric/rgbs/video.mp4
+point_odyssey/gso_in_big/rgbs/video.mp4
+point_odyssey/gso_out_big/rgbs/video.mp4
+point_odyssey/human_egocentric/rgbs/video.mp4
+point_odyssey/human_in_scene/rgbs/video.mp4
+point_odyssey/human_in_scene1/rgbs/video.mp4
+point_odyssey/kg/rgbs/video.mp4
+point_odyssey/kg_ego1/rgbs/video.mp4
+point_odyssey/kg_ego2/rgbs/video.mp4
+point_odyssey/kitchen_gfloor/rgbs/video.mp4
+point_odyssey/kitchen_gfloor_ego1/rgbs/video.mp4
+point_odyssey/kitchen_gfloor_ego2/rgbs/video.mp4
+point_odyssey/r0_new/rgbs/video.mp4
+point_odyssey/r0_new_/rgbs/video.mp4
+point_odyssey/r0_new_f/rgbs/video.mp4
+

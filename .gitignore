@@ -164,3 +164,6 @@ apps/Simple_DiT/.DS_Store
 sync.sh
 .gitignore
 .DS_Store
+
+# * added by jinjie
+*wayne*
