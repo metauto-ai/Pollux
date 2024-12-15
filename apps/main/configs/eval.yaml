@@ -1,4 +1,4 @@
-# python -m apps.Latent_DiT.generate config=apps/Latent_DiT/configs/eval.yaml
+# python -m apps.main.generate config=apps/main/configs/eval.yaml
 name: "debug_evals"
 ckpt_dir:  /mnt/data/dump/ImageNet_1B_BaseLine_256_Flux_LLAMA_Pre_Train/checkpoints/0000030000/
 dump_dir: /home/haozhe/project/lingua_videogen

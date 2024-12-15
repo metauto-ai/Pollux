@@ -96,7 +96,9 @@ class TrainArgs:
     async_eval_gpus: Optional[int] = None
     eval: Optional[Any] = None
 
+
 # TODO: ADD stateful dataloader in the future
+
 
 @dataclass
 class TrainState(Stateful):
@@ -126,7 +128,7 @@ def validate_train_args(args: TrainArgs):
 
     # Minchen: generate the dump dir according to the config
     if not args.dump_dir:
-        #args.dump_dir = f"/mnt/data/dump/{args.name}"
+        # args.dump_dir = f"/mnt/data/dump/{args.name}"
         args.dump_dir = f"{args.output_dir}{args.name}"
 
     logger.info(f"Dump dir set to {args.dump_dir}")
@@ -142,8 +144,7 @@ def validate_train_args(args: TrainArgs):
         args.checkpoint.path = str(Path(args.dump_dir) / "checkpoints")
 
     # TODO: Mingchen: here need to support multiple source later as in the original lingua codebase
-    assert os.path.exists(
-        args.data.root_dir), f"{args.data.root_dir} doesn't exist"
+    assert os.path.exists(args.data.root_dir), f"{args.data.root_dir} doesn't exist"
 
     if (
         args.distributed.dp_replicate
@@ -238,8 +239,7 @@ def train(args: TrainArgs):
         dp_degree = dp_mesh.size()
         dp_rank = dp_mesh.get_local_rank()
         if args.distributed.dp_shard > 1:
-            dp_rank = dp_rank * dp_degree + \
-                world_mesh["dp_shard"].get_local_rank()
+            dp_rank = dp_rank * dp_degree + world_mesh["dp_shard"].get_local_rank()
             dp_degree *= world_mesh["dp_shard"].size()
 
         logger.info(f"Running on dp rank : {dp_rank}")
@@ -248,7 +248,7 @@ def train(args: TrainArgs):
         torch.manual_seed(args.seed)
         logger.info("Building model")
 
-        model = LatentDiffusionTransformer(args.model)  # TODO change the model here
+        model = LatentDiffusionTransformer(args.model)
         logger.info("Model is built !")
 
         model_param_count = get_num_params(model)
@@ -261,13 +261,12 @@ def train(args: TrainArgs):
             args.model.transformer,
             args.distributed,
             fsdp_grouping_plan=build_fsdp_grouping_plan(
-                args.model.transformer, model.compressor.vae.config),
+                args.model.transformer, model.compressor.vae.config
+            ),
             tp_parallelize=tp_parallelize,
             no_recompute_ops=get_no_recompute_ops(),
         )
         model = model.to(device="cuda")
-
-        # TODO: Mingchen: need to add the continual training the model from existing checkpoint.
 
         check_model_value_range(model, range=10.0, std=1.0)
 
@@ -291,8 +290,7 @@ def train(args: TrainArgs):
             scheduler=scheduler,
         )
 
-        checkpoint = CheckpointManager.instantiate_and_make_dir(
-            args.checkpoint)
+        checkpoint = CheckpointManager.instantiate_and_make_dir(args.checkpoint)
         checkpoint.load(model, optimizer, train_state, world_mesh)
         # Either load from latest checkpoint or start from scratch
 
@@ -307,7 +305,9 @@ def train(args: TrainArgs):
             maybe_run_profiler(args.dump_dir, model, args.profiling)
         )
         data_loader = create_imagenet_dataloader(
-            dp_rank, dp_degree, args.data,
+            dp_rank,
+            dp_degree,
+            args.data,
         )
         dataloader_iterator = iter(data_loader)
         nwords_since_last_log = 0
@@ -334,10 +334,10 @@ def train(args: TrainArgs):
                 # we do garbage collection manually otherwise different processes
                 # run the GC at different times so they slow down the whole pipeline
                 gc.collect()
-            batch['image'] = batch['image'].cuda()
-            batch['label'] = batch['label'].cuda()
+            batch["image"] = batch["image"].cuda()
+            batch["label"] = batch["label"].cuda()
             data_load_time = round(timer() - data_load_start, 4)
-            nwords_since_last_log += batch['image'].numel()
+            nwords_since_last_log += batch["image"].numel()
 
             # forward
             start_timer = torch.cuda.Event(enable_timing=True)
@@ -374,8 +374,7 @@ def train(args: TrainArgs):
 
             torch.cuda.synchronize()
 
-            curr_iter_time = round(
-                start_timer.elapsed_time(end_timer) * 1e-3, 4)
+            curr_iter_time = round(start_timer.elapsed_time(end_timer) * 1e-3, 4)
 
             # if profiler is active
             if torch_profiler:
@@ -389,17 +388,14 @@ def train(args: TrainArgs):
                 acc_freq=args.logging.acc_freq,
             ):
                 time_delta = timer() - time_last_log
-                wps = nwords_since_last_log / \
-                    (time_delta * args.distributed.tp_size)
+                wps = nwords_since_last_log / (time_delta * args.distributed.tp_size)
 
                 gpu_mem_stats = gpu_memory_monitor.get_peak_stats()
 
                 total_acc_steps = (
                     args.grad_acc_steps * train_state.step + train_state.acc_step
                 )
-                tokens_per_gpu = (
-                    total_acc_steps * args.data.batch_size
-                )
+                tokens_per_gpu = total_acc_steps * args.data.batch_size
                 total_tokens = dp_degree * tokens_per_gpu
                 # This is an estimate and the correct values may change
                 # if you change the architecture
@@ -473,8 +469,8 @@ def train(args: TrainArgs):
                 train_state, args.checkpoint.eval.every, acc_step=0
             ):
                 pass  # TODO add some potential evaluation metrics here
-                      # TODO: Mingchen: Yes, we are eager to have one here. I found current loss is quickly been stable after 500 steps.
-                      # TODO: Mingchen: So we may need a better signal here. 
+                # TODO: Mingchen: Yes, we are eager to have one here. I found current loss is quickly been stable after 500 steps.
+                # TODO: Mingchen: So we may need a better signal here.
 
             if preemption_flag["flag"]:
                 if not saved:
