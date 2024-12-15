@@ -18,7 +18,7 @@ distributed:
     fsdp_type: full_shard
     dp_shard: 4
     dp_replicate: 1
-    compile: False
+    compile: True
     model_dtype: bf16
     matmul_allow_tf32: false
     selective_activation_checkpointing: False
