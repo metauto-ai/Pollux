@@ -1,7 +1,7 @@
 """
 python -m apps.main.test
 """
-import logging\
+import logging
 from torchvision.utils import save_image
 from lingua.transformer import precompute_freqs_cis
 

@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass, field
 from typing import Optional, Tuple
+import logging
 
 import torch
 from torch import nn
@@ -20,6 +21,8 @@ from apps.main.modules.transformer import DiffusionTransformer, DiffusionTransfo
 from apps.main.modules.vae import LatentVideoVAE, LatentVideoVAEArgs
 
 
+logger = logging.getLogger()
+
 @dataclass
 class ModelArgs:
     transformer: DiffusionTransformerArgs = field(
@@ -31,19 +34,20 @@ class ModelArgs:
 
 class LatentDiffusionTransformer(nn.Module):
     """
-    Latent Diffusion Transformer Model for Long Video Generation.
+    Latent Diffusion Transformer Model.
     This model integrates a VAE for latent compression, a transformer for temporal and spatial token mixing,
     and a custom scheduler for diffusion steps.
     """
 
-    version: str = "v0.2"
-    description: str = "Latent Diffusion Transformer for VideoGen."
+    version: str = "v0.3"
+    description: str = "Latent Diffusion Transformer for VideoGen: (1) currently we only support image classification for debugging."
 
     def __init__(self, args: ModelArgs):
         super().__init__()
-        self.transformer = DiffusionTransformer(args.transformer)
+
         self.compressor = LatentVideoVAE(args.vae)
         self.scheduler = RectifiedFlow(args.scheduler)
+        self.transformer = DiffusionTransformer(args.transformer)
 
     def forward(self, batch: torch.Tensor) -> dict[str:any]:
 
@@ -73,15 +77,21 @@ def get_no_recompute_ops():
 # Optional and only used for fully shard options (fsdp) is choose. Highly recommanded for large models
 def build_fsdp_grouping_plan(model_args: DiffusionTransformerArgs, vae_config: dict):
     group_plan: Tuple[int, bool] = []
-    # Grouping and output seperately
-    # group_plan.append(("tok_embeddings", False))
+
     for i in range(len(vae_config.down_block_types)):
         group_plan.append((f"compressor.vae.encoder.down_blocks.{i}", False))
-    # Grouping by layers
+
+    # Mingchen: I also add up_block because I am not sure wether we only add down_block before. 
+    # Mingchen: Got it. We did not use decoder (but in the future we may use, right?)
+    # if "up_block_types" in vae_config:
+    #     for i in range(len(vae_config.up_block_types)):
+    #         group_plan.append((f"compressor.vae.decoder.up_blocks.{i}", False))
+
     for i in range(model_args.n_layers):
         group_plan.append((f"transformer.layers.{i}", False))
 
     group_plan.append(("transformer.img_output", True))
+    logger.info(f"The `group_plan` for fsdp is:\n{group_plan}")
 
     return group_plan
 
