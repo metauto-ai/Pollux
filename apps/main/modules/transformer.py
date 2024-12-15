@@ -162,6 +162,7 @@ class DiffusionTransformerArgs(BaseTransformerArgs):
     # 1) 'dit': Embeds time using AdaIn.
     # 2) 'language_model': Embeds time into the sequence input using a special token.
     max_condition_seqlen: int = 2
+    attn_type: str = "full"  # Options: 'full', 'bi_causal' and 'causal'.
 
 
 class DiffusionTransformerBlock(nn.Module):
@@ -237,6 +238,7 @@ class BaseDiffusionTransformer(nn.Module):
         self.init_std_factor = InitStdFactor(args.init_std_factor)
         self.max_seqlen = args.max_seqlen
         self.block_type = args.block_type
+        self.attn_type = args.attn_type
         self.layers = nn.ModuleList()
         if args.block_type == "dit":
             block = DiffusionTransformerBlock
@@ -244,7 +246,7 @@ class BaseDiffusionTransformer(nn.Module):
             block = TransformerBlock
         else:
             raise NotImplementedError(f"Not support {args.block_type}")
-
+        assert not (self.attn_type == "bi_causal" and args.n_layers % 2 != 0)
         for _ in range(args.n_layers):
             self.layers.append(block(args))
 
@@ -253,19 +255,30 @@ class BaseDiffusionTransformer(nn.Module):
         h,
         freqs_cis,
         modulation_signal: Optional[torch.Tensor] = None,
-        mask: Optional[Union[BlockMask, AttentionBias, str]] = None,
         attn_impl: str = "sdpa",
     ):
         assert (self.block_type == "language_model" and modulation_signal == None) or (
             self.block_type == "dit" and modulation_signal != None
         )
-        for _, layer in enumerate(self.layers):
+
+        if self.attn_type in ["causal", "bi_causal"]:
+            seqlen = h.size(1)
+            mask = create_causal_mask(seqlen, attn_impl, None)
+
+        elif self.attn_type == "full":
+            mask = None
+        else:
+            raise NotImplementedError(f"Not support attention type: {self.attn_type}")
+
+        for idx, layer in enumerate(self.layers):
             if modulation_signal == None:
                 h = layer(h, freqs_cis, mask=mask, attn_impl=attn_impl)
             else:
                 h = layer(
                     h, freqs_cis, modulation_signal, mask=mask, attn_impl=attn_impl
                 )
+            if self.attn_type == "bi_causal":
+                h = h.flip(1)
         return h
 
     def reset_parameters(self):
@@ -399,7 +412,6 @@ class DiffusionTransformer(BaseDiffusionTransformer):
         x: torch.Tensor,
         time_steps: torch.Tensor,
         condition: torch.Tensor,
-        mask: Optional[Union[BlockMask, AttentionBias, torch.Tensor, str]] = None,
         train: bool = True,
         attn_impl: str = "sdpa",
         is_video: bool = False,
@@ -422,9 +434,7 @@ class DiffusionTransformer(BaseDiffusionTransformer):
             cond_freqs_cis = self.rope_embeddings_global.freqs_cis.to(freqs_cis.device)
             cond_freqs_cis = cond_freqs_cis[:2]
             freqs_cis = torch.cat([cond_freqs_cis, freqs_cis], dim=0)
-        h = super().forward(
-            x, freqs_cis, modulation_signal, mask=mask, attn_impl=attn_impl
-        )
+        h = super().forward(x, freqs_cis, modulation_signal, attn_impl=attn_impl)
 
         out = self.img_output(self.norm(h))
         if self.block_type == "language_model":

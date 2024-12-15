@@ -4,8 +4,9 @@ python -m apps.main.test
 
 import logging
 from torchvision.utils import save_image
+import time
 from lingua.transformer import precompute_freqs_cis
-
+import torch
 from apps.main.data import (
     create_dummy_dataloader,
     create_imagenet_dataloader,
@@ -54,23 +55,30 @@ if __name__ == "__main__":
         max_seqlen=1000,
         block_type="language_model",
         pre_trained_path="/mnt/data/Llama-3.2-1B/original/consolidated.00.pth",
+        attn_type="causal",
     )
     dataloader = create_dummy_dataloader(
-        batch_size=16, num_classes=dit_args.num_classes, image_size=(16, 32, 32)
+        batch_size=1,
+        num_samples=100,
+        num_classes=dit_args.num_classes,
+        image_size=(16, 256, 256),
     )
     DiT = DiffusionTransformer(dit_args)
     DiT.init_weights(dit_args.pre_trained_path)
+    DiT = DiT.to(dtype=torch.bfloat16)
     DiT = DiT.cuda()
     vae_args = LatentVideoVAEArgs()
     schedulers_arg = SchedulerArgs()
     scheduler = RectifiedFlow(schedulers_arg)
+    start_time = time.time()
     for class_idx, time_step, image in dataloader:
         class_idx = class_idx.cuda()
         time_step = time_step.cuda()
-        image = image.cuda()
+        image = image.to(dtype=torch.bfloat16).cuda()
         noised_x, t, target = scheduler.sample_noised_input(image)
         output = DiT(x=noised_x, time_steps=t, condition=class_idx)
-
+    end_time = time.time()
+    logging.info(f"Inference time (sec) : {end_time-start_time}")
     model_args = ModelArgs()
     model_args.transformer = dit_args
     model_args.vae = vae_args
