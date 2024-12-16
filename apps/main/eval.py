@@ -8,17 +8,19 @@ from pathlib import Path
 from typing import Any, List, Optional, Tuple, Union
 
 from omegaconf import OmegaConf
+import torchvision.transforms as transforms
 import torch
 from lingua.args import dump_config
 from lingua.checkpoint import CONSOLIDATE_FOLDER, consolidate_checkpoints
-from lingua.data import init_choice_state, setup_sources
 from lingua.distributed import (
     DistributedArgs,
     dist_mean_dict,
     get_global_rank,
     get_world_size,
     setup_torch_distributed,
+    get_local_rank,
 )
+from apps.main.data import create_imagenet_dataloader, DataArgs
 from apps.main.generate import LatentGenerator, GeneratorArgs, load_consolidated_model
 
 from apps.main.model import LatentDiffusionTransformer, ModelArgs
@@ -32,32 +34,74 @@ logger = logging.getLogger()
 class EvalArgs:
     name: str = "evals"
     dump_dir: Optional[str] = None
-    metric_log_dir: Optional[str] = None
     ckpt_dir: str = ""
     generator: GeneratorArgs = field(default_factory=GeneratorArgs)
-
+    eval_data: DataArgs = field(default_factory=DataArgs)
     wandb: Optional[Any] = None
+    sample_num: int = 1000
 
     global_step: Optional[int] = None  # for in-training evaluation
+
+
+def save_images(
+    tensors: torch.Tensor,
+    output_dir: str,
+    prefix: str = "image",
+):
+    os.makedirs(output_dir, exist_ok=True)
+    tensors = (tensors + 1) * 127.5
+    tensors = tensors.clamp(0, 255).byte()
+
+    # Convert each tensor image to PIL format and save
+    for i, img_tensor in enumerate(tensors):
+        # Permute channels to HWC for PIL
+        img_pil = transforms.ToPILImage()(img_tensor.cpu())
+        # Define image path
+        image_path = os.path.join(output_dir, f"{prefix}_{i}.png")
+        # Save image
+        img_pil.save(image_path)
+    logger.info(f"Saved {len(tensors)} images to {output_dir}")
 
 
 def launch_eval(cfg: EvalArgs):
     if not torch.distributed.is_initialized():
         setup_torch_distributed(DistributedArgs())
 
+    if (
+        not (Path(cfg.ckpt_dir) / CONSOLIDATE_FOLDER).exists()
+        and get_global_rank() == 0
+    ):
+        consolidate_checkpoints(cfg.ckpt_dir)
     Path(cfg.dump_dir).mkdir(parents=True, exist_ok=True)
     dump_config(cfg, Path(cfg.dump_dir) / "config.yaml", log_config=False)
-
     torch.distributed.barrier()
+    world_size = get_world_size()
+    global_rank = get_global_rank()
     logger.info("Loading model")
     model, _ = load_consolidated_model(
-        cfg.ckpt_dir,
+        consolidated_path=cfg.ckpt_dir,
         model_cls=LatentDiffusionTransformer,
         model_args_cls=ModelArgs,
     )
     logger.info("Model loaded")
     model.eval()
     generator = LatentGenerator(cfg.generator, model)
+    data_loader = create_imagenet_dataloader(
+        shard_id=global_rank,
+        num_shards=world_size,
+        args=cfg.eval_data,
+    )
+    max_steps = cfg.sample_num // (cfg.eval_data.batch_size * world_size)
+    for idx, batch in enumerate(data_loader):
+        generated_samples = generator(batch["label"].cuda())
+        save_images(
+            generated_samples,
+            output_dir=Path(cfg.dump_dir) / f"samples",
+            prefix=f"image_rank{global_rank}_batch{idx}",
+        )
+        if idx + 1 >= max_steps:
+            break
+    del generator
 
 
 def main():

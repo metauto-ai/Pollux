@@ -24,7 +24,7 @@ from timeit import default_timer as timer
 from typing import Any, Dict, List, Optional
 from omegaconf import OmegaConf
 
-from lingua.args import dump_config, flatten_dict
+from lingua.args import dump_config, flatten_dict, dataclass_from_dict
 from lingua.checkpoint import CheckpointArgs, CheckpointManager, load_from_checkpoint
 from lingua.distributed import (
     DistributedArgs,
@@ -37,7 +37,6 @@ from lingua.distributed import (
     parallelize_model,
     setup_env,
     setup_torch_distributed,
-    clean_env,
     requeue_slurm_job,
     check_model_value_range,
 )
@@ -60,6 +59,12 @@ from apps.main.model import (
     build_fsdp_grouping_plan,
     tp_parallelize,
     get_no_recompute_ops,
+)
+
+from apps.main.eval import (
+    launch_eval,
+    EVAL_FOLDER_NAME,
+    EvalArgs,
 )
 
 logger = logging.getLogger()
@@ -468,10 +473,24 @@ def train(args: TrainArgs):
             if args.eval is not None and every_n_steps(
                 train_state, args.checkpoint.eval.every, acc_step=0
             ):
-                pass  # TODO add some potential evaluation metrics here
-                # TODO: Mingchen: Yes, we are eager to have one here. I found current loss is quickly been stable after 500 steps.
-                # TODO: Mingchen: So we may need a better signal here.
-
+                logger.info("Evaluation Start")
+                start_time = time.time()
+                eval_args = dataclass_from_dict(EvalArgs, args.eval)
+                eval_args.global_step = train_state.step
+                eval_args.ckpt_dir = str(checkpoint.existing_saves[-1])
+                eval_args.dump_dir = str(
+                    os.path.join(
+                        args.dump_dir,
+                        "evals",
+                        EVAL_FOLDER_NAME.format(train_state.step),
+                    )
+                )
+                launch_eval(eval_args)
+                end_time = time.time()
+                logger.info(
+                    f"Evaluation End! Take total time (sec): {end_time-start_time}"
+                )
+                # TODO: add some images to wandb for visualization
             if preemption_flag["flag"]:
                 if not saved:
                     checkpoint.save(

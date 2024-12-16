@@ -1,12 +1,12 @@
 # Template config, need to change dump_dir, data.root_dir and data.tokenizer.path
 # torchrun --standalone --nnodes 1 --nproc-per-node 4 -m apps.main.train config=apps/main/configs/pollux_v0.4.yaml
 
-name: "ImageNet_1B_BaseLine_256_Flux_LLAMA_Pre_Train_v0.4" 
+name: "ImageNet_1B_BaseLine_256_Flux_LLAMA_Pre_Train_v0.4_debug" 
 dump_dir: "" # Mingchen: No need to put now! I revise the code to flexible put `/mnt/data/dump` + name for dump_dir
 steps: 100000
 seed: 777
 optim:
-    lr: 5e-4
+    lr: 1.4e-4
     warmup: 2000
     lr_min_ratio: 0.000001
     clip: 10.0
@@ -59,10 +59,10 @@ model:
         attn_type: "bi_causal"
 data:
     root_dir: '/mnt/data/imagenet'
-    batch_size: 90
+    batch_size: 64
     image_size: 256
     num_workers: 8
-
+    split: 'train'
 profiling:
     run: true
 
@@ -80,3 +80,21 @@ logging:
         project: "Pollux"
         entity: "metauto"
         name: ""
+
+eval:
+    name: "debug_evals"
+    ckpt_dir:  ""
+    dump_dir: ""
+    generator:
+        guidance_scale: 3.0
+        dtype: bf16
+        resolution: 256
+        show_progress: False
+        inference_steps: 25
+    sample_num: 1000
+    eval_data:
+        root_dir: '/mnt/data/imagenet'
+        batch_size: 64
+        image_size: 256
+        num_workers: 8
+        split: 'validation'

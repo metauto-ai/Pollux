@@ -194,10 +194,8 @@ def load_consolidated_model(
     ]
     model_args = dataclass_from_dict(model_args_cls, config.model, strict=False)
     model = model_cls(model_args)
-    consolidate_checkpoints(ckpt_path)
-    st_dict = torch.load(
-        ckpt_path / CONSOLIDATE_FOLDER / CONSOLIDATE_NAME, weights_only=True
-    )
+    consolidated_path = consolidate_checkpoints(ckpt_path)
+    st_dict = torch.load(Path(consolidated_path) / CONSOLIDATE_NAME, weights_only=True)
     model.load_state_dict(st_dict["model"])
     model = model.cuda().eval()
     for param in model.parameters():
