@@ -3,8 +3,8 @@ name: "debug_evals"
 ckpt_dir:  /mnt/data/dump/ImageNet_1B_BaseLine_256_Flux_LLAMA_Pre_Train/checkpoints/0000030000/
 dump_dir: /home/haozhe/project/lingua_videogen
 generator:
-  guidance_scale: 5.0
+  guidance_scale: 2.0
   dtype: bf16
   resolution: 256
   show_progress: False
-  inference_steps: 25
+  inference_steps: 100

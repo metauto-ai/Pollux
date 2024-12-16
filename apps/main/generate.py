@@ -83,7 +83,7 @@ class LatentGenerator(nn.Module):
             noise_pred = self.model.transformer(
                 x=latent_model_input, time_steps=timestep, condition=context
             )
-            noise_pred_uncond, noise_pred_text = noise_pred.chunk(2)
+            noise_pred_text, noise_pred_uncond = noise_pred.chunk(2)
             noise_pred = noise_pred_uncond + self.guidance_scale * (
                 noise_pred_text - noise_pred_uncond
             )
