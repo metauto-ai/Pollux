@@ -53,5 +53,4 @@ python -m apps.main.test
 
 ### TODO 
 
-* P(ure)-DiffusionModel where time embedding/conditional signal is tokenized to the sequential input. 
 * Ensemble minimal and efficient Qwen model for image/video understanding.
