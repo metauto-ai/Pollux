@@ -11,19 +11,24 @@ from dataclasses import dataclass
 from typing import Dict, Any, Iterator, Optional, TypedDict
 import logging
 from torch import nn
+
 # Configure logging
 logger = logging.getLogger()
 
 
 @dataclass
 class DataArgs:
-    root_dir: str = ''
+    root_dir: str = ""
     batch_size: int = 2
     num_workers: int = 8
     image_size: int = 256
+    split: str = "train"
+
 
 # Instantiate the dataset and dataloader
-def create_dummy_dataloader(batch_size=32, num_samples=1000, num_classes=10, image_size=(3, 64, 64)):
+def create_dummy_dataloader(
+    batch_size=32, num_samples=1000, num_classes=10, image_size=(3, 64, 64)
+):
     """
     Create a dataloader for the diffusion model.
     Args:
@@ -43,17 +48,16 @@ def create_dummy_dataloader(batch_size=32, num_samples=1000, num_classes=10, ima
             break
     """
     dataset = DiffusionDummyDataset(
-        num_samples=num_samples,
-        num_classes=num_classes,
-        image_size=image_size
+        num_samples=num_samples, num_classes=num_classes, image_size=image_size
     )
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
     return dataloader
 
 
 def may_download_image_dataset(path_name):
-    data = datasets.load_dataset('ILSVRC/imagenet-1k',cache_dir=path_name)
-    print(data['train'][0])
+    data = datasets.load_dataset("ILSVRC/imagenet-1k", cache_dir=path_name)
+    print(data["train"][0])
+
 
 def center_crop_arr(pil_image, image_size):
     """
@@ -73,17 +77,29 @@ def center_crop_arr(pil_image, image_size):
     arr = np.array(pil_image)
     crop_y = (arr.shape[0] - image_size) // 2
     crop_x = (arr.shape[1] - image_size) // 2
-    return Image.fromarray(arr[crop_y: crop_y + image_size, crop_x: crop_x + image_size])
+    return Image.fromarray(
+        arr[crop_y : crop_y + image_size, crop_x : crop_x + image_size]
+    )
 
-def create_imagenet_dataloader(shard_id:int, num_shards:int,  args:DataArgs)->DataLoader:
-    data = datasets.load_dataset('ILSVRC/imagenet-1k',cache_dir=args.root_dir)
-    train_data = data['train']
+
+def create_imagenet_dataloader(
+    shard_id: int,
+    num_shards: int,
+    args: DataArgs,
+) -> DataLoader:
+    data = datasets.load_dataset("ILSVRC/imagenet-1k", cache_dir=args.root_dir)
+    train_data = data[args.split]
     data_pipeline = DataPipeline(args)
     train_data.set_transform(data_pipeline)
-    logger.info(f"Read Data with Total Shard: {num_shards} Current Index: {shard_id}")
-    train_data = train_data.shard(num_shards=num_shards,index=shard_id)
-    train_loader = DataLoader(train_data, batch_size= args.batch_size, num_workers=args.num_workers)
+    logger.warning(
+        f"Read Data with Total Shard: {num_shards} Current Index: {shard_id} Split: {args.split}"
+    )
+    train_data = train_data.shard(num_shards=num_shards, index=shard_id)
+    train_loader = DataLoader(
+        train_data, batch_size=args.batch_size, num_workers=args.num_workers
+    )
     return train_loader
+
 
 # Dummy Dataset Class
 class DiffusionDummyDataset(Dataset):
@@ -117,22 +133,24 @@ class DiffusionDummyDataset(Dataset):
 
 
 class DataPipeline(nn.Module):
-    def __init__(self,args:DataArgs)->nn.Module:
+    def __init__(self, args: DataArgs) -> nn.Module:
         super().__init__()
-        self.normalize_transform = transforms.Compose([
-        transforms.RandomHorizontalFlip(),
-        transforms.ToTensor(),
-        transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5], inplace=True)
-        ])
+        self.normalize_transform = transforms.Compose(
+            [
+                transforms.RandomHorizontalFlip(),
+                transforms.ToTensor(),
+                transforms.Normalize(
+                    mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5], inplace=True
+                ),
+            ]
+        )
         self.image_size = args.image_size
-    
-    
-    def transform(self, x: Image)->torch.Tensor:
-        x = center_crop_arr(x,self.image_size)
+
+    def transform(self, x: Image) -> torch.Tensor:
+        x = center_crop_arr(x, self.image_size)
         return self.normalize_transform(x)
-    
-    
-    def forward(self,data:Dict)->Dict:
+
+    def forward(self, data: Dict) -> Dict:
         processed_image = []
         for image in data["image"]:
             try:
@@ -142,12 +160,9 @@ class DataPipeline(nn.Module):
                 # logger.warning(f'Error to process the image: {e}')
         if len(data["image"]) != len(processed_image):
             dup_num = len(data["image"]) - len(processed_image)
-            processed_image.extend(
-                            [processed_image[-1]] * dup_num
-                                    )
+            processed_image.extend([processed_image[-1]] * dup_num)
             for k in data.keys():
                 if k != "image":
-                    data[k][-dup_num:] = [data[k][-dup_num-1]]*dup_num
-        data['image'] =  processed_image
+                    data[k][-dup_num:] = [data[k][-dup_num - 1]] * dup_num
+        data["image"] = processed_image
         return data
-

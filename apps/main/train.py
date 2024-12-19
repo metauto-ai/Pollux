@@ -24,7 +24,7 @@ from timeit import default_timer as timer
 from typing import Any, Dict, List, Optional
 from omegaconf import OmegaConf
 
-from lingua.args import dump_config, flatten_dict
+from lingua.args import dump_config, flatten_dict, dataclass_from_dict
 from lingua.checkpoint import CheckpointArgs, CheckpointManager, load_from_checkpoint
 from lingua.distributed import (
     DistributedArgs,
@@ -37,7 +37,6 @@ from lingua.distributed import (
     parallelize_model,
     setup_env,
     setup_torch_distributed,
-    clean_env,
     requeue_slurm_job,
     check_model_value_range,
 )
@@ -62,13 +61,19 @@ from apps.main.model import (
     get_no_recompute_ops,
 )
 
+from apps.main.eval import (
+    launch_eval,
+    EVAL_FOLDER_NAME,
+    EvalArgs,
+)
+
 logger = logging.getLogger()
 
 
 @dataclass
 class TrainArgs:
     name: str = "Pollux"
-    output_dir: str = "/mnt/data/dump/"
+    output_dir: str = "/mnt/data/dump"
     dump_dir: str = ""
     seed: int = 42
 
@@ -129,15 +134,20 @@ def validate_train_args(args: TrainArgs):
     # Minchen: generate the dump dir according to the config
     if not args.dump_dir:
         # args.dump_dir = f"/mnt/data/dump/{args.name}"
+<<<<<<< HEAD
         args.dump_dir = f"{args.output_dir}{args.name}"
+=======
+        args.dump_dir = str(Path(args.output_dir) / f"{args.name}")
+>>>>>>> origin/main
 
     logger.info(f"Dump dir set to {args.dump_dir}")
 
     if args.logging.wandb is not None:
         if not args.logging.wandb.name:
             args.logging.wandb.name = args.name
-
-    logger.info(f"Wandb name set to {args.logging.wandb.name}")
+        logger.info(f"Wandb name set to {args.logging.wandb.name}")
+        if not args.logging.wandb.dir:
+            args.logging.wandb.dir = str(Path(args.dump_dir) / "wandb")
 
     if args.checkpoint.path is None:
         logger.info(f"Setting checkpoint path to {args.checkpoint.path}")
@@ -468,10 +478,31 @@ def train(args: TrainArgs):
             if args.eval is not None and every_n_steps(
                 train_state, args.checkpoint.eval.every, acc_step=0
             ):
+<<<<<<< HEAD
                 pass  # TODO add some potential evaluation metrics here
                 # TODO: Mingchen: Yes, we are eager to have one here. I found current loss is quickly been stable after 500 steps.
                 # TODO: Mingchen: So we may need a better signal here.
 
+=======
+                logger.info("Evaluation Start")
+                start_time = time.time()
+                eval_args = dataclass_from_dict(EvalArgs, args.eval)
+                eval_args.global_step = train_state.step
+                eval_args.ckpt_dir = str(checkpoint.existing_saves[-1])
+                eval_args.dump_dir = str(
+                    os.path.join(
+                        args.dump_dir,
+                        "evals",
+                        EVAL_FOLDER_NAME.format(train_state.step),
+                    )
+                )
+                launch_eval(eval_args)
+                end_time = time.time()
+                logger.info(
+                    f"Evaluation End! Take total time (sec): {end_time-start_time}"
+                )
+                # TODO: add some images to wandb for visualization
+>>>>>>> origin/main
             if preemption_flag["flag"]:
                 if not saved:
                     checkpoint.save(

@@ -4,8 +4,13 @@ python -m apps.main.test
 
 import logging
 from torchvision.utils import save_image
+import time
 from lingua.transformer import precompute_freqs_cis
+<<<<<<< HEAD
 
+=======
+import torch
+>>>>>>> origin/main
 from apps.main.data import (
     create_dummy_dataloader,
     create_imagenet_dataloader,
@@ -44,7 +49,11 @@ if __name__ == "__main__":
         n_heads=32,
         n_kv_heads=8,
         n_layers=16,
+<<<<<<< HEAD
         ada_dim=512,
+=======
+        ada_dim=2048,
+>>>>>>> origin/main
         patch_size=2,
         in_channels=16,
         out_channels=16,
@@ -52,6 +61,7 @@ if __name__ == "__main__":
         cfg_drop_ratio=0.1,
         num_classes=1000,
         max_seqlen=1000,
+<<<<<<< HEAD
         pre_trained_path="/mnt/data/Llama-3.2-1B/original/consolidated.00.pth",
     )
     dataloader = create_dummy_dataloader(
@@ -61,13 +71,38 @@ if __name__ == "__main__":
     vae_args = LatentVideoVAEArgs()
     schedulers_arg = SchedulerArgs()
     scheduler = RectifiedFlow(schedulers_arg)
+=======
+        block_type="language_model",
+        pre_trained_path="/mnt/data/Llama-3.2-1B/original/consolidated.00.pth",
+        attn_type="causal",
+    )
+    dataloader = create_dummy_dataloader(
+        batch_size=1,
+        num_samples=100,
+        num_classes=dit_args.num_classes,
+        image_size=(16, 256, 256),
+    )
+    DiT = DiffusionTransformer(dit_args)
+    DiT.init_weights(dit_args.pre_trained_path)
+    DiT = DiT.to(dtype=torch.bfloat16)
+    DiT = DiT.cuda()
+    vae_args = LatentVideoVAEArgs()
+    schedulers_arg = SchedulerArgs()
+    scheduler = RectifiedFlow(schedulers_arg)
+    start_time = time.time()
+>>>>>>> origin/main
     for class_idx, time_step, image in dataloader:
         class_idx = class_idx.cuda()
         time_step = time_step.cuda()
-        image = image.cuda()
+        image = image.to(dtype=torch.bfloat16).cuda()
         noised_x, t, target = scheduler.sample_noised_input(image)
         output = DiT(x=noised_x, time_steps=t, condition=class_idx)
+<<<<<<< HEAD
 
+=======
+    end_time = time.time()
+    logging.info(f"Inference time (sec) : {end_time-start_time}")
+>>>>>>> origin/main
     model_args = ModelArgs()
     model_args.transformer = dit_args
     model_args.vae = vae_args

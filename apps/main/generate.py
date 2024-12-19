@@ -1,5 +1,6 @@
 import torch
 import time
+from dataclasses import dataclass
 from omegaconf import OmegaConf
 from torch import nn
 from torch.nn import functional as F
@@ -8,16 +9,44 @@ import numpy as np
 from apps.main.model import LatentDiffusionTransformer, ModelArgs
 from apps.Simple_DiT.generate import (
     GeneratorArgs,
+<<<<<<< HEAD
     load_consolidated_model,
     randn_tensor,
 )
 from apps.Simple_DiT.schedulers import RectFlow, retrieve_timesteps, calculate_shift
+=======
+)
+from typing import List, Optional, Tuple, Union
+from apps.main.modules.schedulers import retrieve_timesteps, calculate_shift
+>>>>>>> origin/main
 from lingua.args import dataclass_from_dict
 import logging
+from pathlib import Path
+from lingua.checkpoint import (
+    CONSOLIDATE_NAME,
+    consolidate_checkpoints,
+    CONSOLIDATE_FOLDER,
+)
+
 
 logger = logging.getLogger()
 
 
+<<<<<<< HEAD
+=======
+@dataclass
+class GeneratorArgs:
+    guidance_scale: float = 2.0
+    resolution: int = 256
+    in_channel: int = 3
+    show_progress: bool = False
+    dtype: Optional[str] = "bf16"
+    device: Optional[str] = "cuda"
+    sigma: Optional[float] = None
+    inference_steps: int = 25
+
+
+>>>>>>> origin/main
 class LatentGenerator(nn.Module):
     def __init__(self, cfg: GeneratorArgs, model: nn.Module):
         super().__init__()
@@ -81,9 +110,18 @@ class LatentGenerator(nn.Module):
             latent_model_input = torch.cat([latent] * 2)
             timestep = t.expand(latent_model_input.shape[0])
             noise_pred = self.model.transformer(
+<<<<<<< HEAD
                 x=latent_model_input, time_steps=timestep, condition=context
             )
             noise_pred_uncond, noise_pred_text = noise_pred.chunk(2)
+=======
+                x=latent_model_input,
+                time_steps=timestep,
+                condition=context,
+                train=False,
+            )
+            noise_pred_text, noise_pred_uncond = noise_pred.chunk(2)
+>>>>>>> origin/main
             noise_pred = noise_pred_uncond + self.guidance_scale * (
                 noise_pred_text - noise_pred_uncond
             )
@@ -96,6 +134,94 @@ class LatentGenerator(nn.Module):
         return image
 
 
+<<<<<<< HEAD
+=======
+def randn_tensor(
+    shape: Union[Tuple, List],
+    generator: Optional[Union[List["torch.Generator"], "torch.Generator"]] = None,
+    device: Optional["torch.device"] = None,
+    dtype: Optional["torch.dtype"] = None,
+    layout: Optional["torch.layout"] = None,
+):
+    """A helper function to create random tensors on the desired `device` with the desired `dtype`. When
+    passing a list of generators, you can seed each batch size individually. If CPU generators are passed, the tensor
+    is always created on the CPU. from https://github.com/huggingface/diffusers/blob/main/src/diffusers/utils/torch_utils.py
+    """
+    # device on which tensor is created defaults to device
+    rand_device = device
+    batch_size = shape[0]
+
+    layout = layout or torch.strided
+    device = device or torch.device("cpu")
+
+    if generator is not None:
+        gen_device_type = (
+            generator.device.type
+            if not isinstance(generator, list)
+            else generator[0].device.type
+        )
+        if gen_device_type != device.type and gen_device_type == "cpu":
+            rand_device = "cpu"
+            if device != "mps":
+                logger.info(
+                    f"The passed generator was created on 'cpu' even though a tensor on {device} was expected."
+                    f" Tensors will be created on 'cpu' and then moved to {device}. Note that one can probably"
+                    f" slighly speed up this function by passing a generator that was created on the {device} device."
+                )
+        elif gen_device_type != device.type and gen_device_type == "cuda":
+            raise ValueError(
+                f"Cannot generate a {device} tensor from a generator of type {gen_device_type}."
+            )
+
+    # make sure generator list of length 1 is treated like a non-list
+    if isinstance(generator, list) and len(generator) == 1:
+        generator = generator[0]
+
+    if isinstance(generator, list):
+        shape = (1,) + shape[1:]
+        latents = [
+            torch.randn(
+                shape,
+                generator=generator[i],
+                device=rand_device,
+                dtype=dtype,
+                layout=layout,
+            )
+            for i in range(batch_size)
+        ]
+        latents = torch.cat(latents, dim=0).to(device)
+    else:
+        latents = torch.randn(
+            shape, generator=generator, device=rand_device, dtype=dtype, layout=layout
+        ).to(device)
+
+    return latents
+
+
+def load_consolidated_model(
+    consolidated_path,
+    model_cls,
+    model_args_cls,
+):
+    ckpt_path = Path(consolidated_path)
+    config = ckpt_path / "params.json"
+    config = OmegaConf.load(config)
+
+    param_dtype = dict(fp32=torch.float32, fp16=torch.float16, bf16=torch.bfloat16)[
+        config.distributed.model_dtype
+    ]
+    model_args = dataclass_from_dict(model_args_cls, config.model, strict=False)
+    model = model_cls(model_args)
+    consolidated_path = consolidate_checkpoints(ckpt_path)
+    st_dict = torch.load(Path(consolidated_path) / CONSOLIDATE_NAME, weights_only=True)
+    model.load_state_dict(st_dict["model"])
+    model = model.cuda().eval()
+    for param in model.parameters():
+        param.data = param.data.to(dtype=param_dtype)
+    return model, config
+
+
+>>>>>>> origin/main
 def main():
     # Load CLI arguments (overrides) and combine with a YAML config
     cfg = OmegaConf.from_cli()

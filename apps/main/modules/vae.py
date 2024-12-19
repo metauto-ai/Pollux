@@ -5,6 +5,7 @@ import torch
 from torch import nn
 from diffusers import AutoencoderKL
 
+
 @dataclass
 class LatentVideoVAEArgs:
     pretrained_model_name_or_path: str = "black-forest-labs/FLUX.1-dev"
@@ -26,12 +27,14 @@ class LatentVideoVAE(nn.Module):
 
     @torch.no_grad()
     def encode(self, x: torch.Tensor) -> torch.Tensor:
+        x = x.to(self.vae.dtype)
         x = self.vae.encode(x).latent_dist.sample()
         x = (x - self.vae.config.shift_factor) * self.vae.config.scaling_factor
         return x
 
     @torch.no_grad()
     def decode(self, x: torch.Tensor) -> torch.Tensor:
+        x = x.to(self.vae.dtype)
         x = (x / self.vae.config.scaling_factor) + self.vae.config.shift_factor
         image = self.vae.decode(x, return_dict=False)[0]
         return image
