@@ -73,7 +73,7 @@ logger = logging.getLogger()
 @dataclass
 class TrainArgs:
     name: str = "Pollux"
-    output_dir: str = "/mnt/data/dump/"
+    output_dir: str = "/mnt/data/dump"
     dump_dir: str = ""
     seed: int = 42
 
@@ -134,15 +134,16 @@ def validate_train_args(args: TrainArgs):
     # Minchen: generate the dump dir according to the config
     if not args.dump_dir:
         # args.dump_dir = f"/mnt/data/dump/{args.name}"
-        args.dump_dir = f"{args.output_dir}{args.name}"
+        args.dump_dir = str(Path(args.output_dir) / f"{args.name}")
 
     logger.info(f"Dump dir set to {args.dump_dir}")
 
     if args.logging.wandb is not None:
         if not args.logging.wandb.name:
             args.logging.wandb.name = args.name
-
-    logger.info(f"Wandb name set to {args.logging.wandb.name}")
+        logger.info(f"Wandb name set to {args.logging.wandb.name}")
+        if not args.logging.wandb.dir:
+            args.logging.wandb.dir = str(Path(args.dump_dir) / "wandb")
 
     if args.checkpoint.path is None:
         logger.info(f"Setting checkpoint path to {args.checkpoint.path}")
