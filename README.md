@@ -54,3 +54,7 @@ python -m apps.main.test
 ### TODO 
 
 * Ensemble minimal and efficient Qwen model for image/video understanding.
+
+* Pollux V 0.5 for text-to-image Generation Pipeline:
+![pipeline_v0 5](https://github.com/user-attachments/assets/ad389a45-8711-4292-b070-00cc27eb5a38) 
+
