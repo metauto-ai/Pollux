@@ -11,7 +11,7 @@ optim:
     warmup: 2000
     lr_min_ratio: 0.000001
     clip: 10.0
-
+    weight_decay: 0.01
 env:
     ENABLE_INTRA_NODE_COMM: '0' # disable one default seeting here, as have some error in our cluster
 
