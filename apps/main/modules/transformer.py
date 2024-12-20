@@ -161,7 +161,7 @@ class DiffusionTransformerArgs(BaseTransformerArgs):
     block_type: str = "dit"  # Options: 'dit', 'language_model'.
     # 1) 'dit': Embeds time using AdaIn.
     # 2) 'language_model': Embeds time into the sequence input using a special token.
-    max_condition_seqlen: int = 2
+    condition_seqlen: int = 2
     attn_type: str = "full"  # Options: 'full', 'bi_causal' and 'causal'.
 
 
@@ -331,7 +331,7 @@ class DiffusionTransformer(BaseDiffusionTransformer):
         self.in_channels = args.in_channels
         self.num_classes = args.num_classes
         if self.block_type == "language_model":
-            assert args.dim == args.ada_dim
+            assert args.ada_dim % args.dim == 0
         self.tmb_embed = TimestepEmbedder(
             hidden_size=args.ada_dim, time_embedding_size=args.tmb_size
         )
@@ -354,11 +354,19 @@ class DiffusionTransformer(BaseDiffusionTransformer):
             head_dim=args.head_dim or args.dim // args.n_heads,
             max_seqlen=args.max_seqlen,
         )
-        self.rope_embeddings_global = RotaryEmbedding1D(
+        self.rope_embeddings_time = RotaryEmbedding1D(
             theta=args.rope_theta,
             head_dim=args.head_dim or args.dim // args.n_heads,
-            max_seqlen=args.max_condition_seqlen,
+            max_seqlen=args.condition_seqlen,
         )
+        self.rope_embeddings_cls = RotaryEmbedding1D(
+            theta=args.rope_theta,
+            head_dim=args.head_dim or args.dim // args.n_heads,
+            max_seqlen=args.condition_seqlen,
+        )
+        self.condition_seqlen = args.condition_seqlen
+        self.ada_dim = args.ada_dim
+        self.dim = args.dim
         self.norm = RMSNorm(args.dim, eps=args.norm_eps)
 
     def patchify_and_embed_image(
@@ -407,6 +415,12 @@ class DiffusionTransformer(BaseDiffusionTransformer):
         )
         return v, (T, H, W), freqs_cis
 
+    def repeat_condition(self, cond: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        n, _ = cond.size()
+        cond = cond.view(n, self.ada_dim // self.dim, self.dim)
+        cond = torch.cat([cond] * (self.condition_seqlen // cond.size(1)), dim=1)
+        return cond
+
     def forward(
         self,
         x: torch.Tensor,
@@ -427,18 +441,22 @@ class DiffusionTransformer(BaseDiffusionTransformer):
         if self.block_type == "dit":
             modulation_signal = t_emb + cls_emb
         elif self.block_type == "language_model":
+            # here the implementation is inspired from https://github.com/causalfusion/causalfusion/blob/main/models.py
             modulation_signal = None
-            t_emb = t_emb.unsqueeze(1)
-            cls_emb = cls_emb.unsqueeze(1)
+            t_emb = self.repeat_condition(t_emb)
+            cls_emb = self.repeat_condition(cls_emb)
+            x_len = x.size(1)
             x = torch.cat([t_emb, cls_emb, x], dim=1)
-            cond_freqs_cis = self.rope_embeddings_global.freqs_cis.to(freqs_cis.device)
-            cond_freqs_cis = cond_freqs_cis[:2]
-            freqs_cis = torch.cat([cond_freqs_cis, freqs_cis], dim=0)
+            time_freqs_cis = self.rope_embeddings_time.freqs_cis.to(freqs_cis.device)
+            time_freqs_cis = time_freqs_cis[: self.condition_seqlen]
+            cls_freq_cis = self.rope_embeddings_cls.freqs_cis.to(freqs_cis.device)
+            cls_freq_cis = cls_freq_cis[: self.condition_seqlen]
+            freqs_cis = torch.cat([time_freqs_cis, cls_freq_cis, freqs_cis], dim=0)
         h = super().forward(x, freqs_cis, modulation_signal, attn_impl=attn_impl)
 
         out = self.img_output(self.norm(h))
         if self.block_type == "language_model":
-            out = out[:, 2:, :]
+            out = out[:, -x_len:, :]
 
         if not is_video:
             x = self.unpatchify_image(out, img_size)
@@ -474,7 +492,8 @@ class DiffusionTransformer(BaseDiffusionTransformer):
         # Either use fixed base std or sqrt model dim
         super().reset_parameters()
         self.rope_embeddings_image.reset_parameters()
-        self.rope_embeddings_global.reset_parameters()
+        self.rope_embeddings_time.reset_parameters()
+        self.rope_embeddings_cls.reset_parameters()
         init_std = init_std or (self.dim ** (-0.5))
         self.norm.reset_parameters()
         self.tmb_embed.reset_parameters()
