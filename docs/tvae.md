@@ -23,7 +23,7 @@ Additionally, we select four popular video datasets commonly used in 3D or 4D: `
 `PointOdyssey`, `TartanAir`, `RealEstate10K`.
 And we add two image datasets: `ImageNet`, `TextOCR`.
 
-We totally select ~1k videos and 2k images from them. We provide the uids of selected videos and images in [image_bench.txt](tvae/image_bench.txt) and [video_bench.txt](tvae/video_bench.txt). We have constructed it and shared it on [Google Drive](https://drive.google.com/file/d/1bJz-dvrp1tVAAUuZuLzJbjU3ixJj1d6D/view?usp=sharing) for reproducible benchmarking.
+We totally select ~1k videos and 2k images from them. We provide the uids of selected videos and images in [image_bench.txt](tvae/image_bench.txt) and [video_bench.txt](tvae/video_bench.txt). We have constructed it and shared it on [Google Drive](https://drive.google.com/drive/folders/182gayGUXnuplSDK2r876YrnHjMoB3U7f?usp=sharing) for reproducible benchmarking.
 
 ### Image Benchmarks
 
