@@ -7,6 +7,7 @@ import math
 import logging
 from torch import nn
 from torch.optim import AdamW, lr_scheduler
+from typing import Callable, Tuple
 
 logger = logging.getLogger()
 
@@ -104,45 +105,22 @@ def lr_wsd(
     return lr
 
 
-def build_lr_fn(args: OptimArgs, n_steps: int):
-    if args.scheduler == "constant":
-        lr_fn = lambda x: 1.0
-    elif args.scheduler == "linear":
-        lr_fn = partial(
-            lr_linear, warmup=args.warmup, n_steps=n_steps, min_ratio=args.lr_min_ratio
-        )
-    elif args.scheduler == "inv_sqrt":
-        lr_fn = partial(
-            lr_inv_sqrt,
-            warmup=args.warmup,
-            exp_factor=args.exp_factor,
-            min_ratio=args.lr_min_ratio,
-        )
-    elif args.scheduler == "cosine":
-        lr_fn = partial(
-            lr_cosine,
-            warmup=args.warmup,
-            n_steps=n_steps,
-            cycle_length=args.cycle_length,
-            theta=args.cosine_theta,
-            min_ratio=args.lr_min_ratio,
-        )
-    elif args.scheduler == "wsd":
-        assert args.decay_fraction < args.cycle_length
-        lr_fn = partial(
-            lr_wsd,
-            warmup=args.warmup,
-            n_steps=n_steps,
-            decay_fraction=args.decay_fraction,
-            cycle_length=args.cycle_length,
-            min_ratio=args.lr_min_ratio,
-        )
-    else:
+def build_lr_fn(args: OptimArgs, n_steps: int) -> Callable[[int], float]:
+    schedulers = {
+        "constant": lambda: lambda x: 1.0,
+        "linear": partial(lr_linear, warmup=args.warmup, n_steps=n_steps, min_ratio=args.lr_min_ratio),
+        "inv_sqrt": partial(lr_inv_sqrt, warmup=args.warmup, exp_factor=args.exp_factor, min_ratio=args.lr_min_ratio),
+        "cosine": partial(lr_cosine, warmup=args.warmup, n_steps=n_steps, cycle_length=args.cycle_length,
+                          theta=args.cosine_theta, min_ratio=args.lr_min_ratio),
+        "wsd": partial(lr_wsd, warmup=args.warmup, n_steps=n_steps, decay_fraction=args.decay_fraction,
+                       cycle_length=args.cycle_length, min_ratio=args.lr_min_ratio)
+    }
+    if args.scheduler not in scheduler_map:
         raise NotImplementedError(f"Unknown scheduler: {args.scheduler}")
-    return lr_fn
+    return schedulers[args.scheduler]()
 
 
-def build_optimizer(model: nn.Module, args: OptimArgs, n_steps: int):
+def build_optimizer(model: nn.Module, args: OptimArgs, n_steps: int) -> Tuple[torch.optim.Optimizer, lr_scheduler._LRScheduler]:
     logger.info("Starting build of optimizer...")
     optimizer = AdamW(
         (param for param in model.parameters() if param.requires_grad),
