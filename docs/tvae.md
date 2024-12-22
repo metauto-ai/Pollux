@@ -293,3 +293,76 @@ We are going to benchmark the video VAEs with the following selected metrics:
 
 :pushpin: 
 - [ ] TBD: Evaluation and presentation of the results.
+
+
+## Update Dec 23, 2024
+
+We have finished part of evaluation for CogVideoX. The evaluation framework is done. The code for `difffusers` supported video VAE is all done.
+
+```json
+{
+    "per_dataset": {
+        "BDD100K": {
+            "ssim": 0.930067941213928,
+            "psnr": 36.60164713823704,
+            "lpips": 0.01599062914028764
+        },
+        "bridgedata_v2": {
+            "ssim": 0.9592909161752509,
+            "psnr": 35.6757308816532,
+            "lpips": 0.011264987589259232
+        },
+        "dynamic_replica": {
+            "ssim": 0.9714675109505366,
+            "psnr": 37.51383686862458,
+            "lpips": 0.009614974850807916
+        },
+        "ego-exo-4d": {
+            "ssim": 0.957967719938628,
+            "psnr": 33.50485918949504,
+            "lpips": 0.022392005953006448
+        },
+        "imagenet_val": {
+            "ssim": 0.8691554892061626,
+            "psnr": 28.14316538517285,
+            "lpips": 0.062253134325146675
+        },
+        "objaverse": {
+            "ssim": 0.9372057804626062,
+            "psnr": 36.590504096819096,
+            "lpips": 0.01468046420114595
+        },
+        "panda_70m": {
+            "ssim": 0.9834561395298411,
+            "psnr": 38.00447347717396,
+            "lpips": 0.012113970292266458
+        },
+        "point_odyssey": {
+            "ssim": 0.9738573945955057,
+            "psnr": 35.63755394770997,
+            "lpips": 0.018817518898285927
+        },
+        "real10k": {
+            "ssim": 0.9743315807789156,
+            "psnr": 36.10890712228697,
+            "lpips": 0.00869431549566798
+        },
+        "tartanair": {
+            "ssim": 0.8806197841050017,
+            "psnr": 29.006979843525038,
+            "lpips": 0.07422758489559145
+        },
+        "textocr": {
+            "ssim": 0.9668513499004541,
+            "psnr": 33.42763171936551,
+            "lpips": 0.009345931583084166
+        }
+    },
+    "average": {
+        "ssim": 0.945842873350621,
+        "psnr": 34.565026333642116,
+        "lpips": 0.023581410656777258
+    }
+}
+
+```
