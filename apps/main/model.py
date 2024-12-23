@@ -15,9 +15,14 @@ from torch.distributed.tensor.parallel import (
     PrepareModuleInput,
     parallelize_module,
 )
-
+from apps.main.modules.tokenizer import Tokenizer, TokenizerArgs
 from apps.main.modules.schedulers import RectifiedFlow, SchedulerArgs
-from apps.main.modules.transformer import DiffusionTransformer, DiffusionTransformerArgs
+from apps.main.modules.transformer import (
+    GenTransformer,
+    PlanTransformer,
+    PlanTransformerArgs,
+    GenTransformerArgs,
+)
 from apps.main.modules.vae import LatentVideoVAE, LatentVideoVAEArgs
 
 
@@ -26,14 +31,14 @@ logger = logging.getLogger()
 
 @dataclass
 class ModelArgs:
-    transformer: DiffusionTransformerArgs = field(
-        default_factory=DiffusionTransformerArgs
-    )
+    gen_transformer: GenTransformerArgs = field(default_factory=GenTransformerArgs)
+    plan_transformer: PlanTransformerArgs = field(default_factory=PlanTransformerArgs)
     vae: LatentVideoVAEArgs = field(default_factory=LatentVideoVAEArgs)
     scheduler: SchedulerArgs = field(default_factory=SchedulerArgs)
+    tokenizer: TokenizerArgs = field(default_factory=TokenizerArgs)
 
 
-class LatentDiffusionTransformer(nn.Module):
+class Pollux(nn.Module):
     """
     Latent Diffusion Transformer Model.
     This model integrates a VAE for latent compression, a transformer for temporal and spatial token mixing,
@@ -50,12 +55,18 @@ class LatentDiffusionTransformer(nn.Module):
 
         self.compressor = LatentVideoVAE(args.vae)
         self.scheduler = RectifiedFlow(args.scheduler)
-        self.transformer = DiffusionTransformer(args.transformer)
+        self.gen_transformer = GenTransformer(args.gen_transformer)
+        self.tokenizer = Tokenizer(model_path=args.tokenizer.model_path)
+
+        assert args.plan_transformer.vocab_size == self.tokenizer.n_words
+
+        self.plan_transformer = PlanTransformer(args.plan_transformer)
+        self.text_seqlen = self.plan_transformer.text_seqlen
 
     def forward(self, batch: torch.Tensor) -> dict[str:any]:
 
         image = batch["image"]
-        condition = batch["label"]
+        batch["cap_token"] = self.tokenizer.encode(batch["caption"])
         latent_code = self.compressor.encode(image)
         noised_x, t, target = self.scheduler.sample_noised_input(latent_code)
         output = self.transformer(x=noised_x, time_steps=t, condition=condition)
@@ -66,8 +77,9 @@ class LatentDiffusionTransformer(nn.Module):
 
         return batch, loss
 
-    def init_weights(self, pre_trained_path: Optional[str] = None):
-        self.transformer.init_weights(pre_trained_path)
+    def init_weights(self, args: ModelArgs):
+        self.gen_transformer.init_weights(args.gen_transformer.pre_trained_path)
+        self.gen_transformer.init_weights(args.plan_transformer.pre_trained_path)
 
 
 # Optional policy for activation checkpointing. With None, we stick to the default (defined distributed.py: default_no_recompute_ops)
@@ -76,14 +88,17 @@ def get_no_recompute_ops():
 
 
 # Optional and only used for fully shard options (fsdp) is choose. Highly recommanded for large models
-def build_fsdp_grouping_plan(model_args: DiffusionTransformerArgs, vae_config: dict):
+def build_fsdp_grouping_plan(model_args: ModelArgs, vae_config: dict):
     group_plan: Tuple[int, bool] = []
 
     for i in range(len(vae_config.down_block_types)):
         group_plan.append((f"compressor.vae.encoder.down_blocks.{i}", False))
 
-    for i in range(model_args.n_layers):
-        group_plan.append((f"transformer.layers.{i}", False))
+    for i in range(model_args.plan_transformer.n_layers):
+        group_plan.append((f"plan_transformer.layers.{i}", False))
+
+    for i in range(model_args.gen_transformer.n_layers):
+        group_plan.append((f"gen_transformer.layers.{i}", False))
 
     group_plan.append(("transformer.img_output", True))
     logger.info(f"The `group_plan` for fsdp is:\n{group_plan}")
@@ -91,15 +106,19 @@ def build_fsdp_grouping_plan(model_args: DiffusionTransformerArgs, vae_config: d
     return group_plan
 
 
-def tp_parallelize(
-    model, tp_mesh, model_args: DiffusionTransformerArgs, distributed_args
-):
+def tp_parallelize(model, tp_mesh, model_args: ModelArgs, distributed_args):
 
-    assert model_args.dim % distributed_args.tp_size == 0
-    assert model_args.vocab_size % distributed_args.tp_size == 0
-    assert model_args.n_heads % distributed_args.tp_size == 0
-    assert (model_args.n_kv_heads or 0) % distributed_args.tp_size == 0
-    assert model_args.n_heads % (model_args.n_kv_heads or 1) == 0
+    assert model_args.plan_transformer.dim % distributed_args.tp_size == 0
+    assert model_args.plan_transformer.vocab_size % distributed_args.tp_size == 0
+    assert model_args.plan_transformer.n_heads % distributed_args.tp_size == 0
+    assert (model_args.plan_transformer.n_kv_heads or 0) % distributed_args.tp_size == 0
+    assert model_args.plan_transformer.n_heads % (model_args.n_kv_heads or 1) == 0
+
+    assert model_args.gen_transformer.dim % distributed_args.tp_size == 0
+    assert model_args.gen_transformer.vocab_size % distributed_args.tp_size == 0
+    assert model_args.gen_transformer.n_heads % distributed_args.tp_size == 0
+    assert (model_args.gen_transformer.n_kv_heads or 0) % distributed_args.tp_size == 0
+    assert model_args.gen_transformer.n_heads % (model_args.n_kv_heads or 1) == 0
 
     main_plan = {}
     main_plan["norm"] = SequenceParallel()
@@ -108,13 +127,13 @@ def tp_parallelize(
     )
 
     parallelize_module(
-        model.transformer,
+        model.gen_transformer,
         tp_mesh,
         main_plan,
     )
 
-    # TODO: Adding more for DiT specific Modules
-    for layer in model.transformer.layers:
+    # TODO: Adding plan_transformer Modules
+    for layer in model.gen_transformer.layers:
         layer_plan = {}
 
         layer_plan["attention"] = PrepareModuleInput(

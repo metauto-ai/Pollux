@@ -9,22 +9,12 @@ from lingua.transformer import precompute_freqs_cis
 import torch
 from apps.main.data import (
     create_dummy_dataloader,
-    create_imagenet_dataloader,
-    DataArgs,
-    may_download_image_dataset,
 )
-from apps.main.modules.transformer import (
-    precompute_2d_freqs_cls,
-    DiffusionTransformer,
-    DiffusionTransformerArgs,
-)
-from apps.main.modules.vae import (
-    LatentVideoVAEArgs,
-    LatentVideoVAE,
-)
-from apps.main.model import ModelArgs, LatentDiffusionTransformer
-from apps.main.modules.schedulers import SchedulerArgs, RectifiedFlow
-
+from apps.main.modules.vae import LatentVideoVAEArgs
+from apps.main.modules.schedulers import SchedulerArgs
+from apps.main.modules.transformer import PlanTransformerArgs, GenTransformerArgs
+from apps.main.modules.tokenizer import TokenizerArgs
+from apps.main.model import ModelArgs, Pollux
 
 # Configure logging
 logging.basicConfig(
@@ -36,9 +26,38 @@ logging.basicConfig(
 
 if __name__ == "__main__":
     # may_download_image_dataset('/mnt/data/imagenet')
-    freqs_1d_cls = precompute_freqs_cis(512, 1024)
-    freqs_2d_cls = precompute_2d_freqs_cls(512, 1024)
-    dit_args = DiffusionTransformerArgs(
+    dataloader = create_dummy_dataloader(
+        batch_size=1,
+        num_samples=100,
+        num_classes=1000,
+        image_size=(3, 256, 256),
+    )
+    vae_arg = LatentVideoVAEArgs()
+    scheduler_arg = SchedulerArgs(
+        num_train_timesteps=1000,
+        base_image_seq_len=256,
+        base_shift=0.5,
+        max_image_seq_len=4096,
+        mode_scale=1.29,
+        use_dynamic_shifting=True,
+    )
+    plan_transformer_arg = PlanTransformerArgs(
+        dim=2048,
+        ffn_dim_multiplier=1.5,
+        multiple_of=256,
+        n_heads=32,
+        n_kv_heads=8,
+        n_layers=16,
+        patch_size=2,
+        in_channels=16,
+        cfg_drop_ratio=0.1,
+        max_seqlen=1000,  # for video/image
+        attn_type="bi_causal",
+        text_seqlen=256,
+        vocab_size=128256,
+        pre_trained_path="/mnt/data/Llama-3.2-1B/original/consolidated.00.pth",
+    )
+    gen_transformer_arg = GenTransformerArgs(
         dim=2048,
         ffn_dim_multiplier=1.5,
         multiple_of=256,
@@ -53,48 +72,19 @@ if __name__ == "__main__":
         cfg_drop_ratio=0.1,
         num_classes=1000,
         max_seqlen=1000,
-        block_type="language_model",
         pre_trained_path="/mnt/data/Llama-3.2-1B/original/consolidated.00.pth",
-        attn_type="causal",
+        attn_type="bi_causal",
     )
-    dataloader = create_dummy_dataloader(
-        batch_size=1,
-        num_samples=100,
-        num_classes=dit_args.num_classes,
-        image_size=(16, 256, 256),
+    tokenizer_arg = TokenizerArgs(
+        model_path="/mnt/data/Llama-3.2-1B/original/tokenizer.model"
     )
-    DiT = DiffusionTransformer(dit_args)
-    DiT.init_weights(dit_args.pre_trained_path)
-    DiT = DiT.to(dtype=torch.bfloat16)
-    DiT = DiT.cuda()
-    vae_args = LatentVideoVAEArgs()
-    schedulers_arg = SchedulerArgs()
-    scheduler = RectifiedFlow(schedulers_arg)
-    start_time = time.time()
-    for class_idx, time_step, image in dataloader:
-        class_idx = class_idx.cuda()
-        time_step = time_step.cuda()
-        image = image.to(dtype=torch.bfloat16).cuda()
-        noised_x, t, target = scheduler.sample_noised_input(image)
-        output = DiT(x=noised_x, time_steps=t, condition=class_idx)
-    end_time = time.time()
-    logging.info(f"Inference time (sec) : {end_time-start_time}")
-    model_args = ModelArgs()
-    model_args.transformer = dit_args
-    model_args.vae = vae_args
-    model_args.scheduler = schedulers_arg
-    model = LatentDiffusionTransformer(model_args).cuda()
-    data_arg = DataArgs(
-        root_dir="/mnt/data/imagenet",
-        image_size=256,
-        num_workers=8,
-        batch_size=16,
+    model_arg = ModelArgs(
+        gen_transformer=gen_transformer_arg,
+        plan_transformer=plan_transformer_arg,
+        vae=vae_arg,
+        scheduler=scheduler_arg,
+        tokenizer=tokenizer_arg,
     )
-    train_loader = create_imagenet_dataloader(shard_id=0, num_shards=4, args=data_arg)
-    for data in train_loader:
-        assert isinstance(data, dict)
-        for k in data.keys():
-            logging.info(f"[{k}]'s shape : {data[k].size()}")
-            data[k] = data[k].cuda()
-        model(data)
-        break
+    model = Pollux(model_arg)
+    for batch in dataloader:
+        print(batch["caption"])

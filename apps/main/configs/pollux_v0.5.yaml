@@ -39,6 +39,7 @@ model:
         logit_mean: 0.0
         logit_std: 1.0
         mode_scale: 1.29
+        use_dynamic_shifting: true
     transformer:
         dim: 2048
         ffn_dim_multiplier: 1.5

@@ -1,7 +1,7 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 
 from dataclasses import dataclass
-from typing import Optional, Tuple, Union
+from typing import Optional, Tuple, Union, Dict
 
 import torch
 from torch import nn
@@ -11,6 +11,7 @@ from torch.nn.attention.flex_attention import create_block_mask, BlockMask
 from xformers.ops import fmha, AttentionBias
 from lingua.transformer import (
     BaseTransformerArgs,
+    TransformerBlock,
     RMSNorm,
     FeedForward,
     Attention,
@@ -146,7 +147,7 @@ class RotaryEmbedding2D(torch.nn.Module):
 
 
 @dataclass
-class DiffusionTransformerArgs(BaseTransformerArgs):
+class GenTransformerArgs(BaseTransformerArgs):
 
     seed: int = 42
     ada_dim: int = 512
@@ -160,8 +161,21 @@ class DiffusionTransformerArgs(BaseTransformerArgs):
     attn_type: str = "full"  # Options: 'full', 'bi_causal' and 'causal'.
 
 
+@dataclass
+class PlanTransformerArgs(BaseTransformerArgs):
+
+    seed: int = 42
+    patch_size: int = 16
+    in_channels: int = 3
+    cfg_drop_ratio: float = 0.1
+    pre_trained_path: Optional[str] = None
+    attn_type: str = "bi_causal"  # Options: 'full', 'bi_causal' and 'causal'.
+    text_seqlen: int = 256
+    vocab_size: int = -1
+
+
 class DiffusionTransformerBlock(nn.Module):
-    def __init__(self, args: DiffusionTransformerArgs):
+    def __init__(self, args: GenTransformerArgs):
         super().__init__()
 
         assert (args.head_dim is not None) or (
@@ -226,7 +240,7 @@ class DiffusionTransformerBlock(nn.Module):
 
 
 class BaseDiffusionTransformer(nn.Module):
-    def __init__(self, args: DiffusionTransformerArgs):
+    def __init__(self, args: GenTransformerArgs):
         super().__init__()
         self.dim = args.dim
         self.init_base_std = args.init_base_std
@@ -303,13 +317,13 @@ class BaseDiffusionTransformer(nn.Module):
             logger.warning(f"Unexpected keys: {unexpected_keys}")
 
 
-class DiffusionTransformer(BaseDiffusionTransformer):
+class GenTransformer(BaseDiffusionTransformer):
     """
-    Diffusion Transformer capable of handling both images and video sequences.
+    Diffusion Transformer capable of handling both images and video sequences (in the future).
     Uses patchify for images and a similar approach for video (flattening spatial and temporal dims).
     """
 
-    def __init__(self, args: DiffusionTransformerArgs):
+    def __init__(self, args: GenTransformerArgs):
         super().__init__(args)
         self.patch_size = args.patch_size
         self.out_channels = args.out_channels
@@ -368,7 +382,6 @@ class DiffusionTransformer(BaseDiffusionTransformer):
         condition: torch.Tensor,
         train: bool = True,
         attn_impl: str = "sdpa",
-        is_video: bool = False,
     ):
         x, img_size, freqs_cis = self.patchify_and_embed_image(x)
 
@@ -407,6 +420,161 @@ class DiffusionTransformer(BaseDiffusionTransformer):
         self.cls_embed.reset_parameters()
         nn.init.trunc_normal_(
             self.img_output.weight,
+            mean=0.0,
+            std=init_std,
+            a=-3 * init_std,
+            b=3 * init_std,
+        )
+
+
+class BasePlanTransformer(nn.Module):
+    def __init__(self, args: PlanTransformerArgs):
+        super().__init__()
+        self.dim = args.dim
+        self.init_base_std = args.init_base_std
+        self.init_std_factor = InitStdFactor(args.init_std_factor)
+        self.max_seqlen = args.max_seqlen
+        self.attn_type = args.attn_type
+        self.layers = nn.ModuleList()
+        assert not (self.attn_type == "bi_causal" and args.n_layers % 2 != 0)
+        for _ in range(args.n_layers):
+            self.layers.append(TransformerBlock(args))
+
+    def forward(
+        self,
+        h,
+        freqs_cis,
+        attn_impl: str = "sdpa",
+    ):
+
+        if self.attn_type in ["causal", "bi_causal"]:
+            seqlen = h.size(1)
+            mask = create_causal_mask(seqlen, attn_impl, None)
+
+        elif self.attn_type == "full":
+            mask = None
+        else:
+            raise NotImplementedError(f"Not support attention type: {self.attn_type}")
+
+        for idx, layer in enumerate(self.layers):
+            h = layer(h, freqs_cis, mask=mask, attn_impl=attn_impl)
+            if self.attn_type == "bi_causal":
+                h = h.flip(1)
+        return h
+
+    def reset_parameters(self):
+        # Either use fixed base std or sqrt model dim
+        pass
+
+    def init_weights(self, pre_trained_path: Optional[str] = None):
+        self.reset_parameters()
+        for depth, layer in enumerate(self.layers):
+            factor = {
+                InitStdFactor.CURRENT_DEPTH: (2 * (depth + 1)) ** 0.5,
+                InitStdFactor.GLOBAL_DEPTH: (2 * (len(self.layers) + 1)) ** 0.5,
+                InitStdFactor.DIM_RATIO: self.dim / 4096,
+                InitStdFactor.DISABLED: 1.0,
+            }[self.init_std_factor]
+
+            layer.init_weights(self.init_base_std, factor)
+        if pre_trained_path:
+            assert os.path.exists(pre_trained_path)
+            ckpt_state_dict = torch.load(pre_trained_path, map_location="cpu")
+            target_state_dict = self.state_dict()
+            filtered_state_dict = {
+                k: v
+                for k, v in ckpt_state_dict.items()
+                if k in target_state_dict and v.shape == target_state_dict[k].shape
+            }
+            target_state_dict.update(filtered_state_dict)
+            self.load_state_dict(target_state_dict)
+            missing_keys = set(target_state_dict.keys()) - set(
+                filtered_state_dict.keys()
+            )
+            unexpected_keys = set(ckpt_state_dict.keys()) - set(
+                target_state_dict.keys()
+            )
+            logger.info(f"Load the checkpoints from {pre_trained_path}")
+            logger.warning(f"Missing keys: {missing_keys}")
+            logger.warning(f"Unexpected keys: {unexpected_keys}")
+
+
+class PlanTransformer(BasePlanTransformer):
+    def __init__(self, args: PlanTransformerArgs):
+        super().__init__(args)
+        self.patch_size = args.patch_size
+        self.text_seqlen = args.text_seqlen
+        self.in_channels = args.in_channels
+        self.img_embed = ImageEmbedder(
+            in_dim=self.patch_size * self.patch_size * args.in_channels,
+            out_dim=args.dim,
+        )
+        self.tok_embeddings = torch.nn.Embedding(args.vocab_size, args.dim)
+        self.rope_embeddings_image = RotaryEmbedding2D(
+            theta=args.rope_theta,
+            head_dim=args.head_dim or args.dim // args.n_heads,
+            max_seqlen=args.max_seqlen,
+        )
+        self.rope_embeddings_cap = RotaryEmbedding1D(
+            theta=args.rope_theta,
+            head_dim=args.head_dim or args.dim // args.n_heads,
+            max_seqlen=args.text_seqlen,
+        )
+        self.dim = args.dim
+        self.norm = RMSNorm(args.dim, eps=args.norm_eps)
+
+    def patchify_and_embed_image(  # TODO: Rewrite to concat the mask
+        self, x: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor, Tuple[int, int], torch.Tensor]:
+        self.rope_embeddings_image.freqs_cis = self.rope_embeddings_image.freqs_cis.to(
+            x[0].device
+        )
+        pH = pW = self.patch_size
+        B, C, H, W = x.size()
+        x = x.view(B, C, H // pH, pH, W // pW, pW).permute(0, 2, 4, 1, 3, 5).flatten(3)
+        x = self.img_embed(x)
+        x = x.flatten(1, 2)
+        freqs_cis = self.rope_embeddings_image.freqs_cis[: H // pH, : W // pW].flatten(
+            0, 1
+        )
+        return (
+            x,
+            (H, W),
+            freqs_cis,
+        )
+
+    def forward(
+        self,
+        batch: dict[str:any],
+        attn_impl: str = "sdpa",
+    ):  # TODO ADD Indicator & ADD start/end token to img
+        x_cap = self.tok_embeddings(batch["cap_token"])
+        x_img, _, freqs_cis_img = self.patchify_and_embed_image(batch["img_latent"])
+
+        freqs_cis_img = freqs_cis_img.to(x_img.device)
+        freqs_cis_cap = self.rope_embeddings_cap.freqs_cis[: x_cap.size(1)]
+        x = torch.cat([x_cap, x_img], dim=1)
+        freqs_cis = torch.cat([freqs_cis_cap, freqs_cis_img], dim=0)
+        h = super().forward(x, freqs_cis, attn_impl=attn_impl)
+
+        return self.norm(h)
+
+    def reset_parameters(self, init_std=None):
+        # Either use fixed base std or sqrt model dim
+        super().reset_parameters()
+        self.rope_embeddings_image.reset_parameters()
+        init_std = init_std or (self.dim ** (-0.5))
+        self.norm.reset_parameters()
+        self.img_embed.reset_parameters()
+        nn.init.trunc_normal_(
+            self.img_output.weight,
+            mean=0.0,
+            std=init_std,
+            a=-3 * init_std,
+            b=3 * init_std,
+        )
+        nn.init.trunc_normal_(
+            self.tok_embeddings.weight,
             mean=0.0,
             std=init_std,
             a=-3 * init_std,
