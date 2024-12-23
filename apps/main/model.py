@@ -24,7 +24,7 @@ from apps.main.modules.transformer import (
     GenTransformerArgs,
 )
 from apps.main.modules.vae import LatentVideoVAE, LatentVideoVAEArgs
-
+from apps.main.data import random_mask
 
 logger = logging.getLogger()
 
@@ -36,6 +36,7 @@ class ModelArgs:
     vae: LatentVideoVAEArgs = field(default_factory=LatentVideoVAEArgs)
     scheduler: SchedulerArgs = field(default_factory=SchedulerArgs)
     tokenizer: TokenizerArgs = field(default_factory=TokenizerArgs)
+    cfg_ratio: float = 0.1
 
 
 class Pollux(nn.Module):
@@ -66,10 +67,30 @@ class Pollux(nn.Module):
     def forward(self, batch: torch.Tensor) -> dict[str:any]:
 
         image = batch["image"]
-        batch["cap_token"] = self.tokenizer.encode(batch["caption"])
+        batch["cap_token"] = [
+            self.tokenizer.encode(x, bos=True, eos=False) for x in batch["caption"]
+        ]
+        pad_id = self.tokenizer.pad_id
+        bsz = len(batch["cap_token"])
+        tokens = torch.full(
+            (bsz, self.plan_transformer.text_seqlen),
+            pad_id,
+            dtype=torch.long,
+        ).cuda()
+        for k, t in enumerate(batch["cap_token"]):
+            tokens[k, : len(t)] = torch.tensor(t, dtype=torch.long, device="cuda")
+        batch["cap_token"] = tokens
+
+        masked_image = random_mask(image)
+        latent_masked_code = self.compressor.encode(masked_image)
+        batch["masked_latent"] = latent_masked_code
+        conditional_signal = self.plan_transformer(batch)
         latent_code = self.compressor.encode(image)
+
         noised_x, t, target = self.scheduler.sample_noised_input(latent_code)
-        output = self.transformer(x=noised_x, time_steps=t, condition=condition)
+        output = self.gen_transformer(
+            x=noised_x, time_steps=t, condition=conditional_signal
+        )
         batch["prediction"] = output
         batch["target"] = target
         target = target.to(output.dtype)

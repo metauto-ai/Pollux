@@ -27,7 +27,7 @@ logging.basicConfig(
 if __name__ == "__main__":
     # may_download_image_dataset('/mnt/data/imagenet')
     dataloader = create_dummy_dataloader(
-        batch_size=1,
+        batch_size=4,
         num_samples=100,
         num_classes=1000,
         image_size=(3, 256, 256),
@@ -50,8 +50,7 @@ if __name__ == "__main__":
         n_layers=16,
         patch_size=2,
         in_channels=16,
-        cfg_drop_ratio=0.1,
-        max_seqlen=1000,  # for video/image
+        gen_seqlen=1000,  # for video/image
         attn_type="bi_causal",
         text_seqlen=256,
         vocab_size=128256,
@@ -69,9 +68,8 @@ if __name__ == "__main__":
         in_channels=16,
         out_channels=16,
         tmb_size=256,
-        cfg_drop_ratio=0.1,
-        num_classes=1000,
-        max_seqlen=1000,
+        gen_seqlen=1000,
+        condition_seqlen=1000,
         pre_trained_path="/mnt/data/Llama-3.2-1B/original/consolidated.00.pth",
         attn_type="bi_causal",
     )
@@ -84,7 +82,11 @@ if __name__ == "__main__":
         vae=vae_arg,
         scheduler=scheduler_arg,
         tokenizer=tokenizer_arg,
+        cfg_ratio=0.1,
     )
     model = Pollux(model_arg)
+    model.cuda()
     for batch in dataloader:
-        print(batch["caption"])
+        batch["image"] = batch["image"].cuda()
+
+        model(batch)

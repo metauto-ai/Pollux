@@ -155,8 +155,8 @@ class GenTransformerArgs(BaseTransformerArgs):
     in_channels: int = 3
     out_channels: int = 3
     tmb_size: int = 320
-    cfg_drop_ratio: float = 0.1
-    num_classes: int = 1000
+    condition_seqlen: int = 1000
+    gen_seqlen: int = 1000
     pre_trained_path: Optional[str] = None
     attn_type: str = "full"  # Options: 'full', 'bi_causal' and 'causal'.
 
@@ -167,10 +167,10 @@ class PlanTransformerArgs(BaseTransformerArgs):
     seed: int = 42
     patch_size: int = 16
     in_channels: int = 3
-    cfg_drop_ratio: float = 0.1
     pre_trained_path: Optional[str] = None
     attn_type: str = "bi_causal"  # Options: 'full', 'bi_causal' and 'causal'.
     text_seqlen: int = 256
+    gen_seqlen: int = 256
     vocab_size: int = -1
 
 
@@ -245,7 +245,7 @@ class BaseDiffusionTransformer(nn.Module):
         self.dim = args.dim
         self.init_base_std = args.init_base_std
         self.init_std_factor = InitStdFactor(args.init_std_factor)
-        self.max_seqlen = args.max_seqlen
+        self.gen_seqlen = args.gen_seqlen
         self.attn_type = args.attn_type
         self.layers = nn.ModuleList()
         assert not (self.attn_type == "bi_causal" and args.n_layers % 2 != 0)
@@ -328,18 +328,12 @@ class GenTransformer(BaseDiffusionTransformer):
         self.patch_size = args.patch_size
         self.out_channels = args.out_channels
         self.in_channels = args.in_channels
-        self.num_classes = args.num_classes
         self.tmb_embed = TimestepEmbedder(
             hidden_size=args.ada_dim, time_embedding_size=args.tmb_size
         )
         self.img_embed = ImageEmbedder(
             in_dim=self.patch_size * self.patch_size * args.in_channels,
             out_dim=args.dim,
-        )
-        self.cls_embed = LabelEmbedder(
-            num_classes=args.num_classes,
-            hidden_size=args.ada_dim,
-            dropout_prob=args.cfg_drop_ratio,
         )
         self.img_output = nn.Linear(
             args.dim,
@@ -349,7 +343,12 @@ class GenTransformer(BaseDiffusionTransformer):
         self.rope_embeddings_image = RotaryEmbedding2D(
             theta=args.rope_theta,
             head_dim=args.head_dim or args.dim // args.n_heads,
-            max_seqlen=args.max_seqlen,
+            max_seqlen=args.gen_seqlen,
+        )
+        self.rope_embeddings_conditions = RotaryEmbedding1D(
+            theta=args.rope_theta,
+            head_dim=args.head_dim or args.dim // args.n_heads,
+            max_seqlen=args.condition_seqlen,
         )
         self.ada_dim = args.ada_dim
         self.dim = args.dim
@@ -380,17 +379,21 @@ class GenTransformer(BaseDiffusionTransformer):
         x: torch.Tensor,
         time_steps: torch.Tensor,
         condition: torch.Tensor,
-        train: bool = True,
         attn_impl: str = "sdpa",
     ):
-        x, img_size, freqs_cis = self.patchify_and_embed_image(x)
+        x, img_size, freqs_cis_img = self.patchify_and_embed_image(x)
+        x_l = x.size(1)
+        c_l = condition.size(1)
+        freqs_cis_img = freqs_cis_img.to(x.device)
+        freqs_cis_cond = self.rope_embeddings_conditions.freqs_cis[:c_l].to(x.device)
+        x = torch.cat([condition, x], dim=1)
+        freqs_cis = torch.cat([freqs_cis_cond, freqs_cis_img], dim=0)
 
-        freqs_cis = freqs_cis.to(x.device)
-        t_emb = self.tmb_embed(time_steps)
-        cls_emb = self.cls_embed(condition, train=train)
-        modulation_signal = t_emb + cls_emb
+        modulation_signal = self.tmb_embed(time_steps)
 
         h = super().forward(x, freqs_cis, modulation_signal, attn_impl=attn_impl)
+
+        h = h[:, :x_l, :]
 
         out = self.img_output(self.norm(h))
 
@@ -413,11 +416,11 @@ class GenTransformer(BaseDiffusionTransformer):
         # Either use fixed base std or sqrt model dim
         super().reset_parameters()
         self.rope_embeddings_image.reset_parameters()
+        self.rope_embeddings_conditions.reset_parameters()
         init_std = init_std or (self.dim ** (-0.5))
         self.norm.reset_parameters()
         self.tmb_embed.reset_parameters()
         self.img_embed.reset_parameters()
-        self.cls_embed.reset_parameters()
         nn.init.trunc_normal_(
             self.img_output.weight,
             mean=0.0,
@@ -433,7 +436,7 @@ class BasePlanTransformer(nn.Module):
         self.dim = args.dim
         self.init_base_std = args.init_base_std
         self.init_std_factor = InitStdFactor(args.init_std_factor)
-        self.max_seqlen = args.max_seqlen
+        self.gen_seqlen = args.gen_seqlen
         self.attn_type = args.attn_type
         self.layers = nn.ModuleList()
         assert not (self.attn_type == "bi_causal" and args.n_layers % 2 != 0)
@@ -513,7 +516,7 @@ class PlanTransformer(BasePlanTransformer):
         self.rope_embeddings_image = RotaryEmbedding2D(
             theta=args.rope_theta,
             head_dim=args.head_dim or args.dim // args.n_heads,
-            max_seqlen=args.max_seqlen,
+            max_seqlen=args.gen_seqlen,
         )
         self.rope_embeddings_cap = RotaryEmbedding1D(
             theta=args.rope_theta,
@@ -549,7 +552,7 @@ class PlanTransformer(BasePlanTransformer):
         attn_impl: str = "sdpa",
     ):  # TODO ADD Indicator & ADD start/end token to img
         x_cap = self.tok_embeddings(batch["cap_token"])
-        x_img, _, freqs_cis_img = self.patchify_and_embed_image(batch["img_latent"])
+        x_img, _, freqs_cis_img = self.patchify_and_embed_image(batch["masked_latent"])
 
         freqs_cis_img = freqs_cis_img.to(x_img.device)
         freqs_cis_cap = self.rope_embeddings_cap.freqs_cis[: x_cap.size(1)]

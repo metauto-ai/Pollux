@@ -68,6 +68,10 @@ def may_download_image_dataset(path_name):
     print(data["train"][0])
 
 
+def random_mask(imgs):  # TODO Implement random mask and return the corresponding mask
+    return imgs
+
+
 def center_crop_arr(pil_image, image_size):
     """
     Center cropping implementation from ADM.
