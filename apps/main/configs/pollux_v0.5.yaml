@@ -1,10 +1,10 @@
 # Template config, need to change dump_dir, data.root_dir and data.tokenizer.path
-# torchrun --standalone --nnodes 1 --nproc-per-node 4 -m apps.main.train config=apps/main/configs/pollux_v0.4.yaml
+# torchrun --standalone --nnodes 1 --nproc-per-node 4 -m apps.main.train config=apps/main/configs/pollux_v0.4_ConfigE.yaml
 
-name: "ImageNet_1B_BaseLine_256_Flux_LLAMA_Pre_Train_v0.4_bi_causal_langugage_block" 
+name: "ImageNet_1B_BaseLine_256_Flux_LLAMA_Pre_Train_v0.4_configB" 
 output_dir: "/mnt/data/dump"
 dump_dir: "" # Mingchen: No need to put now! I revise the code to flexible put `/mnt/data/dump` + name for dump_dir
-steps: 100000
+steps: 1000000
 seed: 777
 optim:
     lr: 1.4e-4
@@ -19,7 +19,7 @@ distributed:
     fsdp_type: full_shard
     dp_shard: 4
     dp_replicate: 1
-    compile: True
+    compile: false
     model_dtype: bf16
     matmul_allow_tf32: false
     selective_activation_checkpointing: false
@@ -39,6 +39,7 @@ model:
         logit_mean: 0.0
         logit_std: 1.0
         mode_scale: 1.29
+        use_dynamic_shifting: true
     transformer:
         dim: 2048
         ffn_dim_multiplier: 1.5
@@ -55,8 +56,6 @@ model:
         num_classes: 1000
         max_seqlen: 1000
         pre_trained_path: /mnt/data/Llama-3.2-1B/original/consolidated.00.pth
-        block_type: "language_model"
-        max_condition_seqlen: 2
         attn_type: "bi_causal"
 data:
     root_dir: '/mnt/data/imagenet'
@@ -70,10 +69,10 @@ profiling:
 checkpoint:
     dump:
         every: 2500
-        keep: 1
+        keep: 0 # Don't remove the ckpt
     eval:
         every: 5000
-        keep: 1
+        keep: 0 # Don't remove the ckpt
 
 logging:
     freq: 100
@@ -92,7 +91,7 @@ eval:
         resolution: 256
         show_progress: False
         inference_steps: 25
-    sample_num: 1000
+    sample_num: 256
     eval_data:
         root_dir: '/mnt/data/imagenet'
         batch_size: 64

@@ -260,7 +260,7 @@ def train(args: TrainArgs):
         model_param_count = get_num_params(model)
 
         torch.manual_seed(args.seed)
-        model.init_weights(args.model.transformer.pre_trained_path)
+        model.init_weights()
         model = parallelize_model(
             model,
             world_mesh,

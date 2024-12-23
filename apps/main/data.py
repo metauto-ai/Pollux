@@ -11,6 +11,8 @@ from dataclasses import dataclass
 from typing import Dict, Any, Iterator, Optional, TypedDict
 import logging
 from torch import nn
+import random
+import string
 
 # Configure logging
 logger = logging.getLogger()
@@ -27,7 +29,11 @@ class DataArgs:
 
 # Instantiate the dataset and dataloader
 def create_dummy_dataloader(
-    batch_size=32, num_samples=1000, num_classes=10, image_size=(3, 64, 64)
+    batch_size=32,
+    num_samples=1000,
+    num_classes=10,
+    image_size=(3, 64, 64),
+    word_count=256,
 ):
     """
     Create a dataloader for the diffusion model.
@@ -48,7 +54,10 @@ def create_dummy_dataloader(
             break
     """
     dataset = DiffusionDummyDataset(
-        num_samples=num_samples, num_classes=num_classes, image_size=image_size
+        num_samples=num_samples,
+        num_classes=num_classes,
+        image_size=image_size,
+        word_count=word_count,
     )
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
     return dataloader
@@ -57,6 +66,10 @@ def create_dummy_dataloader(
 def may_download_image_dataset(path_name):
     data = datasets.load_dataset("ILSVRC/imagenet-1k", cache_dir=path_name)
     print(data["train"][0])
+
+
+def random_mask(imgs):  # TODO Implement random mask and return the corresponding mask
+    return imgs
 
 
 def center_crop_arr(pil_image, image_size):
@@ -103,20 +116,32 @@ def create_imagenet_dataloader(
 
 # Dummy Dataset Class
 class DiffusionDummyDataset(Dataset):
-    def __init__(self, num_samples=1000, num_classes=10, image_size=(3, 64, 64)):
+    def __init__(
+        self, num_samples=1000, num_classes=10, image_size=(3, 64, 64), word_count=256
+    ):
         """
         Initialize the dummy dataset.
         Args:
             num_samples (int): Number of samples in the dataset.
             num_classes (int): Number of distinct classes.
             image_size (tuple): Shape of the dummy images (C, H, W).
+            word_count: Number of the word in this caption
         """
         self.num_samples = num_samples
         self.num_classes = num_classes
         self.image_size = image_size
+        self.word_count = word_count
 
     def __len__(self):
         return self.num_samples
+
+    def generate_random_text(self, word_count=50):
+        words = []
+        for _ in range(word_count):
+            word_length = random.randint(3, 10)  # Random word length between 3 and 10
+            word = "".join(random.choices(string.ascii_lowercase, k=word_length))
+            words.append(word)
+        return " ".join(words)
 
     def __getitem__(self, idx):
         """
@@ -127,9 +152,10 @@ class DiffusionDummyDataset(Dataset):
             image (torch.Tensor): A random image tensor.
         """
         class_idx = np.random.randint(0, self.num_classes)
-        time_step = np.random.randint(0, 1000)  # Assuming diffusion has 1000 steps
         image = torch.randn(self.image_size)  # Random image tensor
-        return class_idx, time_step, image
+        caption = self.generate_random_text()
+        batch = {"label": class_idx, "caption": caption, "image": image}
+        return batch
 
 
 class DataPipeline(nn.Module):
