@@ -25,6 +25,7 @@ pip install --requirement requirements.txt
 pip install diffusers
 pip install datasets
 pip install torchvision==0.20.0
+pip install wandb
 ```
 
 
