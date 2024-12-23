@@ -40,3 +40,13 @@ ssh-add ~/.ssh/mczhuge
 ssh-keyscan -t ed25519 github.com >> ~/.ssh/known_hosts
 ssh -T git@github.com
 ```
+
+### Conda Install
+
+```
+sudo chmod a+w /mnt/data
+wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh
+bash Miniconda3-latest-Linux-x86_64.sh
+/home/ubuntu/miniconda3/bin/conda init # Change to the specific path
+source ~/.bashrc
+```
