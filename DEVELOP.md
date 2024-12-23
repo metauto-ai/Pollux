@@ -50,3 +50,12 @@ bash Miniconda3-latest-Linux-x86_64.sh
 /home/mczhuge/miniconda3/bin/conda init # Change to the specific path
 source ~/.bashrc
 ```
+
+### NVIDIA-Fabric Issue
+
+```
+wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/nvidia-fabricmanager-535_535.183.01-1_amd64.deb
+sudo dpkg -i nvidia-fabricmanager-535_535.183.01-1_amd64.deb
+sudo systemctl daemon-reload
+sudo systemctl start nvidia-fabricmanager
+```
