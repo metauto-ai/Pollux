@@ -40,9 +40,9 @@ class LatentDiffusionTransformer(nn.Module):
     and a custom scheduler for diffusion steps.
     """
 
-    version: str = "v0.3"
+    version: str = "v0.5"
     description: str = (
-        "Latent Diffusion Transformer for VideoGen: (1) currently we only support image classification for debugging."
+        "Latent Diffusion Transformer for VideoGen: (1) currently we only support class conditional image generation for debugging."
     )
 
     def __init__(self, args: ModelArgs):
