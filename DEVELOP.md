@@ -47,6 +47,6 @@ ssh -T git@github.com
 sudo chmod a+w /mnt/data
 wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh
 bash Miniconda3-latest-Linux-x86_64.sh
-/home/ubuntu/miniconda3/bin/conda init # Change to the specific path
+/home/mczhuge/miniconda3/bin/conda init # Change to the specific path
 source ~/.bashrc
 ```
