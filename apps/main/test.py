@@ -7,9 +7,7 @@ from torchvision.utils import save_image
 import time
 from lingua.transformer import precompute_freqs_cis
 import torch
-from apps.main.data import (
-    create_dummy_dataloader,
-)
+from apps.main.data import create_dummy_dataloader, may_download_image_dataset
 from apps.main.modules.vae import LatentVideoVAEArgs
 from apps.main.modules.schedulers import SchedulerArgs
 from apps.main.modules.transformer import PlanTransformerArgs, GenTransformerArgs
@@ -26,13 +24,16 @@ logging.basicConfig(
 
 if __name__ == "__main__":
     # may_download_image_dataset('/mnt/data/imagenet')
+    may_download_image_dataset(path_name="/jfs/data/imagenet")
     dataloader = create_dummy_dataloader(
         batch_size=4,
         num_samples=100,
         num_classes=1000,
         image_size=(3, 256, 256),
     )
-    vae_arg = LatentVideoVAEArgs()
+    vae_arg = LatentVideoVAEArgs(
+        pretrained_model_name_or_path="/jfs/checkpoints/Flux-dev"
+    )
     scheduler_arg = SchedulerArgs(
         num_train_timesteps=1000,
         base_image_seq_len=256,
@@ -54,7 +55,7 @@ if __name__ == "__main__":
         attn_type="bi_causal",
         text_seqlen=256,
         vocab_size=128256,
-        pre_trained_path="/mnt/data/Llama-3.2-1B/original/consolidated.00.pth",
+        pre_trained_path="/jfs/checkpoints/Llama-3.2-1B/original/consolidated.00.pth",
     )
     gen_transformer_arg = GenTransformerArgs(
         dim=2048,
@@ -70,11 +71,11 @@ if __name__ == "__main__":
         tmb_size=256,
         gen_seqlen=1000,
         condition_seqlen=1000,
-        pre_trained_path="/mnt/data/Llama-3.2-1B/original/consolidated.00.pth",
+        pre_trained_path="/jfs/checkpoints/Llama-3.2-1B/original/consolidated.00.pth",
         attn_type="bi_causal",
     )
     tokenizer_arg = TokenizerArgs(
-        model_path="/mnt/data/Llama-3.2-1B/original/tokenizer.model"
+        model_path="/jfs/checkpoints/Llama-3.2-1B/original/tokenizer.model"
     )
     model_arg = ModelArgs(
         gen_transformer=gen_transformer_arg,

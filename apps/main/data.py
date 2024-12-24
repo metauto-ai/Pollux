@@ -20,11 +20,12 @@ logger = logging.getLogger()
 
 @dataclass
 class DataArgs:
-    root_dir: str = ""
+    source: str = "imagenet"
     batch_size: int = 2
     num_workers: int = 8
     image_size: int = 256
     split: str = "train"
+    root_dir: Optional[str] = None
 
 
 # Instantiate the dataset and dataloader
@@ -95,6 +96,25 @@ def center_crop_arr(pil_image, image_size):
     )
 
 
+def create_dataloader(
+    shard_id: int,
+    num_shards: int,
+    args: DataArgs,
+):
+    if args.source == "imagenet":
+        return create_imagenet_dataloader(
+            shard_id,
+            num_shards,
+            args,
+        )
+    if args.source == "dummy":
+        return create_dummy_dataloader(
+            batch_size=args.batch_size,
+            image_size=(3, args.image_size, args.image_size),
+            word_count=32,
+        )
+
+
 def create_imagenet_dataloader(
     shard_id: int,
     num_shards: int,
@@ -117,7 +137,11 @@ def create_imagenet_dataloader(
 # Dummy Dataset Class
 class DiffusionDummyDataset(Dataset):
     def __init__(
-        self, num_samples=1000, num_classes=10, image_size=(3, 64, 64), word_count=256
+        self,
+        num_samples=1000,
+        num_classes=10,
+        image_size=(3, 64, 64),
+        word_count=256,
     ):
         """
         Initialize the dummy dataset.
@@ -191,4 +215,5 @@ class DataPipeline(nn.Module):
                 if k != "image":
                     data[k][-dup_num:] = [data[k][-dup_num - 1]] * dup_num
         data["image"] = processed_image
+        data["caption"] = data.features["labels"].int2str
         return data

@@ -570,13 +570,6 @@ class PlanTransformer(BasePlanTransformer):
         self.norm.reset_parameters()
         self.img_embed.reset_parameters()
         nn.init.trunc_normal_(
-            self.img_output.weight,
-            mean=0.0,
-            std=init_std,
-            a=-3 * init_std,
-            b=3 * init_std,
-        )
-        nn.init.trunc_normal_(
             self.tok_embeddings.weight,
             mean=0.0,
             std=init_std,

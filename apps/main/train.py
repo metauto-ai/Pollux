@@ -55,11 +55,11 @@ from lingua.metrics import (
 from lingua.optim import OptimArgs, build_optimizer
 from lingua.profiling import ProfilerArgs, maybe_run_profiler
 
-from apps.main.data import create_imagenet_dataloader, DataArgs
+from apps.main.data import create_dataloader, DataArgs
 from apps.main.modules.schedulers import SchedulerArgs
 from apps.main.modules.transformer import get_num_flop_per_token
 from apps.main.model import (
-    LatentVideoVAE,
+    Pollux,
     ModelArgs,
     build_fsdp_grouping_plan,
     tp_parallelize,
@@ -155,7 +155,9 @@ def validate_train_args(args: TrainArgs):
         args.checkpoint.path = str(Path(args.dump_dir) / "checkpoints")
 
     # TODO: Mingchen: here need to support multiple source later as in the original lingua codebase
-    assert os.path.exists(args.data.root_dir), f"{args.data.root_dir} doesn't exist"
+    assert (not args.data.root_dir and args.data.source == "dummy") or os.path.exists(
+        args.data.root_dir
+    ), f"{args.data.root_dir} doesn't exist"
 
     if (
         args.distributed.dp_replicate
@@ -259,20 +261,20 @@ def train(args: TrainArgs):
         torch.manual_seed(args.seed)
         logger.info("Building model")
 
-        model = LatentVideoVAE(args.model)
+        model = Pollux(args.model)
         logger.info("Model is built !")
 
         model_param_count = get_num_params(model)
 
         torch.manual_seed(args.seed)
-        model.init_weights()
+        model.init_weights(args.model)
         model = parallelize_model(
             model,
             world_mesh,
-            args.model.transformer,
+            args.model,
             args.distributed,
             fsdp_grouping_plan=build_fsdp_grouping_plan(
-                args.model.transformer, model.compressor.vae.config
+                args.model, model.compressor.vae.config
             ),
             tp_parallelize=tp_parallelize,
             no_recompute_ops=get_no_recompute_ops(),
@@ -308,14 +310,14 @@ def train(args: TrainArgs):
         gc.disable()
 
         # train loop
-        model.transformer.train()
+        model.set_train()
         metric_logger = context_stack.enter_context(
             MetricLogger(Path(args.dump_dir) / "metrics.jsonl", args)
         )
         torch_profiler = context_stack.enter_context(
             maybe_run_profiler(args.dump_dir, model, args.profiling)
         )
-        data_loader = create_imagenet_dataloader(
+        data_loader = create_dataloader(
             dp_rank,
             dp_degree,
             args.data,
@@ -346,7 +348,6 @@ def train(args: TrainArgs):
                 # run the GC at different times so they slow down the whole pipeline
                 gc.collect()
             batch["image"] = batch["image"].cuda()
-            batch["label"] = batch["label"].cuda()
             data_load_time = round(timer() - data_load_start, 4)
             nwords_since_last_log += batch["image"].numel()
 
@@ -491,7 +492,7 @@ def train(args: TrainArgs):
                         EVAL_FOLDER_NAME.format(train_state.step),
                     )
                 )
-                launch_eval(eval_args)
+                # launch_eval(eval_args)# TODO: update eval.py later
                 end_time = time.time()
                 logger.info(
                     f"Evaluation End! Take total time (sec): {end_time-start_time}"
@@ -522,14 +523,13 @@ def train(args: TrainArgs):
 
 def main():
 
+    cli_args = OmegaConf.from_cli()
+    file_cfg = OmegaConf.load(cli_args.config)
     # SETUP GPUs
     if "distributed" in file_cfg and "gpus" in file_cfg.distributed:
         gpus = file_cfg.distributed.gpus
-        os.environ["CUDA_VISIBLE_DEVICES"] = str(gpus)
+        os.environ["CUDA_VISIBLE_DEVICES"] = gpus
         logger.info(f"Set CUDA_VISIBLE_DEVICES to: {gpus}")
-
-    cli_args = OmegaConf.from_cli()
-    file_cfg = OmegaConf.load(cli_args.config)
     # We remove 'config' attribute from config as the underlying DataClass does not have it
     del cli_args.config
 

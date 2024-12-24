@@ -74,6 +74,7 @@ class DistributedArgs:
     compile_cache_size_limit: int = 8
 
     spawn_method: str = "forkserver"
+    gpus: Optional[str] = None
 
 
 @dataclass
@@ -316,7 +317,9 @@ def check_model_value_range(
             param = param.to_local()
 
         if param.numel() == 0:
-            logger.warning(f"Model parameter {name} is empty, probably because of FSDP sharding")
+            logger.warning(
+                f"Model parameter {name} is empty, probably because of FSDP sharding"
+            )
             continue
 
         if torch.isnan(param).any() or torch.isinf(param).any():
