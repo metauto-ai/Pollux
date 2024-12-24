@@ -66,7 +66,7 @@ if __name__ == "__main__":
         n_layers=16,
         ada_dim=2048,
         patch_size=2,
-        in_channels=16,
+        in_channels=32,
         out_channels=16,
         tmb_size=256,
         gen_seqlen=1000,
@@ -84,6 +84,7 @@ if __name__ == "__main__":
         scheduler=scheduler_arg,
         tokenizer=tokenizer_arg,
         cfg_ratio=0.1,
+        mask_patch=16,
     )
     model = Pollux(model_arg)
     model.cuda()

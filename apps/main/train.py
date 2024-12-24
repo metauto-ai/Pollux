@@ -415,9 +415,16 @@ def train(args: TrainArgs):
                 FLOPS = (
                     get_num_flop_per_token(
                         model_param_count,
-                        args.model.transformer.n_layers,
-                        args.model.transformer.dim,
-                        args.model.transformer.max_seqlen,
+                        args.model.gen_transformer.n_layers,
+                        args.model.gen_transformer.dim,
+                        args.model.gen_transformer.max_seqlen,
+                    )
+                    * wps
+                    + get_num_flop_per_token(
+                        model_param_count,
+                        args.model.plan_transformer.n_layers,
+                        args.model.plan_transformer.dim,
+                        args.model.plan_transformer.max_seqlen,
                     )
                     * wps
                 )
