@@ -5,6 +5,7 @@ from functools import partial
 import math
 
 import logging
+import torch
 from torch import nn
 from torch.optim import AdamW, lr_scheduler
 from typing import Callable, Tuple

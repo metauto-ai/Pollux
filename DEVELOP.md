@@ -74,6 +74,7 @@ sudo chown mczhuge:mczhuge /home/mczhuge/.ssh/authorized_keys
 
 ```bash
 sudo vim /etc/ssh/sshd_config
+# add
 PermitRootLogin no
 PubkeyAuthentication yes
 PasswordAuthentication no
@@ -84,3 +85,9 @@ AllowUsers ubuntu mczhuge
 sudo systemctl restart sshd
 ```
 
+### Local Run
+
+```
+export PYTHONPATH=/jfs/mczhuge/Pollux:$PYTHONPATH
+python -m apps.main.train config=apps/main/configs/pollux_v0.5.yaml
+```

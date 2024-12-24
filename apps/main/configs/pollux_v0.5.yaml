@@ -1,7 +1,7 @@
 # Template config, need to change dump_dir, data.root_dir and data.tokenizer.path
 # torchrun --standalone --nnodes 1 --nproc-per-node 4 -m apps.main.train config=apps/main/configs/pollux_v0.4_ConfigE.yaml
 
-name: "ImageNet_1B_BaseLine_256_Flux_LLAMA_Pre_Train_v0.4_configB" 
+name: "ImageNet_1B_BaseLine_256_Flux_LLAMA_Pre_Train_v0.4_configB"
 output_dir: "/mnt/data/dump"
 dump_dir: "" # Mingchen: No need to put now! I revise the code to flexible put `/mnt/data/dump` + name for dump_dir
 steps: 1000000
@@ -16,6 +16,7 @@ env:
     ENABLE_INTRA_NODE_COMM: '0' # disable one default seeting here, as have some error in our cluster
 
 distributed:
+    gpus: 0,1,2,3
     fsdp_type: full_shard
     dp_shard: 4
     dp_replicate: 1
@@ -40,7 +41,7 @@ model:
         logit_std: 1.0
         mode_scale: 1.29
         use_dynamic_shifting: true
-    transformer:
+    gen_transformer:
         dim: 2048
         ffn_dim_multiplier: 1.5
         multiple_of: 256
@@ -52,11 +53,30 @@ model:
         in_channels: 16
         out_channels: 16
         tmb_size: 256
-        cfg_drop_ratio: 0.1
-        num_classes: 1000
+        #cfg_drop_ratio: 0.1 # delete in v0.5
+        #num_classes: 1000 # delete in v0.5
         max_seqlen: 1000
         pre_trained_path: /mnt/data/Llama-3.2-1B/original/consolidated.00.pth
         attn_type: "bi_causal"
+    plan_transformer:
+        dim: 2048
+        ffn_dim_multiplier: 1.5
+        multiple_of: 256
+        n_heads: 32
+        n_kv_heads: 8
+        n_layers: 16
+        patch_size: 4  
+        in_channels: 3  
+        vocab_size: 50257  
+        text_seqlen: 256  
+        gen_seqlen: 1024 
+        rope_theta: 10000.0
+        pre_trained_path: /mnt/data/Llama-3.2-1B/original/consolidated.00.pth
+        attn_type: "full"
+        max_seqlen: 1000
+        norm_eps: 1e-6
+
+
 data:
     root_dir: '/mnt/data/imagenet'
     batch_size: 64

@@ -23,7 +23,7 @@ from lingua.distributed import (
 from apps.main.data import create_imagenet_dataloader, DataArgs
 from apps.main.generate import LatentGenerator, GeneratorArgs, load_consolidated_model
 
-from apps.main.model import LatentDiffusionTransformer, ModelArgs
+from apps.main.model import LatentVideoVAE, ModelArgs
 
 EVAL_FOLDER_NAME = "{:010d}"
 
@@ -80,7 +80,7 @@ def launch_eval(cfg: EvalArgs):
     logger.info("Loading model")
     model, _ = load_consolidated_model(
         consolidated_path=cfg.ckpt_dir,
-        model_cls=LatentDiffusionTransformer,
+        model_cls=LatentVideoVAE,
         model_args_cls=ModelArgs,
     )
     logger.info("Model loaded")
