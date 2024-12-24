@@ -15,7 +15,7 @@ conda activate pollux
 
 * Install packages
 ```
-pip install torch==2.5.0 xformers --index-url https://download.pytorch.org/whl/cu121
+pip install torch==2.5.1 xformers --index-url https://download.pytorch.org/whl/cu121
 pip install ninja
 pip install --requirement requirements.txt
 ```
@@ -24,7 +24,7 @@ pip install --requirement requirements.txt
 ```
 pip install diffusers
 pip install datasets
-pip install torchvision==0.20.0
+pip install torchvision==0.20.1
 pip install wandb
 ```
 
