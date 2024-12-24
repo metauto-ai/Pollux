@@ -63,6 +63,19 @@ class Pollux(nn.Module):
 
         self.plan_transformer = PlanTransformer(args.plan_transformer)
         self.text_seqlen = self.plan_transformer.text_seqlen
+        self.token_proj = nn.Linear(
+            in_features=args.plan_transformer.dim,
+            out_features=args.gen_transformer.dim,
+            bias=False,
+        )
+        init_std = self.plan_transformer.dim ** (-0.5)
+        nn.init.trunc_normal_(
+            self.token_proj.weight,
+            mean=0.0,
+            std=init_std,
+            a=-3 * init_std,
+            b=3 * init_std,
+        )
 
     def forward(self, batch: torch.Tensor) -> dict[str:any]:
 
@@ -86,7 +99,7 @@ class Pollux(nn.Module):
         batch["masked_latent"] = latent_masked_code
         conditional_signal = self.plan_transformer(batch)
         latent_code = self.compressor.encode(image)
-
+        conditional_signal = self.token_proj(conditional_signal)
         noised_x, t, target = self.scheduler.sample_noised_input(latent_code)
         output = self.gen_transformer(
             x=noised_x, time_steps=t, condition=conditional_signal
@@ -98,9 +111,17 @@ class Pollux(nn.Module):
 
         return batch, loss
 
+    def set_train(self):
+        self.plan_transformer.train()
+        self.gen_transformer.train()
+
+    def set_eval(self):
+        self.plan_transformer.eval()
+        self.gen_transformer.eval()
+
     def init_weights(self, args: ModelArgs):
         self.gen_transformer.init_weights(args.gen_transformer.pre_trained_path)
-        self.gen_transformer.init_weights(args.plan_transformer.pre_trained_path)
+        self.plan_transformer.init_weights(args.plan_transformer.pre_trained_path)
 
 
 # Optional policy for activation checkpointing. With None, we stick to the default (defined distributed.py: default_no_recompute_ops)
@@ -114,14 +135,18 @@ def build_fsdp_grouping_plan(model_args: ModelArgs, vae_config: dict):
 
     for i in range(len(vae_config.down_block_types)):
         group_plan.append((f"compressor.vae.encoder.down_blocks.{i}", False))
+    group_plan.append(("plan_transformer.tok_embeddings", False))
+    group_plan.append(("plan_transformer.img_embed", False))
 
     for i in range(model_args.plan_transformer.n_layers):
         group_plan.append((f"plan_transformer.layers.{i}", False))
 
+    group_plan.append(("token_proj", False))
+
     for i in range(model_args.gen_transformer.n_layers):
         group_plan.append((f"gen_transformer.layers.{i}", False))
 
-    group_plan.append(("transformer.img_output", True))
+    group_plan.append(("gen_transformer.img_output", True))
     logger.info(f"The `group_plan` for fsdp is:\n{group_plan}")
 
     return group_plan
