@@ -9,7 +9,7 @@ from torchvision import transforms
 from PIL import Image
 from dataclasses import dataclass
 from typing import Dict, Any, Iterator, Optional, TypedDict
-from setup.imagenet_classes import IMAGENET2012_CLASSES
+from utils.imagenet_classes import IMAGENET2012_CLASSES
 import logging
 from torch import nn
 import random
