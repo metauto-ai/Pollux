@@ -46,7 +46,7 @@ bash Miniconda3-latest-Linux-x86_64.sh
 source ~/.bashrc
 ```
 
-### Setup SSH
+### Setup Github SSH
 
 Example:
 
