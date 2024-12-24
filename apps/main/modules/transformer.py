@@ -393,7 +393,7 @@ class GenTransformer(BaseDiffusionTransformer):
 
         h = super().forward(x, freqs_cis, modulation_signal, attn_impl=attn_impl)
 
-        h = h[:, :x_l, :]
+        h = h[:, -x_l:, :]
 
         out = self.img_output(self.norm(h))
 
