@@ -3,7 +3,7 @@
 from dataclasses import dataclass, field
 from typing import Optional, Tuple
 import logging
-
+import random
 import torch
 from torch import nn
 import torch.nn.functional as F
@@ -24,7 +24,7 @@ from apps.main.modules.transformer import (
     GenTransformerArgs,
 )
 from apps.main.modules.vae import LatentVideoVAE, LatentVideoVAEArgs
-from apps.main.data import random_mask
+from apps.main.data import random_mask_images
 
 logger = logging.getLogger()
 
@@ -37,6 +37,7 @@ class ModelArgs:
     scheduler: SchedulerArgs = field(default_factory=SchedulerArgs)
     tokenizer: TokenizerArgs = field(default_factory=TokenizerArgs)
     cfg_ratio: float = 0.1
+    mask_patch: int = 16
 
 
 class Pollux(nn.Module):
@@ -63,6 +64,8 @@ class Pollux(nn.Module):
 
         self.plan_transformer = PlanTransformer(args.plan_transformer)
         self.text_seqlen = self.plan_transformer.text_seqlen
+        self.cfg_ratio = args.cfg_ratio
+        self.mask_patch = args.mask_patch
         self.token_proj = nn.Linear(
             in_features=args.plan_transformer.dim,
             out_features=args.gen_transformer.dim,
@@ -90,13 +93,31 @@ class Pollux(nn.Module):
             pad_id,
             dtype=torch.long,
         ).cuda()
-        for k, t in enumerate(batch["cap_token"]):
-            tokens[k, : len(t)] = torch.tensor(t, dtype=torch.long, device="cuda")
+        if random.random() > self.cfg_ratio:
+            for k, t in enumerate(batch["cap_token"]):
+                if len(t) < tokens.size(1):
+                    tokens[k, : len(t)] = torch.tensor(
+                        t[:], dtype=torch.long, device="cuda"
+                    )
+                else:
+                    tokens[k, :] = torch.tensor(
+                        t[: tokens.size(1)], dtype=torch.long, device="cuda"
+                    )
         batch["cap_token"] = tokens
 
-        masked_image = random_mask(image)
+        mask, masked_image = random_mask_images(
+            image,
+            mask_ratio=random.random(),
+            mask_patch=self.mask_patch,
+            mask_all=random.random() < self.cfg_ratio,
+        )
+
         latent_masked_code = self.compressor.encode(masked_image)
-        batch["masked_latent"] = latent_masked_code
+        _, c, h, w = latent_masked_code.size()
+        resized_mask = F.interpolate(mask, size=(h, w), mode="nearest")
+        resized_mask = torch.cat([resized_mask] * c, dim=1)
+        batch["masked_latent"] = torch.cat([latent_masked_code, resized_mask], dim=1)
+
         conditional_signal = self.plan_transformer(batch)
         latent_code = self.compressor.encode(image)
         conditional_signal = self.token_proj(conditional_signal)
