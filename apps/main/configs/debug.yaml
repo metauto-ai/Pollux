@@ -83,7 +83,8 @@ data:
     image_size: 256
     num_workers: 8
     split: 'train'
-    source: 'dummy'
+    source: 'imagenet' # 'dummy' 
+    root_dir: '/jfs/data/imagenet'
 profiling:
     run: true
 
