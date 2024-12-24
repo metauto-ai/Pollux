@@ -4,10 +4,11 @@ python -m apps.main.test
 
 import logging
 from torchvision.utils import save_image
-import time
-from lingua.transformer import precompute_freqs_cis
-import torch
-from apps.main.data import create_dummy_dataloader, may_download_image_dataset
+from apps.main.data import (
+    may_download_image_dataset,
+    create_dataloader,
+    DataArgs,
+)
 from apps.main.modules.vae import LatentVideoVAEArgs
 from apps.main.modules.schedulers import SchedulerArgs
 from apps.main.modules.transformer import PlanTransformerArgs, GenTransformerArgs
@@ -23,14 +24,7 @@ logging.basicConfig(
 
 
 if __name__ == "__main__":
-    # may_download_image_dataset('/mnt/data/imagenet')
     may_download_image_dataset(path_name="/jfs/data/imagenet")
-    dataloader = create_dummy_dataloader(
-        batch_size=4,
-        num_samples=100,
-        num_classes=1000,
-        image_size=(3, 256, 256),
-    )
     vae_arg = LatentVideoVAEArgs(
         pretrained_model_name_or_path="/jfs/checkpoints/Flux-dev"
     )
@@ -85,9 +79,19 @@ if __name__ == "__main__":
         tokenizer=tokenizer_arg,
         cfg_ratio=0.1,
     )
+    data_arg = DataArgs(
+        source="imagenet",
+        batch_size=4,
+        num_workers=8,
+        image_size=256,
+        split="train",
+        root_dir="/jfs/data/imagenet",
+    )
+    data = create_dataloader(shard_id=0, num_shards=1, args=data_arg)
     model = Pollux(model_arg)
     model.cuda()
-    for batch in dataloader:
+    for batch in data:
+        print(batch)
         batch["image"] = batch["image"].cuda()
 
         model(batch)

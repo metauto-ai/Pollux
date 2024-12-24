@@ -9,6 +9,7 @@ from torchvision import transforms
 from PIL import Image
 from dataclasses import dataclass
 from typing import Dict, Any, Iterator, Optional, TypedDict
+from setup.imagenet_classes import IMAGENET2012_CLASSES
 import logging
 from torch import nn
 import random
@@ -195,6 +196,7 @@ class DataPipeline(nn.Module):
             ]
         )
         self.image_size = args.image_size
+        self.cls_list = list(IMAGENET2012_CLASSES.items())
 
     def transform(self, x: Image) -> torch.Tensor:
         x = center_crop_arr(x, self.image_size)
@@ -215,5 +217,9 @@ class DataPipeline(nn.Module):
                 if k != "image":
                     data[k][-dup_num:] = [data[k][-dup_num - 1]] * dup_num
         data["image"] = processed_image
-        data["caption"] = data.features["labels"].int2str
+        caption_list = []
+        for label in data["label"]:
+            _, cap = self.cls_list[label]
+            caption_list.append(cap)
+        data["caption"] = caption_list
         return data
