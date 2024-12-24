@@ -20,7 +20,7 @@ distributed:
     dp_shard: 4
     dp_replicate: 1
     compile: false
-    model_dtype: bf16
+    model_dtype: bf16 # options: `fb8` is only supported by H100
     matmul_allow_tf32: false
     selective_activation_checkpointing: false
     tp_size: 1
