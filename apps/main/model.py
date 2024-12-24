@@ -156,13 +156,9 @@ def build_fsdp_grouping_plan(model_args: ModelArgs, vae_config: dict):
 
     for i in range(len(vae_config.down_block_types)):
         group_plan.append((f"compressor.vae.encoder.down_blocks.{i}", False))
-    group_plan.append(("plan_transformer.tok_embeddings", False))
-    group_plan.append(("plan_transformer.img_embed", False))
 
     for i in range(model_args.plan_transformer.n_layers):
         group_plan.append((f"plan_transformer.layers.{i}", False))
-
-    group_plan.append(("token_proj", False))
 
     for i in range(model_args.gen_transformer.n_layers):
         group_plan.append((f"gen_transformer.layers.{i}", False))
