@@ -49,13 +49,11 @@ python -m apps.main.generate config=apps/main/configs/eval.yaml
 python -m apps.main.test
 ```
 
-
+## Pollux Pipeline
+![pollux_0 6](https://github.com/user-attachments/assets/132d7a63-e953-493f-acfc-f46f4597e079)
 
 
 ### TODO 
 
-* Ensemble minimal and efficient Qwen model for image/video understanding.
-
-* Pollux V 0.5 for text-to-image Generation Pipeline:
-![pipeline_v0 5](https://github.com/user-attachments/assets/ad389a45-8711-4292-b070-00cc27eb5a38) 
+see issues
 
