@@ -7,6 +7,10 @@ import os
 import sys
 import time
 
+# LOCAL TEST (_PLEASE_DO_NOT_DELETE)
+# PROJ_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
+# sys.path.insert(0, PROJ_ROOT)
+
 import wandb
 import numpy as np
 import torch
@@ -23,6 +27,7 @@ from pathlib import Path
 from timeit import default_timer as timer
 from typing import Any, Dict, List, Optional
 from omegaconf import OmegaConf
+
 
 from lingua.args import dump_config, flatten_dict, dataclass_from_dict
 from lingua.checkpoint import CheckpointArgs, CheckpointManager, load_from_checkpoint
@@ -54,7 +59,7 @@ from apps.main.data import create_imagenet_dataloader, DataArgs
 from apps.main.modules.schedulers import SchedulerArgs
 from apps.main.modules.transformer import get_num_flop_per_token
 from apps.main.model import (
-    LatentDiffusionTransformer,
+    LatentVideoVAE,
     ModelArgs,
     build_fsdp_grouping_plan,
     tp_parallelize,
@@ -254,7 +259,7 @@ def train(args: TrainArgs):
         torch.manual_seed(args.seed)
         logger.info("Building model")
 
-        model = LatentDiffusionTransformer(args.model)
+        model = LatentVideoVAE(args.model)
         logger.info("Model is built !")
 
         model_param_count = get_num_params(model)
@@ -516,44 +521,13 @@ def train(args: TrainArgs):
 
 
 def main():
-    """
-    The command line interface here uses OmegaConf https://omegaconf.readthedocs.io/en/2.3_branch/usage.html#from-command-line-arguments
-    This accepts arguments as a dot list
-    So if the dataclass looks like
 
-    @dataclass
-    class DummyArgs:
-        name: str
-        model: LMTransformerArgsgs
+    # SETUP GPUs
+    if "distributed" in file_cfg and "gpus" in file_cfg.distributed:
+        gpus = file_cfg.distributed.gpus
+        os.environ["CUDA_VISIBLE_DEVICES"] = str(gpus)
+        logger.info(f"Set CUDA_VISIBLE_DEVICES to: {gpus}")
 
-    @dataclass
-    class LMTransformerArgsgs:
-        dim: int
-
-    Then you can pass model.dim=32 to change values in LMTransformerArgsgs
-    or just name=tictac for top level attributes.
-
-    The behavior here is as follows:
-    1. We instantiate TrainArgs with its default values
-    2. We override those default values with the ones in the provided config file
-    3. We override the result with the additional arguments provided through command line
-
-    For example, if the config is the following
-
-    model:
-        dim: 128
-        n_layers: 4
-
-    and you call train.py with train.py model.dim=64
-
-    Then the final TrainArgs will have
-
-    model:
-        dim: 64
-        n_layers: 4
-
-    Plus all the default values in TrainArgs dataclass.
-    """
     cli_args = OmegaConf.from_cli()
     file_cfg = OmegaConf.load(cli_args.config)
     # We remove 'config' attribute from config as the underlying DataClass does not have it

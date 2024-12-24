@@ -6,7 +6,7 @@ from torch import nn
 from torch.nn import functional as F
 from torchvision.utils import save_image
 import numpy as np
-from apps.main.model import LatentDiffusionTransformer, ModelArgs
+from apps.main.model import LatentVideoVAE, ModelArgs
 from apps.Simple_DiT.generate import (
     GeneratorArgs,
 )
@@ -211,7 +211,7 @@ def main():
     print(cfg)
 
     model, _ = load_consolidated_model(
-        cfg.ckpt_dir, model_cls=LatentDiffusionTransformer, model_args_cls=ModelArgs
+        cfg.ckpt_dir, model_cls=LatentVideoVAE, model_args_cls=ModelArgs
     )
 
     generator = LatentGenerator(gen_cfg, model)
