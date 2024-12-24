@@ -97,12 +97,12 @@ class Pollux(nn.Module):
         masked_image = random_mask(image)
         latent_masked_code = self.compressor.encode(masked_image)
         batch["masked_latent"] = latent_masked_code
-        conditional_signal = self.plan_transformer(batch)
+        conditional_signal, layout = self.plan_transformer(batch)
         latent_code = self.compressor.encode(image)
         conditional_signal = self.token_proj(conditional_signal)
         noised_x, t, target = self.scheduler.sample_noised_input(latent_code)
         output = self.gen_transformer(
-            x=noised_x, time_steps=t, condition=conditional_signal
+            x=noised_x, time_steps=t, condition=conditional_signal, layout=layout
         )
         batch["prediction"] = output
         batch["target"] = target

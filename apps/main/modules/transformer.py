@@ -352,6 +352,8 @@ class GenTransformer(BaseDiffusionTransformer):
         )
         self.ada_dim = args.ada_dim
         self.dim = args.dim
+        self.img_cond_token = nn.Parameter(torch.zeros(1, 1, self.dim))
+        self.cap_cond_token = nn.Parameter(torch.zeros(1, 1, self.dim))
         self.norm = RMSNorm(args.dim, eps=args.norm_eps)
 
     def patchify_and_embed_image(
@@ -379,11 +381,20 @@ class GenTransformer(BaseDiffusionTransformer):
         x: torch.Tensor,
         time_steps: torch.Tensor,
         condition: torch.Tensor,
+        layout: Dict[str, int],
         attn_impl: str = "sdpa",
     ):
         x, img_size, freqs_cis_img = self.patchify_and_embed_image(x)
         x_l = x.size(1)
         c_l = condition.size(1)
+        indicator = torch.cat(
+            [
+                torch.cat([self.cap_cond_token] * layout["cap"], dim=1),
+                torch.cat([self.img_cond_token] * layout["img"], dim=1),
+            ],
+            dim=1,
+        )
+        condition = condition + indicator
         freqs_cis_img = freqs_cis_img.to(x.device)
         freqs_cis_cond = self.rope_embeddings_conditions.freqs_cis[:c_l].to(x.device)
         x = torch.cat([condition, x], dim=1)
@@ -428,6 +439,8 @@ class GenTransformer(BaseDiffusionTransformer):
             a=-3 * init_std,
             b=3 * init_std,
         )
+        nn.init.normal_(self.img_cond_token, std=0.02)
+        nn.init.normal_(self.cap_cond_token, std=0.02)
 
 
 class BasePlanTransformer(nn.Module):
@@ -550,7 +563,7 @@ class PlanTransformer(BasePlanTransformer):
         self,
         batch: dict[str:any],
         attn_impl: str = "sdpa",
-    ):  # TODO ADD Indicator & ADD start/end token to img
+    ):
         x_cap = self.tok_embeddings(batch["cap_token"])
         x_img, _, freqs_cis_img = self.patchify_and_embed_image(batch["masked_latent"])
 
@@ -559,8 +572,11 @@ class PlanTransformer(BasePlanTransformer):
         x = torch.cat([x_cap, x_img], dim=1)
         freqs_cis = torch.cat([freqs_cis_cap, freqs_cis_img], dim=0)
         h = super().forward(x, freqs_cis, attn_impl=attn_impl)
-
-        return self.norm(h)
+        layout = {
+            "cap": x_cap.size(1),
+            "img": x_img.size(1),
+        }
+        return self.norm(h), layout
 
     def reset_parameters(self, init_std=None):
         # Either use fixed base std or sqrt model dim
