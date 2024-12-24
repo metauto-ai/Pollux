@@ -36,15 +36,6 @@ bash Miniconda3-latest-Linux-x86_64.sh
 source /home/mczhuge/miniconda3/bin/activate
 ```
 
-or 
-
-```
-sudo chmod a+w /mnt/data
-wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh
-bash Miniconda3-latest-Linux-x86_64.sh
-/home/mczhuge/miniconda3/bin/conda init # Change to the specific path
-source ~/.bashrc
-```
 
 ### Setup Github SSH
 
