@@ -1,7 +1,7 @@
 # Template config, need to change dump_dir, data.root_dir and data.tokenizer.path
 # torchrun --standalone --nnodes 1 --nproc-per-node 4 -m apps.main.train config=apps/main/configs/pollux_v0.6.yaml
 
-name: "ImageNet_Pollux_v0.6_mctest"
+name: "ImageNet_Pollux_v0.6"
 output_dir: "/jfs/checkpoints/dump"
 dump_dir: "" # Mingchen: No need to put now! I revise the code to flexible put `/mnt/data/dump` + name for dump_dir
 steps: 1000000
@@ -27,7 +27,8 @@ distributed:
     tp_size: 1
     compile_cache_size_limit: 64
 model:
-    cfg_ratio: 0.1
+    text_cfg_ratio: 0.1
+    image_cfg_ratio: 0.5
     mask_patch: 16
     vae:
         pretrained_model_name_or_path: '/jfs/checkpoints/Flux-dev'
