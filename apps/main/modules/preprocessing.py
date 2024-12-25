@@ -1,7 +1,11 @@
 import torch
 import random
+from PIL import Image
+import numpy as np
+import string
 
 ######################## FOR IMAGE ########################
+
 
 def random_mask_images(img_tensor, mask_ratio, mask_patch, mask_all=False):
     """
@@ -89,8 +93,8 @@ def center_crop_arr(pil_image, image_size):
     )
 
 
-
 ######################## FOR TEXT ########################
+
 
 def generate_random_text(word_count=50):
     words = []

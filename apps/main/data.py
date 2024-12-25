@@ -1,6 +1,3 @@
-import os
-import random
-import string
 import logging
 
 import datasets
@@ -30,6 +27,7 @@ logger = logging.getLogger()
 def HF_DATA_DOWNLOAD(source_name="ILSVRC/imagenet-1k", cache_dir="/jfs/data/imagenet/"):
     data = datasets.load_dataset(source_name, cache_dir)
     print(data["train"][0])
+
 
 @dataclass
 class DataArgs:
@@ -173,7 +171,6 @@ class DataPipeline(nn.Module):
             try:
                 processed_image.append(self.transform(image))
             except Exception as e:
-                pass
                 # logger.warning(f'Error to process the image: {e}')
         if len(data["image"]) != len(processed_image):
             dup_num = len(data["image"]) - len(processed_image)
