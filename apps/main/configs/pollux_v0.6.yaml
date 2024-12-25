@@ -1,5 +1,5 @@
 # TEMPLATE:
-# torchrun --standalone -m apps.main.train config=apps/main/configs/pollux_v0.6.yaml
+# torchrun --standalone --nnodes 1 --nproc-per-node 4 -m apps.main.train config=apps/main/configs/pollux_v0.6.yaml
 
 env:
     ENABLE_INTRA_NODE_COMM: '0' # disable one default seeting here, as have some error in our cluster
