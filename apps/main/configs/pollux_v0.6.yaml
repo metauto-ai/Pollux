@@ -1,9 +1,34 @@
-# Template config, need to change dump_dir, data.root_dir and data.tokenizer.path
-# torchrun --standalone --nnodes 1 --nproc-per-node 4 -m apps.main.train config=apps/main/configs/pollux_v0.6.yaml
+# TEMPLATE:
+# torchrun --standalone -m apps.main.train config=apps/main/configs/pollux_v0.6.yaml
 
+env:
+    ENABLE_INTRA_NODE_COMM: '0' # disable one default seeting here, as have some error in our cluster
+
+# SETUP THE DISTRIBUTION FIRST (*: LEAVE FOR FUTURE MULTI-NODES SETTING)
+distributed:
+    gpus: 4,5,6,7
+        # - [2, 3, 4, 7]
+        # - [0, 1, 2] # *
+        # - [0, 1, 2, 3, 4]  # * 
+    fsdp_type: full_shard 
+    dp_shard: 4 # directly calculated by `gpus` in the future code
+    dp_replicate: 1
+    compile: false
+    model_dtype: bf16 # options: `fb8` is only supported by H100
+    matmul_allow_tf32: false
+    selective_activation_checkpointing: false
+    tp_size: 1
+    compile_cache_size_limit: 64
+    # nproc_per_node: -1 # directly calculated by `gpus` in the future code
+    # nnodes: -1 # directly calculated by `gpus` in the future code
+    # master_addr: "" # *
+    # master_port: 6667 # *
+    # node_rank: 0  # *
+
+# SETUP THE SAVED PATH / WANDB LOG
 name: "ImageNet_Pollux_v0.6_mctest"
 output_dir: "/jfs/checkpoints/dump"
-dump_dir: "" # Mingchen: No need to put now! I revise the code to flexible put `/mnt/data/dump` + name for dump_dir
+dump_dir: "" # No need now
 steps: 1000000
 seed: 777
 optim:
@@ -12,22 +37,12 @@ optim:
     lr_min_ratio: 0.000001
     clip: 10.0
     weight_decay: 0.01
-env:
-    ENABLE_INTRA_NODE_COMM: '0' # disable one default seeting here, as have some error in our cluster
 
-distributed:
-    gpus: 4,5,6,7
-    fsdp_type: full_shard
-    dp_shard: 4
-    dp_replicate: 1
-    compile: false
-    model_dtype: bf16 # options: `fb8` is only supported by H100
-    matmul_allow_tf32: false
-    selective_activation_checkpointing: false
-    tp_size: 1
-    compile_cache_size_limit: 64
+
+# SETUP THE MODEL HYPERPARAMETERS
 model:
-    cfg_ratio: 0.1
+    text_cfg_ratio: 0.1
+    image_cfg_ratio: 0.5
     mask_patch: 16
     vae:
         pretrained_model_name_or_path: '/jfs/checkpoints/Flux-dev'
@@ -56,7 +71,7 @@ model:
         out_channels: 16
         tmb_size: 256
         gen_seqlen: 256
-        condition_seqlen: 512
+        condition_seqlen: 320
         norm_eps: 1e-5
         pre_trained_path: /jfs/checkpoints/Llama-3.2-1B/original/consolidated.00.pth
         attn_type: "bi_causal"
@@ -70,7 +85,7 @@ model:
         patch_size: 2
         in_channels: 32  
         vocab_size: 128256  
-        text_seqlen: 128  
+        text_seqlen: 32 
         gen_seqlen: 256 
         pre_trained_path: /jfs/checkpoints/Llama-3.2-1B/original/consolidated.00.pth
         attn_type: "bi_causal"
@@ -78,13 +93,14 @@ model:
     tokenizer:
         model_path: /jfs/checkpoints/Llama-3.2-1B/original/tokenizer.model
 
+# SETUP THE DATASET
 data:
     batch_size: 24
     image_size: 256
     num_workers: 8
     split: 'train'
-    source: 'imagenet'
-    root_dir: '/jfs/data/imagenet'
+    data_name: 'ILSVRC/imagenet-1k' # Use original HF repo name for future multiple dataset usages & Add hook for swift support in main/data.py
+    root_dir: '/jfs/data' # use the root dir for whole datasets rather than single one
 
 profiling:
     run: true

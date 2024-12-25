@@ -5,7 +5,7 @@ python -m apps.main.test
 import logging
 from torchvision.utils import save_image
 from apps.main.data import (
-    HF_DATA_DOWNLOAD,
+    HF_DATA_LOADER,
     create_dataloader,
     DataArgs,
 )
@@ -24,7 +24,7 @@ logging.basicConfig(
 
 
 if __name__ == "__main__":
-    HF_DATA_DOWNLOAD(source_name="ILSVRC/imagenet-1k", cache_dir="/jfs/data/imagenet")
+    HF_DATA_LOADER(DATA_name="ILSVRC/imagenet-1k", cache_dir="/jfs/data")
     vae_arg = LatentVideoVAEArgs(
         pretrained_model_name_or_path="/jfs/checkpoints/Flux-dev"
     )
@@ -81,12 +81,12 @@ if __name__ == "__main__":
         mask_patch=16,
     )
     data_arg = DataArgs(
-        source="imagenet",
+        data_name="ILSVRC/imagenet-1k",
         batch_size=4,
         num_workers=8,
         image_size=256,
         split="train",
-        root_dir="/jfs/data/imagenet",
+        root_dir="/jfs/data",
     )
     data = create_dataloader(shard_id=0, num_shards=1, args=data_arg)
     model = Pollux(model_arg)
