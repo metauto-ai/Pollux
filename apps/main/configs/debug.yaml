@@ -83,7 +83,7 @@ data:
     image_size: 256
     num_workers: 8
     split: 'train'
-    data_name: 'imagenet-1k' # 'dummy' 
+    data_name: 'ILSVRC/imagenet-1k' # 'dummy' 
     root_dir: '/jfs/data'
 profiling:
     run: true
