@@ -78,13 +78,14 @@ model:
     tokenizer:
         model_path: /jfs/checkpoints/Llama-3.2-1B/original/tokenizer.model
 
+# SETUP THE DATASET
 data:
     batch_size: 32
     image_size: 256
     num_workers: 8
     split: 'train'
-    source: 'imagenet'
-    root_dir: '/jfs/data/imagenet'
+    data_name: 'ILSVRC/imagenet-1k' # 'dummy' 
+    root_dir: '/jfs/data'
 
 profiling:
     run: true
