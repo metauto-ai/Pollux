@@ -47,8 +47,8 @@ class Pollux(nn.Module):
     and a custom scheduler for diffusion steps.
     """
 
-    version: str = "v0.5"
-    description: str = (
+    VERSION: str = "v0.6"
+    DESCRIPTION: str = (
         "Latent Diffusion Transformer for VideoGen: (1) currently we only support class conditional image generation for debugging."
     )
 
@@ -118,8 +118,8 @@ class Pollux(nn.Module):
         resized_mask = F.interpolate(mask, size=(h, w), mode="nearest")
         resized_mask = torch.cat([resized_mask] * c, dim=1)
         batch["masked_latent"] = torch.cat([latent_masked_code, resized_mask], dim=1)
-        conditional_signal = self.plan_transformer(batch)
-        
+        conditional_signal, layout = self.plan_transformer(batch)
+
         latent_code = self.compressor.encode(image)
         conditional_signal = self.token_proj(conditional_signal)
         noised_x, t, target = self.scheduler.sample_noised_input(latent_code)

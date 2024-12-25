@@ -34,7 +34,7 @@ pip install wandb
 * We provides a minimal system to train diffusion model on ImageNet with parallelized system. The following example is how we train our pipeline on 4 GPUs.
 
 ```
-torchrun --standalone --nnodes 1 --nproc-per-node 4 -m apps.main.train config=apps/main/configs/pollux_v0.5.yaml
+torchrun --standalone --nnodes 1 --nproc-per-node 4 -m apps.main.train config=apps/main/configs/pollux_v0.6.yaml
 ```
 
 * Generate visualizations:
@@ -50,7 +50,7 @@ python -m apps.main.test
 ```
 
 ## Pollux Pipeline
-![pollux_0 6](https://github.com/user-attachments/assets/132d7a63-e953-493f-acfc-f46f4597e079)
+![pollux_0 6](https://github.com/user-attachments/assets/f1731dd1-3cf3-435b-9640-7fe7110d8fe7)
 
 
 ### TODO 

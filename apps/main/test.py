@@ -5,7 +5,7 @@ python -m apps.main.test
 import logging
 from torchvision.utils import save_image
 from apps.main.data import (
-    may_download_image_dataset,
+    HF_DATA_DOWNLOAD,
     create_dataloader,
     DataArgs,
 )
@@ -24,7 +24,7 @@ logging.basicConfig(
 
 
 if __name__ == "__main__":
-    may_download_image_dataset(path_name="/jfs/data/imagenet")
+    HF_DATA_DOWNLOAD(source_name="ILSVRC/imagenet-1k", cache_dir="/jfs/data/imagenet")
     vae_arg = LatentVideoVAEArgs(
         pretrained_model_name_or_path="/jfs/checkpoints/Flux-dev"
     )
