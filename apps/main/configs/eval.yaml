@@ -1,8 +1,8 @@
 # python -m apps.main.generate config=apps/main/configs/eval.yaml
 # torchrun --nnodes 1 --nproc-per-node 4 -m apps.main.eval config=apps/main/configs/eval.yaml
 name: "debug_evals"
-ckpt_dir:  /mnt/data/dump/ImageNet_1B_BaseLine_256_Flux_LLAMA_Pre_Train_v0.4_configE/checkpoints/0000037500/
-dump_dir:  /mnt/data/dump/ImageNet_1B_BaseLine_256_Flux_LLAMA_Pre_Train_v0.4_configE/checkpoints/0000037500/
+ckpt_dir:  /jfs/checkpoints/dump/ImageNet_Pollux_v0.6/checkpoints/0000017500
+dump_dir:  /jfs/checkpoints/dump/ImageNet_Pollux_v0.6/checkpoints/0000017500
 sample_num: 100000
 generator:
   guidance_scale: 5.0
@@ -12,8 +12,9 @@ generator:
   inference_steps: 50
 
 eval_data:
-    root_dir: '/mnt/data/imagenet'
-    batch_size: 256
+    batch_size: 24
     image_size: 256
     num_workers: 8
     split: 'validation'
+    source: 'imagenet'
+    root_dir: '/jfs/data/imagenet'

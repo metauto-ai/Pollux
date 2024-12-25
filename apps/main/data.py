@@ -109,12 +109,6 @@ def random_mask_images(img_tensor, mask_ratio, mask_patch, mask_all=False):
             (N, 1, H, W), device=img_tensor.device, dtype=img_tensor.dtype
         )
 
-        # Create grids for patching
-        patch_offsets = torch.arange(mask_patch, device=img_tensor.device).view(1, -1)
-
-        x_indices = (x_coords.unsqueeze(-1) + patch_offsets).clamp(0, H - 1)
-        y_indices = (y_coords.unsqueeze(-1) + patch_offsets).clamp(0, W - 1)
-
         # Apply patches to the mask efficiently
         for dx in range(mask_patch):
             for dy in range(mask_patch):
