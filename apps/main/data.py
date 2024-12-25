@@ -1,3 +1,4 @@
+import os
 import logging
 
 import datasets
@@ -29,15 +30,28 @@ from apps.main.utils.mongo_db_initial import MONGODB_URI
 # Configure logging
 logger = logging.getLogger()
 
+EXISTED_DATA = {
+# Put the dataset name and the repo name here if we cached for fast hit.
+"ILSVRC/imagenet-1k": "imagenet-1k",
+}
 
-def HF_DATA_DOWNLOAD(source_name="ILSVRC/imagenet-1k", cache_dir="/jfs/data/imagenet/"):
-    data = datasets.load_dataset(source_name, cache_dir)
-    print(data["train"][0])
+# Huggingface data hook
+def HF_DATA_LOADER(data_name: str, cache_dir: str) -> str:
 
+    if data_name in EXISTED_DATA.keys() and os.path.exists(os.path.join(cache_dir, data_name.split("/")[-1])):
+        data = datasets.load_dataset(path=data_name, cache_dir=os.path.join(cache_dir, data_name.split("/")[-1]))
+        logger.info(f"Dataset \"{data_name}\" loaded from local cache.")
+    else:
+        data = datasets.load_dataset(path=data_name, cache_dir=os.path.join(cache_dir, data_name.split("/")[-1]))
+        logger.info(f"Dataset \"{data_name}\" downloaded from huggingface.")
+        import stat
+        os.chmod(os.path.join(cache_dir, data_name.split("/")[-1]), stat.S_IRWXU | stat.S_IRWXG | stat.S_IRWXO)
+
+    return data
 
 @dataclass
 class DataArgs:
-    source: str = "imagenet"
+    data_name: str = "ILSVRC/imagenet-1k"
     batch_size: int = 2
     num_workers: int = 8
     image_size: int = 256
@@ -79,7 +93,10 @@ def create_imagenet_dataloader(
     num_shards: int,
     args: DataArgs,
 ) -> DataLoader:
-    data = datasets.load_dataset("ILSVRC/imagenet-1k", cache_dir=args.root_dir)
+
+
+    data = HF_DATA_LOADER(data_name="ILSVRC/imagenet-1k", cache_dir=args.root_dir)
+
     train_data = data[args.split]
     data_pipeline = DataPipeline(args)
     train_data.set_transform(data_pipeline)
@@ -98,13 +115,13 @@ def create_dataloader(
     num_shards: int,
     args: DataArgs,
 ):
-    if args.source == "imagenet":
+    if args.data_name == "ILSVRC/imagenet-1k":
         return create_imagenet_dataloader(
             shard_id,
             num_shards,
             args,
         )
-    if args.source == "dummy":
+    if args.data_name == "dummy":
         return create_dummy_dataloader(
             batch_size=args.batch_size,
             image_size=(3, args.image_size, args.image_size),
