@@ -26,6 +26,8 @@ pip install diffusers
 pip install datasets
 pip install torchvision==0.20.1
 pip install wandb
+pip install pymongo
+pip install python-dotenv
 ```
 
 
