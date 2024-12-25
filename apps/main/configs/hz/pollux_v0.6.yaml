@@ -1,8 +1,9 @@
 # Template config, need to change dump_dir, data.root_dir and data.tokenizer.path
-# torchrun --standalone --nnodes 1 --nproc-per-node 4 -m apps.main.train config=apps/main/configs/debug.yaml
+# torchrun --standalone --nnodes 1 --nproc-per-node 8 -m apps.main.train config=apps/main/configs/hz/pollux_v0.6.yaml
 
-name: "ImageNet_1B_BaseLine_256_Flux_LLAMA_Pre_Train_v0.6_debug"
+name: "ImageNet_Pollux_v0.6_img_cfg_0.5"
 output_dir: "/jfs/checkpoints/dump"
+dump_dir: "" # Mingchen: No need to put now! I revise the code to flexible put `/mnt/data/dump` + name for dump_dir
 steps: 1000000
 seed: 777
 optim:
@@ -15,9 +16,8 @@ env:
     ENABLE_INTRA_NODE_COMM: '0' # disable one default seeting here, as have some error in our cluster
 
 distributed:
-    gpus: "0,1,2,3"
     fsdp_type: full_shard
-    dp_shard: 4
+    dp_shard: 8
     dp_replicate: 1
     compile: false
     model_dtype: bf16 # options: `fb8` is only supported by H100
@@ -55,10 +55,8 @@ model:
         in_channels: 16
         out_channels: 16
         tmb_size: 256
-        #cfg_drop_ratio: 0.1 # delete in v0.5
-        #num_classes: 1000 # delete in v0.5
         gen_seqlen: 256
-        condition_seqlen: 512
+        condition_seqlen: 320
         norm_eps: 1e-5
         pre_trained_path: /jfs/checkpoints/Llama-3.2-1B/original/consolidated.00.pth
         attn_type: "bi_causal"
@@ -72,7 +70,7 @@ model:
         patch_size: 2
         in_channels: 32  
         vocab_size: 128256  
-        text_seqlen: 128  
+        text_seqlen: 32  
         gen_seqlen: 256 
         pre_trained_path: /jfs/checkpoints/Llama-3.2-1B/original/consolidated.00.pth
         attn_type: "bi_causal"
@@ -81,18 +79,19 @@ model:
         model_path: /jfs/checkpoints/Llama-3.2-1B/original/tokenizer.model
 
 data:
-    batch_size: 12
+    batch_size: 32
     image_size: 256
     num_workers: 8
     split: 'train'
-    data_name: 'ILSVRC/imagenet-1k' # 'dummy' 
-    root_dir: '/jfs/data'
+    source: 'imagenet'
+    root_dir: '/jfs/data/imagenet'
+
 profiling:
     run: true
 
 checkpoint:
     dump:
-        every: 100
+        every: 5000
         keep: 0 # Don't remove the ckpt
     eval:
         every: 5000
@@ -100,21 +99,7 @@ checkpoint:
 
 logging:
     freq: 100
-
-eval:
-    name: "debug_evals"
-    ckpt_dir:  ""
-    dump_dir: ""
-    generator:
-        guidance_scale: 3.0
-        dtype: bf16
-        resolution: 256
-        show_progress: False
-        inference_steps: 25
-    sample_num: 256
-    eval_data:
-        root_dir: '/mnt/data'
-        batch_size: 64
-        image_size: 256
-        num_workers: 8
-        split: 'validation'
+    wandb:
+        project: "Pollux"
+        entity: "metauto"
+        name: ""
