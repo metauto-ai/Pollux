@@ -7,9 +7,6 @@ from torch.nn import functional as F
 from torchvision.utils import save_image
 import numpy as np
 from apps.main.model import Pollux, ModelArgs
-from apps.Simple_DiT.generate import (
-    GeneratorArgs,
-)
 from typing import List, Optional, Tuple, Union, Dict, Any
 from apps.main.modules.schedulers import retrieve_timesteps, calculate_shift
 from lingua.args import dataclass_from_dict

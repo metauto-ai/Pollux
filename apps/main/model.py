@@ -47,8 +47,8 @@ class Pollux(nn.Module):
     and a custom scheduler for diffusion steps.
     """
 
-    version: str = "v0.5"
-    description: str = (
+    VERSION: str = "v0.6"
+    DESCRIPTION: str = (
         "Latent Diffusion Transformer for VideoGen: (1) currently we only support class conditional image generation for debugging."
     )
 
