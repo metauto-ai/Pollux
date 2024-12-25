@@ -77,8 +77,7 @@ class LatentGenerator(nn.Module):
 
     @torch.no_grad()
     def prepare_positive_context(self, context, device, dtype):
-        if "image" in context:
-            assert "mask" in context
+        if "image" in context and "mask" in context:
             image = context["image"]
             latent_masked_code = self.compressor.encode(image)
             _, c, h, w = latent_masked_code.size()
