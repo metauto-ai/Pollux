@@ -54,12 +54,7 @@ default_no_recompute_ops = {
 @dataclass
 class DistributedArgs:
 
-    gpus: Optional[str] = None #List[List[int]] = field(default_factory=lambda: [[4]])
-    # nproc_per_node: int = 1
-    # nnodes: int = 1
-    # master_addr: str = ""
-    # master_port: int = 6667
-    # node_rank: int = 0
+    gpus: Optional[str] = None  # List[List[int]] = field(default_factory=lambda: [[4]])
     dp_shard: int = (
         1  # In how many shard to split the model weight. Typically number gpu in a node.
     )

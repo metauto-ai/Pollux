@@ -11,10 +11,10 @@ generator:
   show_progress: False
   inference_steps: 50
 
-eval_data:
+data:
     batch_size: 24
     image_size: 256
     num_workers: 8
     split: 'validation'
-    data_name: 'ILSVRC/imagenet-1k'
+    data_name: 'ILSVRC/imagenet-1k' # 'dummy' 
     root_dir: '/jfs/data'

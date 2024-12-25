@@ -95,12 +95,12 @@ model:
 
 # SETUP THE DATASET
 data:
-    batch_size: 24
+    batch_size: 12
     image_size: 256
     num_workers: 8
     split: 'train'
-    data_name: 'ILSVRC/imagenet-1k' # Use original HF repo name for future multiple dataset usages & Add hook for swift support in main/data.py
-    root_dir: '/jfs/data' # use the root dir for whole datasets rather than single one
+    data_name: 'ILSVRC/imagenet-1k' # 'dummy' 
+    root_dir: '/jfs/data'
 
 profiling:
     run: true
