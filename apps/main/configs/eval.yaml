@@ -16,5 +16,5 @@ eval_data:
     image_size: 256
     num_workers: 8
     split: 'validation'
-    source: 'imagenet'
-    root_dir: '/jfs/data/imagenet'
+    data_name: 'ILSVRC/imagenet-1k'
+    root_dir: '/jfs/data'

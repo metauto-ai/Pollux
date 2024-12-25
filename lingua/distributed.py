@@ -13,7 +13,7 @@ import socket
 import subprocess
 import sys
 import tempfile
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from functools import lru_cache, partial, reduce
 from typing import List, Optional, Tuple, Union
 
@@ -53,6 +53,13 @@ default_no_recompute_ops = {
 
 @dataclass
 class DistributedArgs:
+
+    gpus: Optional[str] = None #List[List[int]] = field(default_factory=lambda: [[4]])
+    # nproc_per_node: int = 1
+    # nnodes: int = 1
+    # master_addr: str = ""
+    # master_port: int = 6667
+    # node_rank: int = 0
     dp_shard: int = (
         1  # In how many shard to split the model weight. Typically number gpu in a node.
     )
@@ -66,15 +73,11 @@ class DistributedArgs:
     model_dtype: str = "bf16"
     float8_recipe: Optional[str] = None
     float8_filter: str = r"layers\.[0-9]+\."
-
     matmul_allow_tf32: bool = False
     allow_bf16_reduced_precision_reduction = True
     detect_anomaly: bool = False
-
     compile_cache_size_limit: int = 8
-
     spawn_method: str = "forkserver"
-    gpus: Optional[str] = None
 
 
 @dataclass

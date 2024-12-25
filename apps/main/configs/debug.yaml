@@ -85,8 +85,8 @@ data:
     image_size: 256
     num_workers: 8
     split: 'train'
-    source: 'imagenet' # 'dummy' 
-    root_dir: '/jfs/data/imagenet'
+    data_name: 'ILSVRC/imagenet-1k' # 'dummy' 
+    root_dir: '/jfs/data'
 profiling:
     run: true
 
@@ -113,7 +113,7 @@ eval:
         inference_steps: 25
     sample_num: 256
     eval_data:
-        root_dir: '/mnt/data/imagenet'
+        root_dir: '/mnt/data'
         batch_size: 64
         image_size: 256
         num_workers: 8

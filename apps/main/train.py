@@ -11,6 +11,11 @@ import time
 # PROJ_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 # sys.path.insert(0, PROJ_ROOT)
 
+from omegaconf import OmegaConf
+cli_args = OmegaConf.from_cli()
+file_cfg = OmegaConf.load(cli_args.config)
+os.environ["CUDA_VISIBLE_DEVICES"] =  file_cfg.distributed.gpus
+
 import wandb
 import numpy as np
 import torch
@@ -26,7 +31,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from timeit import default_timer as timer
 from typing import Any, Dict, List, Optional
-from omegaconf import OmegaConf
+
 
 
 from lingua.args import dump_config, flatten_dict, dataclass_from_dict
@@ -155,9 +160,9 @@ def validate_train_args(args: TrainArgs):
         args.checkpoint.path = str(Path(args.dump_dir) / "checkpoints")
 
     # TODO: Mingchen: here need to support multiple source later as in the original lingua codebase
-    assert (not args.data.root_dir and args.data.source == "dummy") or os.path.exists(
-        args.data.root_dir
-    ), f"{args.data.root_dir} doesn't exist"
+    assert (
+        not args.data.root_dir and args.data.data_name == "dummy"
+    ) or os.path.exists(args.data.root_dir), f"{args.data.root_dir} doesn't exist"
 
     if (
         args.distributed.dp_replicate
@@ -530,13 +535,43 @@ def train(args: TrainArgs):
 
 def main():
 
-    cli_args = OmegaConf.from_cli()
-    file_cfg = OmegaConf.load(cli_args.config)
-    # SETUP GPUs
-    if "distributed" in file_cfg and "gpus" in file_cfg.distributed:
-        gpus = file_cfg.distributed.gpus
-        os.environ["CUDA_VISIBLE_DEVICES"] = gpus
-        logger.info(f"Set CUDA_VISIBLE_DEVICES to: {gpus}")
+    #if "distributed" in file_cfg and "gpus" in file_cfg.distributed:
+
+        #dist_cfg = file_cfg
+        #gpus = list(OmegaConf.to_container(file_cfg.distributed.gpus, resolve=True))
+        #if isinstance(gpus, list) and all(isinstance(gpu, int) for gpu in gpus):
+        #    gpus = [gpus]
+        #assert isinstance(gpus, list), "`gpus` must be a list of lists."
+        #assert all(
+        #    isinstance(node_gpus, list) for node_gpus in gpus
+        #), "`gpus` must contain lists for each node."
+
+        #nnodes = len(gpus)
+        # node_rank = int(
+        #     os.getenv("NODE_RANK", 0) or dist_cfg.distributed.node_rank or 0
+        # )
+        #local_gpus = gpus[0] #gpus[node_rank]
+        # os.environ["CUDA_VISIBLE_DEVICES"] = ",".join(map(str, local_gpus))
+
+        #gpus = file_cfg.distributed.gpus
+
+        #os.environ["CUDA_VISIBLE_DEVICES"] = "3,4,5,6"#gpus
+        #logger.info(f"Distributed setup: gpus={gpus}")
+        #logger.info(f"Distributed setup: nnodes={nnodes}, gpus={gpus}")
+
+        # dp_shard = [len(node_gpus) for node_gpus in gpus]
+        # nproc_per_node = len(local_gpus)
+        # os.environ["WORLD_SIZE"] = str(nnodes * nproc_per_node)
+        # os.environ["RANK"] = str(node_rank * nproc_per_node)
+        # master_addr = dist_cfg.master_addr
+        # master_port = dist_cfg.get("master_port", 29500)
+        # os.environ["MASTER_ADDR"] = master_addr
+        # os.environ["MASTER_PORT"] = str(master_port)
+
+        # dist_cfg.distributed["nnodes"] = nnodes
+        # dist_cfg.distributed["nproc_per_node"] = nproc_per_node
+        # dist_cfg.distributed["dp_shard"] = dp_shard[node_rank]
+
     # We remove 'config' attribute from config as the underlying DataClass does not have it
     del cli_args.config
 
