@@ -96,3 +96,4 @@ if __name__ == "__main__":
         batch["image"] = batch["image"].cuda()
 
         model(batch)
+        break

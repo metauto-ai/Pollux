@@ -113,17 +113,18 @@ class Pollux(nn.Module):
         )
 
         latent_masked_code = self.compressor.encode(masked_image)
+
         _, c, h, w = latent_masked_code.size()
         resized_mask = F.interpolate(mask, size=(h, w), mode="nearest")
         resized_mask = torch.cat([resized_mask] * c, dim=1)
         batch["masked_latent"] = torch.cat([latent_masked_code, resized_mask], dim=1)
-
         conditional_signal = self.plan_transformer(batch)
+        
         latent_code = self.compressor.encode(image)
         conditional_signal = self.token_proj(conditional_signal)
         noised_x, t, target = self.scheduler.sample_noised_input(latent_code)
         output = self.gen_transformer(
-            x=noised_x, time_steps=t, condition=conditional_signal
+            x=noised_x, time_steps=t, condition=conditional_signal, layout=layout
         )
         batch["prediction"] = output
         batch["target"] = target
