@@ -36,7 +36,8 @@ class ModelArgs:
     vae: LatentVideoVAEArgs = field(default_factory=LatentVideoVAEArgs)
     scheduler: SchedulerArgs = field(default_factory=SchedulerArgs)
     tokenizer: TokenizerArgs = field(default_factory=TokenizerArgs)
-    cfg_ratio: float = 0.1
+    text_cfg_ratio: float = 0.1
+    image_cfg_ratio: float = 0.1
     mask_patch: int = 16
 
 
@@ -64,7 +65,8 @@ class Pollux(nn.Module):
 
         self.plan_transformer = PlanTransformer(args.plan_transformer)
         self.text_seqlen = self.plan_transformer.text_seqlen
-        self.cfg_ratio = args.cfg_ratio
+        self.text_cfg_ratio = args.text_cfg_ratio
+        self.image_cfg_ratio = args.image_cfg_ratio
         self.mask_patch = args.mask_patch
         self.token_proj = nn.Linear(
             in_features=args.plan_transformer.dim,
@@ -115,7 +117,7 @@ class Pollux(nn.Module):
         return batch
 
     def cap_tokenize(self, batch: dict[str:any]) -> torch.Tensor:
-        if random.random() > self.cfg_ratio:
+        if random.random() > self.text_cfg_ratio:
             return self.cap_pos_tokenize(batch)
         else:
             return self.cap_neg_tokenize(batch)
@@ -129,7 +131,7 @@ class Pollux(nn.Module):
             image,
             mask_ratio=random.random(),
             mask_patch=self.mask_patch,
-            mask_all=random.random() < self.cfg_ratio,
+            mask_all=random.random() < self.image_cfg_ratio,
         )
 
         latent_masked_code = self.compressor.encode(masked_image)
