@@ -6,8 +6,8 @@ from torch import nn
 from torch.nn import functional as F
 from torchvision.utils import save_image
 import numpy as np
-from apps.main.model import LatentVideoVAE, ModelArgs
-from typing import List, Optional, Tuple, Union
+from apps.main.model import Pollux, ModelArgs
+from typing import List, Optional, Tuple, Union, Dict, Any
 from apps.main.modules.schedulers import retrieve_timesteps, calculate_shift
 from lingua.args import dataclass_from_dict
 import logging
@@ -48,28 +48,75 @@ class LatentGenerator(nn.Module):
         self.guidance_scale = cfg.guidance_scale
         self.show_progress = cfg.show_progress
         self.dtype = dict(fp32=torch.float32, bf16=torch.bfloat16)[cfg.dtype]
-        self.in_channel = model.transformer.in_channels
+        self.in_channel = model.gen_transformer.in_channels
         self.sigma = cfg.sigma
         self.scheduler = model.scheduler.scheduler
         self.num_inference_steps = cfg.inference_steps
 
-    def prepare_latent(self, context: torch.Tensor):
-        bsz = context.size(0)
+    def prepare_latent(self, context, device, dtype):
+        bsz = len(context["caption"])
         latent_size = (bsz, self.in_channel, self.resolution, self.resolution)
-        latents = randn_tensor(latent_size, device=context.device, dtype=self.dtype)
+        latents = randn_tensor(latent_size, device=device, dtype=dtype)
         return latents
 
-    def prepare_negative_context(self, context):
-        return torch.tensor([self.model.transformer.num_classes] * context.size(0)).to(
-            context.device
+    @torch.no_grad()
+    def prepare_negative_context(self, context, device, dtype):
+        bsz = len(context["caption"])
+        context["masked_latent"] = torch.cat(
+            [
+                torch.zeros((bsz, self.in_channel, self.resolution, self.resolution)),
+                torch.ones((bsz, self.in_channel, self.resolution, self.resolution)),
+            ],
+            dim=1,
+        ).to(
+            device=device,
+            dtype=dtype,
         )
-
-    def return_seq_len(self):
-        return (self.resolution // self.model.transformer.patch_size) ** 2
+        context = self.model.cap_neg_tokenize(context)
+        return self.model.plan_transformer(context)
 
     @torch.no_grad()
-    def forward(self, context: torch.Tensor) -> torch.Tensor:
-        latent = self.prepare_latent(context)
+    def prepare_positive_context(self, context, device, dtype):
+        if "image" in context and "mask" in context:
+            image = context["image"]
+            latent_masked_code = self.compressor.encode(image)
+            _, c, h, w = latent_masked_code.size()
+            mask = context["mask"]
+            resized_mask = F.interpolate(mask, size=(h, w), mode="nearest")
+            resized_mask = torch.cat([resized_mask] * c, dim=1)
+            context["masked_latent"] = torch.cat(
+                [latent_masked_code, resized_mask], dim=1
+            ).to(
+                device=device,
+                dtype=dtype,
+            )
+        else:
+            bsz = len(context["caption"])
+            context["masked_latent"] = torch.cat(
+                [
+                    torch.zeros(
+                        (bsz, self.in_channel, self.resolution, self.resolution)
+                    ),
+                    torch.ones(
+                        (bsz, self.in_channel, self.resolution, self.resolution)
+                    ),
+                ],
+                dim=1,
+            ).to(
+                device=device,
+                dtype=dtype,
+            )
+        context = self.model.cap_pos_tokenize(context)
+        return self.model.plan_transformer(context)
+
+    def return_seq_len(self):
+        return (self.resolution // self.model.gen_transformer.patch_size) ** 2
+
+    @torch.no_grad()
+    def forward(self, context: Dict[str, Any]) -> torch.Tensor:
+        assert "caption" in context
+        cur_device = next(self.model.parameters()).device
+        cur_type = next(self.model.parameters()).dtype
         image_seq_len = self.return_seq_len()
         mu = calculate_shift(
             image_seq_len,
@@ -86,21 +133,26 @@ class LatentGenerator(nn.Module):
         timesteps, _ = retrieve_timesteps(
             self.scheduler,
             self.num_inference_steps,
-            context.device,
+            cur_device,
             sigmas=sigmas,
             mu=mu,
         )
-        negative_context = self.prepare_negative_context(context)
-        context = torch.cat([context, negative_context])
-
+        latent = self.prepare_latent(context, device=cur_device, dtype=cur_type)
+        pos_conditional_signal, _ = self.prepare_positive_context(
+            context, device=cur_device, dtype=cur_type
+        )
+        negative_conditional_signal, layout = self.prepare_negative_context(
+            context, device=cur_device, dtype=cur_type
+        )
+        context = torch.cat([pos_conditional_signal, negative_conditional_signal])
         for i, t in enumerate(timesteps):
             latent_model_input = torch.cat([latent] * 2)
             timestep = t.expand(latent_model_input.shape[0])
-            noise_pred = self.model.transformer(
+            noise_pred = self.model.gen_transformer(
                 x=latent_model_input,
                 time_steps=timestep,
                 condition=context,
-                train=False,
+                layout=layout,
             )
             noise_pred_text, noise_pred_uncond = noise_pred.chunk(2)
             noise_pred = noise_pred_uncond + self.guidance_scale * (
@@ -208,14 +260,21 @@ def main():
     print(cfg)
 
     model, _ = load_consolidated_model(
-        cfg.ckpt_dir, model_cls=LatentVideoVAE, model_args_cls=ModelArgs
+        cfg.ckpt_dir, model_cls=Pollux, model_args_cls=ModelArgs
     )
 
     generator = LatentGenerator(gen_cfg, model)
 
-    context = torch.tensor(
-        [207, 360, 387, 231, 245, 234, 256, 476, 173, 238, 237, 978]
-    ).cuda()
+    context = {
+        "caption": [
+            "goldfish, Carassius auratus",
+            "kit fox, Vulpes macrotis",
+            "ice bear, polar bear, Ursus Maritimus, Thalarctos maritimus",
+            "Egyptian cat",
+            "zebra",
+        ]
+    }
+
     # Start generation
     start_time = time.time()
     samples = generator(context)

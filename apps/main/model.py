@@ -1,7 +1,7 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 
 from dataclasses import dataclass, field
-from typing import Optional, Tuple
+from typing import Optional, Tuple, List
 import logging
 import random
 import torch
@@ -80,9 +80,7 @@ class Pollux(nn.Module):
             b=3 * init_std,
         )
 
-    def forward(self, batch: torch.Tensor) -> dict[str:any]:
-
-        image = batch["image"]
+    def cap_pos_tokenize(self, batch: dict[str:any]) -> dict[str:any]:
         batch["cap_token"] = [
             self.tokenizer.encode(x, bos=True, eos=False) for x in batch["caption"]
         ]
@@ -93,17 +91,39 @@ class Pollux(nn.Module):
             pad_id,
             dtype=torch.long,
         ).cuda()
-        if random.random() > self.cfg_ratio:
-            for k, t in enumerate(batch["cap_token"]):
-                if len(t) < tokens.size(1):
-                    tokens[k, : len(t)] = torch.tensor(
-                        t[:], dtype=torch.long, device="cuda"
-                    )
-                else:
-                    tokens[k, :] = torch.tensor(
-                        t[: tokens.size(1)], dtype=torch.long, device="cuda"
-                    )
+        for k, t in enumerate(batch["cap_token"]):
+            if len(t) < tokens.size(1):
+                tokens[k, : len(t)] = torch.tensor(
+                    t[:], dtype=torch.long, device="cuda"
+                )
+            else:
+                tokens[k, :] = torch.tensor(
+                    t[: tokens.size(1)], dtype=torch.long, device="cuda"
+                )
         batch["cap_token"] = tokens
+        return batch
+
+    def cap_neg_tokenize(self, batch: dict[str:any]) -> dict[str:any]:
+        bsz = len(batch["caption"])
+        pad_id = self.tokenizer.pad_id
+        tokens = torch.full(
+            (bsz, self.plan_transformer.text_seqlen),
+            pad_id,
+            dtype=torch.long,
+        ).cuda()
+        batch["cap_token"] = tokens
+        return batch
+
+    def cap_tokenize(self, batch: dict[str:any]) -> torch.Tensor:
+        if random.random() > self.cfg_ratio:
+            return self.cap_pos_tokenize(batch)
+        else:
+            return self.cap_neg_tokenize(batch)
+
+    def forward(self, batch: dict[str:any]) -> dict[str:any]:
+
+        image = batch["image"]
+        batch = self.cap_tokenize(batch)
 
         mask, masked_image = random_mask_images(
             image,

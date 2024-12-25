@@ -20,10 +20,10 @@ from lingua.distributed import (
     setup_torch_distributed,
     get_local_rank,
 )
-from apps.main.data import create_imagenet_dataloader, DataArgs
+from apps.main.data import create_dataloader, DataArgs
 from apps.main.generate import LatentGenerator, GeneratorArgs, load_consolidated_model
 
-from apps.main.model import LatentVideoVAE, ModelArgs
+from apps.main.model import Pollux, ModelArgs
 
 EVAL_FOLDER_NAME = "{:010d}"
 
@@ -60,7 +60,7 @@ def save_images(
         image_path = os.path.join(output_dir, f"{prefix}_{i}.png")
         # Save image
         img_pil.save(image_path)
-    logger.info(f"Saved {len(tensors)} images to {output_dir}")
+    logger.warning(f"Saved {len(tensors)} images to {output_dir}")
 
 
 def launch_eval(cfg: EvalArgs):
@@ -80,20 +80,20 @@ def launch_eval(cfg: EvalArgs):
     logger.info("Loading model")
     model, _ = load_consolidated_model(
         consolidated_path=cfg.ckpt_dir,
-        model_cls=LatentVideoVAE,
+        model_cls=Pollux,
         model_args_cls=ModelArgs,
     )
     logger.info("Model loaded")
     model.eval()
     generator = LatentGenerator(cfg.generator, model)
-    data_loader = create_imagenet_dataloader(
+    data_loader = create_dataloader(
         shard_id=global_rank,
         num_shards=world_size,
         args=cfg.eval_data,
     )
     max_steps = cfg.sample_num // (cfg.eval_data.batch_size * world_size)
     for idx, batch in enumerate(data_loader):
-        generated_samples = generator(batch["label"].cuda())
+        generated_samples = generator(batch)
         save_images(
             generated_samples,
             output_dir=Path(cfg.dump_dir) / f"samples",
