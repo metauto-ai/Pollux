@@ -172,6 +172,7 @@ class DataPipeline(nn.Module):
                 processed_image.append(self.transform(image))
             except Exception as e:
                 # logger.warning(f'Error to process the image: {e}')
+                pass
         if len(data["image"]) != len(processed_image):
             dup_num = len(data["image"]) - len(processed_image)
             processed_image.extend([processed_image[-1]] * dup_num)
