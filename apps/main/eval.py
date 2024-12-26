@@ -20,7 +20,7 @@ from lingua.distributed import (
     setup_torch_distributed,
     get_local_rank,
 )
-from apps.main.data import create_dataloader, DataArgs
+from apps.main.data import AutoDataLoader, DataArgs
 from apps.main.generate import LatentGenerator, GeneratorArgs, load_consolidated_model
 
 from apps.main.model import Pollux, ModelArgs
