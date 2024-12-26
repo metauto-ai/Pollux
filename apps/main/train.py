@@ -330,6 +330,7 @@ def train(args: TrainArgs):
         data_loader_factory = AutoDataLoader(
             shard_id=dp_rank,
             num_shards=dp_degree,
+            train_stage=args.train_stage,
             data_config=active_data,  # Pass the filtered data configuration
         )
         data_loader = data_loader_factory.create_dataloader()
