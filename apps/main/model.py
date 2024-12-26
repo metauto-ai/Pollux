@@ -64,6 +64,7 @@ class Pollux(nn.Module):
         assert args.plan_transformer.vocab_size == self.tokenizer.n_words
 
         self.plan_transformer = PlanTransformer(args.plan_transformer)
+        self.plan_transformer.requires_grad_(False)
         self.text_seqlen = self.plan_transformer.text_seqlen
         self.text_cfg_ratio = args.text_cfg_ratio
         self.image_cfg_ratio = args.image_cfg_ratio
@@ -140,7 +141,8 @@ class Pollux(nn.Module):
         resized_mask = F.interpolate(mask, size=(h, w), mode="nearest")
         resized_mask = torch.cat([resized_mask] * c, dim=1)
         batch["masked_latent"] = torch.cat([latent_masked_code, resized_mask], dim=1)
-        conditional_signal, layout = self.plan_transformer(batch)
+        with torch.no_grad():
+            conditional_signal, layout = self.plan_transformer(batch)
 
         latent_code = self.compressor.encode(image)
         conditional_signal = self.token_proj(conditional_signal)

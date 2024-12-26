@@ -1,7 +1,7 @@
 # Template config, need to change dump_dir, data.root_dir and data.tokenizer.path
 # torchrun --standalone --nnodes 1 --nproc-per-node 8 -m apps.main.train config=apps/main/configs/hz/pollux_v0.6.yaml
 
-name: "ImageNet_Pollux_v0.6_img_cfg_0.5"
+name: "ImageNet_Pollux_v0.6_only_cap"
 output_dir: "/jfs/checkpoints/dump"
 dump_dir: "" # Mingchen: No need to put now! I revise the code to flexible put `/mnt/data/dump` + name for dump_dir
 steps: 1000000
@@ -16,6 +16,7 @@ env:
     ENABLE_INTRA_NODE_COMM: '0' # disable one default seeting here, as have some error in our cluster
 
 distributed:
+    gpus: 0,1,2,3,4,5,6,7
     fsdp_type: full_shard
     dp_shard: 8
     dp_replicate: 1
@@ -71,16 +72,16 @@ model:
         in_channels: 32  
         vocab_size: 128256  
         text_seqlen: 32  
-        gen_seqlen: 256 
+        gen_seqlen: 0 
         pre_trained_path: /jfs/checkpoints/Llama-3.2-1B/original/consolidated.00.pth
-        attn_type: "bi_causal"
+        attn_type: "causal"
         norm_eps: 1e-5
     tokenizer:
         model_path: /jfs/checkpoints/Llama-3.2-1B/original/tokenizer.model
 
 # SETUP THE DATASET
 data:
-    batch_size: 32
+    batch_size: 64
     image_size: 256
     num_workers: 8
     split: 'train'

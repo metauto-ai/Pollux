@@ -387,14 +387,14 @@ class GenTransformer(BaseDiffusionTransformer):
         x, img_size, freqs_cis_img = self.patchify_and_embed_image(x)
         x_l = x.size(1)
         c_l = condition.size(1)
-        indicator = torch.cat(
-            [
-                torch.cat([self.cap_cond_token] * layout["cap"], dim=1),
-                torch.cat([self.img_cond_token] * layout["img"], dim=1),
-            ],
-            dim=1,
-        )
-        condition = condition + indicator
+        # indicator = torch.cat(
+        #     [
+        #         torch.cat([self.cap_cond_token] * layout["cap"], dim=1),
+        #         torch.cat([self.img_cond_token] * layout["img"], dim=1),
+        #     ],
+        #     dim=1,
+        # )
+        condition = condition + torch.cat([self.cap_cond_token] * layout["cap"], dim=1)
         freqs_cis_img = freqs_cis_img.to(x.device)
         freqs_cis_cond = self.rope_embeddings_conditions.freqs_cis[:c_l].to(x.device)
         x = torch.cat([condition, x], dim=1)
@@ -526,11 +526,11 @@ class PlanTransformer(BasePlanTransformer):
             out_dim=args.dim,
         )
         self.tok_embeddings = torch.nn.Embedding(args.vocab_size, args.dim)
-        self.rope_embeddings_image = RotaryEmbedding2D(
-            theta=args.rope_theta,
-            head_dim=args.head_dim or args.dim // args.n_heads,
-            max_seqlen=args.gen_seqlen,
-        )
+        # self.rope_embeddings_image = RotaryEmbedding2D(
+        #     theta=args.rope_theta,
+        #     head_dim=args.head_dim or args.dim // args.n_heads,
+        #     max_seqlen=args.gen_seqlen,
+        # )
         self.rope_embeddings_cap = RotaryEmbedding1D(
             theta=args.rope_theta,
             head_dim=args.head_dim or args.dim // args.n_heads,
@@ -565,23 +565,25 @@ class PlanTransformer(BasePlanTransformer):
         attn_impl: str = "sdpa",
     ):
         x_cap = self.tok_embeddings(batch["cap_token"])
-        x_img, _, freqs_cis_img = self.patchify_and_embed_image(batch["masked_latent"])
+        # x_img, _, freqs_cis_img = self.patchify_and_embed_image(batch["masked_latent"])
 
-        freqs_cis_img = freqs_cis_img.to(x_img.device)
+        # freqs_cis_img = freqs_cis_img.to(x_img.device)
         freqs_cis_cap = self.rope_embeddings_cap.freqs_cis[: x_cap.size(1)]
-        x = torch.cat([x_cap, x_img], dim=1)
-        freqs_cis = torch.cat([freqs_cis_cap, freqs_cis_img], dim=0)
+        # x = torch.cat([x_cap, x_img], dim=1)
+        # freqs_cis = torch.cat([freqs_cis_cap, freqs_cis_img], dim=0)
+        x = x_cap
+        freqs_cis = freqs_cis_cap
         h = super().forward(x, freqs_cis, attn_impl=attn_impl)
         layout = {
             "cap": x_cap.size(1),
-            "img": x_img.size(1),
+            "img": 0,
         }
         return self.norm(h), layout
 
     def reset_parameters(self, init_std=None):
         # Either use fixed base std or sqrt model dim
         super().reset_parameters()
-        self.rope_embeddings_image.reset_parameters()
+        # self.rope_embeddings_image.reset_parameters()
         init_std = init_std or (self.dim ** (-0.5))
         self.norm.reset_parameters()
         self.img_embed.reset_parameters()
