@@ -30,6 +30,8 @@ pip install pymongo
 pip install python-dotenv
 ```
 
+* Move `.env.sample` to `.env` and fill in the necessary information.
+
 
 ## Preliminary Usages
 
