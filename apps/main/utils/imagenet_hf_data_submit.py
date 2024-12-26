@@ -25,7 +25,7 @@ def data_submit(
     data = data[split]
     data_pipeline = ImageProcessing(split)
     data.set_transform(data_pipeline)
-    return DataLoader(data, batch_size=64, num_workers=8)
+    return DataLoader(data, batch_size=64, num_workers=32)
 
 
 class ImageProcessing(nn.Module):
@@ -70,3 +70,5 @@ class ImageProcessing(nn.Module):
 
 if __name__ == "__main__":
     data = data_submit(split="train")
+    for batch in tqdm(data):
+        pass
