@@ -2,8 +2,8 @@
 
 # Set up single experiment
 version: v0.7
-# From now on, start to align train, data, and model setting with train stage (just finish refactor for dara)
-train_stage: preliminary # options: preliminary, pretraining, posttraining; aligned with data setting
+# From now on, start to align train, data, and model with train_stage
+train_stage: preliminary # options: preliminary, pretraining, posttraining
 name: Pollux_v0.7_preliminary # used for local dump and wandb log
 output_dir: /jfs/checkpoints/dump
 dump_dir: '' # No need now
@@ -62,7 +62,7 @@ model:
         condition_seqlen: 320
         norm_eps: 1e-5
         pre_trained_path: /jfs/checkpoints/Llama-3.2-1B/original/consolidated.00.pth
-        attn_type: 'bi_causal'
+        attn_type: bi_causal
     plan_transformer:
         dim: 2048
         ffn_dim_multiplier: 1.5
