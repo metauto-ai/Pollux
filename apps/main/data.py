@@ -6,8 +6,12 @@ import numpy as np
 from PIL import Image
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Any, Iterator, Optional, TypedDict
-
+from typing import Dict, Any, Iterator, Optional, TypedDict, Final
+import io
+import os
+import requests
+from urllib.parse import quote_plus
+from pymongo import MongoClient
 import torch
 import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
@@ -20,6 +24,8 @@ from apps.main.modules.preprocessing import (
     generate_random_text,
 )
 from apps.main.utils.imagenet_classes import IMAGENET2012_CLASSES
+from apps.main.utils.mongo_db_initial import MONGODB_URI
+
 
 # Configure logging
 logger = logging.getLogger()
@@ -203,3 +209,51 @@ class DataPipeline(nn.Module):
             caption_list.append(cap)
         data["caption"] = caption_list
         return data
+
+
+class BaseMongoDBDataset(Dataset):
+    """
+    with BaseMongoDBDataset(
+        collection_name="unsplash_images",
+        query={"aesthetic_score": {"$gt": 5.5}},
+        shard_idx=0,
+        num_shards=8,
+    ) as data_set:
+        print(len(data_set.data))
+        print(data_set[0])
+
+    """
+
+    def __init__(
+        self,
+        num_shards,
+        shard_idx,
+        collection_name: str,
+        query: dict[str, Any],
+    ) -> None:
+        super().__init__()
+        assert shard_idx >= 0 and shard_idx < num_shards, "Invalid shard index"
+        self.client = MongoClient(MONGODB_URI)
+        self.db = self.client["world_model"]
+        self.collection_name = collection_name
+        self.query = query
+        self.collection = self.db[collection_name]
+        self.data = list(self.collection.find(query))
+        shard_size = len(self.data) // num_shards
+        remainder = len(self.data) % num_shards
+        start = shard_idx * shard_size + min(shard_idx, remainder)
+        end = start + shard_size + (1 if shard_idx < remainder else 0)
+
+        self.data = self.data[start:end]
+
+    def __len__(self) -> int:
+        return len(self.data)
+
+    def __getitem__(self, idx: int) -> dict[str, Any]:
+        return self.data[idx]
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.client.close()

@@ -14,6 +14,7 @@ from apps.main.modules.schedulers import SchedulerArgs
 from apps.main.modules.transformer import PlanTransformerArgs, GenTransformerArgs
 from apps.main.modules.tokenizer import TokenizerArgs
 from apps.main.model import ModelArgs, Pollux
+from apps.main.data import BaseMongoDBDataset
 
 # Configure logging
 logging.basicConfig(
@@ -77,7 +78,8 @@ if __name__ == "__main__":
         vae=vae_arg,
         scheduler=scheduler_arg,
         tokenizer=tokenizer_arg,
-        cfg_ratio=0.1,
+        text_cfg_ratio= 0.1
+        image_cfg_ratio= 0.5
         mask_patch=16,
     )
     data_arg = DataArgs(
