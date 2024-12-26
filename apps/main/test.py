@@ -7,7 +7,7 @@ from torchvision.utils import save_image
 from apps.main.data import DataLoaderFactory, DataArgs
 from apps.main.modules.vae import LatentVideoVAEArgs
 from apps.main.modules.schedulers import SchedulerArgs
-from apps.main.modules.transformer import PlanTransformerArgs, GenTransformerArgs
+from apps.main.modules.plan_transformer import PlanTransformerArgs, GenTransformerArgs
 from apps.main.modules.tokenizer import TokenizerArgs
 from apps.main.model import ModelArgs, Pollux
 
