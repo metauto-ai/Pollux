@@ -161,19 +161,6 @@ class GenTransformerArgs(BaseTransformerArgs):
     attn_type: str = "full"  # Options: 'full', 'bi_causal' and 'causal'.
 
 
-@dataclass
-class PlanTransformerArgs(BaseTransformerArgs):
-
-    seed: int = 42
-    patch_size: int = 16
-    in_channels: int = 3
-    pre_trained_path: Optional[str] = None
-    attn_type: str = "bi_causal"  # Options: 'full', 'bi_causal' and 'causal'.
-    text_seqlen: int = 256
-    gen_seqlen: int = 256
-    vocab_size: int = -1
-
-
 class DiffusionTransformerBlock(nn.Module):
     def __init__(self, args: GenTransformerArgs):
         super().__init__()
@@ -441,4 +428,3 @@ class GenTransformer(BaseDiffusionTransformer):
         )
         nn.init.normal_(self.img_cond_token, std=0.02)
         nn.init.normal_(self.cap_cond_token, std=0.02)
-

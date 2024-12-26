@@ -1,0 +1,20 @@
+# python -m apps.gen_tran.generate config=apps/gen_tran/configs/eval.yaml
+# torchrun --nnodes 1 --nproc-per-node 4 -m apps.gen_tran.eval config=apps/gen_tran/configs/eval.yaml
+name: "debug_evals"
+ckpt_dir:  /jfs/checkpoints/dump/ImageNet_Pollux_v0.6/checkpoints/0000017500
+dump_dir:  /jfs/checkpoints/dump/ImageNet_Pollux_v0.6/checkpoints/0000017500
+sample_num: 100000
+generator:
+  guidance_scale: 5.0
+  dtype: bf16
+  resolution: 256
+  show_progress: False
+  inference_steps: 50
+
+data:
+    batch_size: 24
+    image_size: 256
+    num_workers: 8
+    split: 'validation'
+    data_name: 'ILSVRC/imagenet-1k' # 'dummy' 
+    root_dir: '/jfs/data'
