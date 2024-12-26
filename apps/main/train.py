@@ -59,7 +59,7 @@ from lingua.profiling import ProfilerArgs, maybe_run_profiler
 
 from apps.main.data import AutoDataLoader, DataArgs
 from apps.main.modules.schedulers import SchedulerArgs
-from apps.main.modules.transformer import get_num_flop_per_token
+from apps.main.modules.plan_transformer import get_num_flop_per_token
 from apps.main.model import (
     Pollux,
     ModelArgs,
@@ -79,7 +79,6 @@ logger = logging.getLogger()
 
 @dataclass
 class TrainArgs:
-
 
     name: str = "Pollux"
     version: str = "v0.7"
@@ -420,7 +419,8 @@ def train(args: TrainArgs):
                 total_acc_steps = (
                     args.grad_acc_steps * train_state.step + train_state.acc_step
                 )
-                tokens_per_gpu = total_acc_steps * args.data.batch_size
+                # TODO: here need to rewrite in later when we have multiple source
+                tokens_per_gpu = total_acc_steps * active_data[0].batch_size
                 total_tokens = dp_degree * tokens_per_gpu
                 # This is an estimate and the correct values may change
                 # if you change the architecture

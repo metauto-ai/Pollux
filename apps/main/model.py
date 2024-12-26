@@ -17,11 +17,13 @@ from torch.distributed.tensor.parallel import (
 )
 from apps.main.modules.tokenizer import Tokenizer, TokenizerArgs
 from apps.main.modules.schedulers import RectifiedFlow, SchedulerArgs
-from apps.main.modules.transformer import (
+from apps.main.modules.gen_transformer import (
     GenTransformer,
+    GenTransformerArgs,
+)
+from apps.main.modules.plan_transformer import (
     PlanTransformer,
     PlanTransformerArgs,
-    GenTransformerArgs,
 )
 from apps.main.modules.vae import LatentVideoVAE, LatentVideoVAEArgs
 from apps.main.modules.preprocessing import random_mask_images
@@ -48,7 +50,7 @@ class Pollux(nn.Module):
     and a custom scheduler for diffusion steps.
     """
 
-    VERSION: str = "v0.6"
+    VERSION: str = "v0.7"
     DESCRIPTION: str = (
         "Latent Diffusion Transformer for VideoGen: (1) currently we only support class conditional image generation for debugging."
     )
