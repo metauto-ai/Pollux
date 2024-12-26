@@ -57,7 +57,7 @@ from lingua.metrics import (
 from lingua.optim import OptimArgs, build_optimizer
 from lingua.profiling import ProfilerArgs, maybe_run_profiler
 
-from apps.main.data import create_dataloader, DataArgs
+from apps.main.data import AutoDataLoader, DataArgs
 from apps.main.modules.schedulers import SchedulerArgs
 from apps.main.modules.transformer import get_num_flop_per_token
 from apps.main.model import (
@@ -79,7 +79,11 @@ logger = logging.getLogger()
 
 @dataclass
 class TrainArgs:
+
+
     name: str = "Pollux"
+    version: str = "v0.7"
+    train_stage: str = "preliminary"  # Align with `data` configuration
     output_dir: str = "/mnt/data/dump"
     dump_dir: str = ""
     seed: int = 42
@@ -93,7 +97,7 @@ class TrainArgs:
     # Nb optimizer steps to take
     steps: int = 1000
 
-    data: DataArgs = field(default_factory=DataArgs)
+    data: List[DataArgs] = field(default_factory=list)
     optim: OptimArgs = field(default_factory=OptimArgs)
     model: ModelArgs = field(default_factory=ModelArgs)
     distributed: DistributedArgs = field(default_factory=DistributedArgs)
@@ -107,9 +111,6 @@ class TrainArgs:
     # If set to None, eval is run locally otherwise it launches a new job with the given number of gpus
     async_eval_gpus: Optional[int] = None
     eval: Optional[Any] = None
-
-
-# TODO: ADD stateful dataloader in the future
 
 
 @dataclass
@@ -157,9 +158,12 @@ def validate_train_args(args: TrainArgs):
         args.checkpoint.path = str(Path(args.dump_dir) / "checkpoints")
 
     # TODO: Mingchen: here need to support multiple source later as in the original lingua codebase
-    assert (
-        not args.data.root_dir and args.data.data_name == "dummy"
-    ) or os.path.exists(args.data.root_dir), f"{args.data.root_dir} doesn't exist"
+    for data_args in args.data:
+        if data_args.use:
+            if data_args.source == "local" and not os.path.exists(data_args.root_dir):
+                raise ValueError(f"Local dataset root_dir '{data_args.root_dir}' does not exist.")
+            if data_args.source == "huggingface" and not os.path.exists(data_args.cache_dir):
+                raise ValueError(f"HuggingFace cache_dir '{data_args.cache_dir}' does not exist.")
 
     if (
         args.distributed.dp_replicate
@@ -319,11 +323,18 @@ def train(args: TrainArgs):
         torch_profiler = context_stack.enter_context(
             maybe_run_profiler(args.dump_dir, model, args.profiling)
         )
-        data_loader = create_dataloader(
-            dp_rank,
-            dp_degree,
-            args.data,
+
+        active_data = [
+            d for d in args.data if d.stage == args.train_stage and d.use
+        ]
+        data_loader_factory = AutoDataLoader(
+            shard_id=dp_rank,
+            num_shards=dp_degree,
+            train_stage=args.train_stage,
+            data_config=active_data,  # Pass the filtered data configuration
         )
+        data_loader = data_loader_factory.create_dataloader()
+
         dataloader_iterator = iter(data_loader)
         nwords_since_last_log = 0
         time_last_log = timer()
@@ -531,6 +542,8 @@ def train(args: TrainArgs):
 
 
 def main():
+
+
 
     # We remove 'config' attribute from config as the underlying DataClass does not have it
     del cli_args.config

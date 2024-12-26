@@ -24,7 +24,7 @@ from apps.main.modules.transformer import (
     GenTransformerArgs,
 )
 from apps.main.modules.vae import LatentVideoVAE, LatentVideoVAEArgs
-from apps.main.data import random_mask_images
+from apps.main.modules.preprocessing import random_mask_images
 
 logger = logging.getLogger()
 

@@ -30,13 +30,15 @@ pip install pymongo
 pip install python-dotenv
 ```
 
+* Move `.env.sample` to `.env` and fill in the necessary information.
+
 
 ## Preliminary Usages
 
 * We provides a minimal system to train diffusion model on ImageNet with parallelized system. The following example is how we train our pipeline on 4 GPUs.
 
 ```
-torchrun --standalone --nnodes 1 --nproc-per-node 4 -m apps.main.train config=apps/main/configs/pollux_v0.6.yaml
+torchrun --standalone --nnodes 1 --nproc-per-node 4 -m apps.main.train config=apps/main/configs/train.yaml
 ```
 
 * Generate visualizations:

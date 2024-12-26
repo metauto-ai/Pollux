@@ -3,9 +3,69 @@ import random
 from PIL import Image
 import numpy as np
 import string
+from dataclasses import dataclass
+from torchvision import transforms
+from typing import Dict, Optional
+from torch import nn
+
+from apps.main.utils.imagenet_classes import IMAGENET2012_CLASSES
+
+@dataclass
+class DataArgs:
+    data_name: str = "ILSVRC/imagenet-1k"  # Supported values: "ILSVRC/imagenet-1k", "dummy", "NucluesIMG-100M"
+    batch_size: int = 12
+    num_workers: int = 8
+    image_size: int = 256
+    split: str = "train"
+    root_dir: Optional[str] = None  # For local/huggingface datasets
+    cache_dir: Optional[str] = None  # Cache directory for datasets
+    mongo_uri: Optional[str] = None  # MongoDB URI for NucluesIMG-100M
+    usage: Optional[str] = None  # "class_to_image", "image_generation"
+    source: Optional[str] = None  # "huggingface", "mongodb", "local"
+    stage: Optional[str] = None  # "preliminary", "pretraining", "posttraining"
 
 ######################## FOR IMAGE ########################
 
+class ImageProcessing(nn.Module):
+    def __init__(self, args: DataArgs) -> nn.Module:
+        super().__init__()
+        self.normalize_transform = transforms.Compose(
+            [
+                transforms.RandomHorizontalFlip(),
+                transforms.ToTensor(),
+                transforms.Normalize(
+                    mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5], inplace=True
+                ),
+            ]
+        )
+        self.image_size = args.image_size
+        self.cls_list = list(IMAGENET2012_CLASSES.items())
+
+    def transform(self, x: Image) -> torch.Tensor:
+        x = center_crop_arr(x, self.image_size)
+        return self.normalize_transform(x)
+
+    def forward(self, data: Dict) -> Dict:
+        processed_image = []
+        for image in data["image"]:
+            try:
+                processed_image.append(self.transform(image))
+            except Exception as e:
+                # logger.warning(f'Error to process the image: {e}')
+                pass
+        if len(data["image"]) != len(processed_image):
+            dup_num = len(data["image"]) - len(processed_image)
+            processed_image.extend([processed_image[-1]] * dup_num)
+            for k in data.keys():
+                if k != "image":
+                    data[k][-dup_num:] = [data[k][-dup_num - 1]] * dup_num
+        data["image"] = processed_image
+        caption_list = []
+        for label in data["label"]:
+            _, cap = self.cls_list[label]
+            caption_list.append(cap)
+        data["caption"] = caption_list
+        return data
 
 def random_mask_images(img_tensor, mask_ratio, mask_patch, mask_all=False):
     """

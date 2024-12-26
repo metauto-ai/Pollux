@@ -4,17 +4,12 @@ python -m apps.main.test
 
 import logging
 from torchvision.utils import save_image
-from apps.main.data import (
-    HF_DATA_LOADER,
-    create_dataloader,
-    DataArgs,
-)
+from apps.main.data import DataLoaderFactory, DataArgs
 from apps.main.modules.vae import LatentVideoVAEArgs
 from apps.main.modules.schedulers import SchedulerArgs
 from apps.main.modules.transformer import PlanTransformerArgs, GenTransformerArgs
 from apps.main.modules.tokenizer import TokenizerArgs
 from apps.main.model import ModelArgs, Pollux
-from apps.main.data import BaseMongoDBDataset
 
 # Configure logging
 logging.basicConfig(
@@ -23,9 +18,8 @@ logging.basicConfig(
     handlers=[logging.StreamHandler()],  # Also log to console
 )
 
-
 if __name__ == "__main__":
-    HF_DATA_LOADER(DATA_name="ILSVRC/imagenet-1k", cache_dir="/jfs/data")
+    # Define model arguments
     vae_arg = LatentVideoVAEArgs(
         pretrained_model_name_or_path="/jfs/checkpoints/Flux-dev"
     )
@@ -78,24 +72,44 @@ if __name__ == "__main__":
         vae=vae_arg,
         scheduler=scheduler_arg,
         tokenizer=tokenizer_arg,
-        text_cfg_ratio= 0.1
-        image_cfg_ratio= 0.5
+        text_cfg_ratio=0.1,
+        image_cfg_ratio=0.5,
         mask_patch=16,
     )
-    data_arg = DataArgs(
-        data_name="ILSVRC/imagenet-1k",
-        batch_size=4,
-        num_workers=8,
-        image_size=256,
-        split="train",
-        root_dir="/jfs/data",
-    )
-    data = create_dataloader(shard_id=0, num_shards=1, args=data_arg)
+
+    # Define data arguments and DataLoaderFactory
+    data_config = {
+        "data": {
+            "preliminary": {
+                "ILSVRC/imagenet-1k": {
+                    "use": True,
+                    "data_name": "ILSVRC/imagenet-1k",
+                    "batch_size": 12,
+                    "image_size": 256,
+                    "num_workers": 8,
+                    "split": "train",
+                    "root_dir": "/jfs/data",
+                    "cache_dir": "/jfs/data/imagenet-1k",
+                    "source": "huggingface",
+                    "task": "class_to_image",
+                }
+            }
+        }
+    }
+    dp_rank = 0
+    dp_degree = 1
+    data_loader_factory = DataLoaderFactory(dp_rank, dp_degree, data_config)
+    data_loader = data_loader_factory.create_dataloader("preliminary")
+
+    # Initialize model
     model = Pollux(model_arg)
     model.cuda()
-    for batch in data:
+
+    # Run test
+    for batch in data_loader:
         print(batch)
         batch["image"] = batch["image"].cuda()
 
+        # Forward pass
         model(batch)
         break
