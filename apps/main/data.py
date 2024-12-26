@@ -61,7 +61,7 @@ class AutoDataLoader:
 
     def _create_imagenet_dataloader(self, args: DataArgs) -> DataLoader:
 
-        data = HFDataLoad(data_name=args.data_name, cache_dir=args.cache_dir)
+        data = HFDataLoad(data_name=args.data_name, cache_dir=args.root_dir)
         train_data = data[args.split]
         data_pipeline = ImageProcessing(args)
         train_data.set_transform(data_pipeline)
