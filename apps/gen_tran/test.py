@@ -8,7 +8,7 @@ from apps.main.modules.vae import LatentVideoVAEArgs
 from apps.main.modules.schedulers import SchedulerArgs
 from apps.main.modules.tokenizer import TokenizerArgs
 from apps.gen_tran.model import ModelArgs, Pollux
-from apps.main.modules.plan_transformer import PlanTransformerArgs
+from apps.main.modules.gen_transformer import PlanTransformerArgs
 from apps.main.modules.gen_transformer import GenTransformerArgs
 import torch
 

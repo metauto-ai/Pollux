@@ -11,7 +11,7 @@ import torch
 from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms
 
-from apps.main.modules.preprocessing import ImageProcessing
+from apps.main.modules.preprocess import ImageProcessing
 from apps.main.utils.hf_data_load import HFDataLoad
 from apps.main.utils.dummy_data_load import DummyDataLoad
 from apps.main.utils.mongodb_data_load import MongoDBDataLoad
@@ -19,10 +19,13 @@ from apps.main.utils.mongodb_data_load import MongoDBDataLoad
 
 logger = logging.getLogger()
 
+
 @dataclass
 class DataArgs:
     id: str = 0
-    data_name: str = "ILSVRC/imagenet-1k"  # Supported values: "ILSVRC/imagenet-1k", "dummy", "NucluesIMG-100M"
+    data_name: str = (
+        "ILSVRC/imagenet-1k"  # Supported values: "ILSVRC/imagenet-1k", "dummy", "NucluesIMG-100M"
+    )
     task: str = "class_to_image"
     batch_size: int = 12
     num_workers: int = 8
@@ -38,7 +41,13 @@ class DataArgs:
 
 
 class AutoDataLoader:
-    def __init__(self, shard_id: int, num_shards: int, train_stage: str, data_config: List[DataArgs]):
+    def __init__(
+        self,
+        shard_id: int,
+        num_shards: int,
+        train_stage: str,
+        data_config: List[DataArgs],
+    ):
 
         self.shard_id = shard_id
         self.num_shards = num_shards
@@ -46,7 +55,6 @@ class AutoDataLoader:
         self.data_config = data_config
 
     def create_dataloader(self) -> DataLoader:
-
 
         for dataset_config in self.data_config:
             if dataset_config.stage == self.train_stage and dataset_config.use:
@@ -57,7 +65,9 @@ class AutoDataLoader:
                 elif dataset_config.source == "mongodb":
                     return self._create_mongodb_dataloader(dataset_config)
 
-        raise ValueError(f"No dataset configured for stage {self.train_stage} with `use: True`.")
+        raise ValueError(
+            f"No dataset configured for stage {self.train_stage} with `use: True`."
+        )
 
     def _create_imagenet_dataloader(self, args: DataArgs) -> DataLoader:
 
@@ -76,10 +86,10 @@ class AutoDataLoader:
     def _create_dummy_dataloader(self, args: DataArgs) -> DataLoader:
 
         dataset = DummyDataLoad(
-            num_samples=1000, 
-            num_classes=10,   
+            num_samples=1000,
+            num_classes=10,
             image_size=(3, args.image_size, args.image_size),
-            word_count=32,    
+            word_count=32,
         )
         return DataLoader(dataset, batch_size=args.batch_size, shuffle=True)
 
@@ -93,5 +103,8 @@ class AutoDataLoader:
             num_shards=self.num_shards,
         )
         return DataLoader(
-            dataset, batch_size=args.batch_size, num_workers=args.num_workers, shuffle=True
+            dataset,
+            batch_size=args.batch_size,
+            num_workers=args.num_workers,
+            shuffle=True,
         )

@@ -1,72 +1,50 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 
+import os
+import logging
 from dataclasses import dataclass
 from typing import Optional, Tuple, Union, Dict
 
 import torch
 from torch import nn
+from torch.nn.attention.flex_attention import BlockMask
+from xformers.ops import fmha, AttentionBias
 from torch.nn.attention.flex_attention import create_block_mask, BlockMask
 
-
-from xformers.ops import fmha, AttentionBias
 from lingua.transformer import (
     BaseTransformerArgs,
     TransformerBlock,
     RMSNorm,
     FeedForward,
     Attention,
-    AdaLN_Modulation,
     InitStdFactor,
-    TimestepEmbedder,
-    ImageEmbedder,
-    LabelEmbedder,
     modulate,
 )
-from lingua.transformer import RotaryEmbedding as RotaryEmbedding1D
-import os
-import logging
+
+from apps.main.modules.ops import (
+    RotaryEmbedding1D,
+    RotaryEmbedding2D,
+    AdaLN,
+)
+from apps.main.modules.embedder import ImageEmbedder, TimestepEmbedder, LabelEmbedder
+
 
 logger = logging.getLogger()
 
 
-def precompute_2d_freqs_cls(
-    dim: int,
-    end: int,
-    theta: float = 10000.0,
-):
-    """
-    Precompute the frequency tensor for complex exponentials (cis) with
-    given dimensions.
+@dataclass
+class GenTransformerArgs(BaseTransformerArgs):
 
-    This function calculates a frequency tensor with complex exponentials
-    using the given dimension 'dim' and the end index 'end'. The 'theta'
-    parameter scales the frequencies. The returned tensor contains complex
-    values in complex64 data type.
-
-    Args:
-        dim (int): Dimension of the frequency tensor.
-        end (int): End index for precomputing frequencies.
-        theta (float, optional): Scaling factor for frequency computation.
-            Defaults to 10000.0.
-
-    Returns:
-        torch.Tensor: Precomputed frequency tensor with complex
-            exponentials.
-    """
-
-    freqs = 1.0 / (theta ** (torch.arange(0, dim, 4)[: (dim // 4)].float() / dim))
-    t = torch.arange(end, device=freqs.device)
-    freqs = torch.outer(t, freqs).float()
-
-    cos, sin = freqs.cos(), freqs.sin()
-
-    freqs_cis = torch.stack((cos, -sin, sin, cos), dim=-1).view(*freqs.size(), 2, 2)
-
-    freqs_cis_h = freqs_cis.view(end, 1, dim // 4, 2, 2).repeat(1, end, 1, 1, 1)
-    freqs_cis_w = freqs_cis.view(1, end, dim // 4, 2, 2).repeat(end, 1, 1, 1, 1)
-    freqs_cis = torch.cat([freqs_cis_h, freqs_cis_w], dim=2)
-
-    return freqs_cis
+    seed: int = 42
+    ada_dim: int = 512
+    patch_size: int = 16
+    in_channels: int = 3
+    out_channels: int = 3
+    tmb_size: int = 320
+    condition_seqlen: int = 1000
+    gen_seqlen: int = 1000
+    pre_trained_path: Optional[str] = None
+    attn_type: str = "full"  # Options: 'full', 'bi_causal' and 'causal'.
 
 
 def create_causal_mask(seqlen, attn_impl, sliding_window):
@@ -86,79 +64,8 @@ def create_causal_mask(seqlen, attn_impl, sliding_window):
         )
 
 
-def attention_flops_per_token(n_layers, seq_len, dim, causal):
-    # Formula from https://github.com/Dao-AILab/flash-attention/blob/main/benchmarks/benchmark_flash_attention.py#L27-L30
-    return 3.5 * (4 * n_layers * seq_len * dim // (2 if causal else 1))
-
-
-def get_num_flop_per_token(
-    num_non_embed_params: int, n_layers: int, dim: int, seq_len: int
-) -> int:
-    return 6 * num_non_embed_params + attention_flops_per_token(
-        n_layers, seq_len, dim, False
-    )
-
-
 def causal_mask(b, h, q_idx, kv_idx):
     return q_idx >= kv_idx
-
-
-class RotaryEmbedding2D(torch.nn.Module):
-    """
-    RotaryEmbedding Module
-    """
-
-    def __init__(self, theta: float, head_dim: int, max_seqlen: int = 1024):
-        super().__init__()
-
-        self.theta = theta
-        self.head_dim = head_dim
-        self.max_seqlen = max_seqlen
-
-        self.register_buffer(
-            "freqs_cis",
-            precompute_2d_freqs_cls(dim=head_dim, end=max_seqlen, theta=theta),
-            persistent=False,
-        )
-
-    def reset_parameters(self):
-        self.freqs_cis[...] = precompute_2d_freqs_cls(
-            dim=self.head_dim, end=self.max_seqlen, theta=self.theta
-        )
-
-    def forward(
-        self, seqlen: Optional[int] = None, tok_idx: Optional[torch.Tensor] = None
-    ):
-        """
-        Return freqs_cis corresponding to consecutive seqlen positions or the corresponding tok_idx positions
-        Args:
-            seqlen (int): Contiguous sequence length
-            tok_idx (torch.Tensor[int]): Position indices of each token this overrides seqlen
-
-        Returns:
-            Tuple(torch.Tensor, torch.Tensor): Embedded input tensor and freqs_cis
-        """
-        test = (seqlen is not None) or (tok_idx is not None)
-        assert test, "Should provide atleast seqlen or tok_idx"
-        if tok_idx is not None:
-            return self.freqs_cis[tok_idx]
-        elif seqlen is not None:
-            return self.freqs_cis[0:seqlen]
-
-
-@dataclass
-class GenTransformerArgs(BaseTransformerArgs):
-
-    seed: int = 42
-    ada_dim: int = 512
-    patch_size: int = 16
-    in_channels: int = 3
-    out_channels: int = 3
-    tmb_size: int = 320
-    condition_seqlen: int = 1000
-    gen_seqlen: int = 1000
-    pre_trained_path: Optional[str] = None
-    attn_type: str = "full"  # Options: 'full', 'bi_causal' and 'causal'.
 
 
 class DiffusionTransformerBlock(nn.Module):
@@ -190,7 +97,7 @@ class DiffusionTransformerBlock(nn.Module):
         )
         self.attention_norm = RMSNorm(args.dim, eps=args.norm_eps)
         self.ffn_norm = RMSNorm(args.dim, eps=args.norm_eps)
-        self.adaLN_modulation = AdaLN_Modulation(
+        self.adaLN_modulation = AdaLN(
             in_dim=args.ada_dim,
             out_dim=4 * args.dim,
         )

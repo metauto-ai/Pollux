@@ -26,7 +26,7 @@ from apps.main.modules.plan_transformer import (
     PlanTransformerArgs,
 )
 from apps.main.modules.vae import LatentVideoVAE, LatentVideoVAEArgs
-from apps.main.modules.preprocessing import random_mask_images
+from apps.main.modules.preprocess import random_mask_images
 
 logger = logging.getLogger()
 
@@ -44,11 +44,6 @@ class ModelArgs:
 
 
 class Pollux(nn.Module):
-    """
-    Latent Diffusion Transformer Model.
-    This model integrates a VAE for latent compression, a transformer for temporal and spatial token mixing,
-    and a custom scheduler for diffusion steps.
-    """
 
     VERSION: str = "v0.7"
     DESCRIPTION: str = (

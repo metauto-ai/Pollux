@@ -4,7 +4,7 @@
 version: v0.7
 # From now on, start to align train, data, and model setting with train stage (just finish refactor for dara)
 train_stage: preliminary # options: preliminary, pretraining, posttraining; aligned with data setting
-name: Pollux_v0.7_preliminary # used for local dump and wandb log
+name: Pollux_v0.7_plan_debug # used for local dump and wandb log
 output_dir: /jfs/checkpoints/dump
 dump_dir: '' # No need now
 steps: 1000000
@@ -78,7 +78,7 @@ model:
         text_seqlen: 32 
         gen_seqlen: 256 
         pre_trained_path: /jfs/checkpoints/Llama-3.2-1B/original/consolidated.00.pth
-        attn_type: bi_causal
+        attn_type: multimodal
         norm_eps: 1e-5
     tokenizer:
         model_path: /jfs/checkpoints/Llama-3.2-1B/original/tokenizer.model
@@ -95,7 +95,7 @@ data:
     split: train
     root_dir: /jfs/data
     cache_dir: /jfs/data/imagenet-1k
-    use: True
+    use: False
 
   - stage: preliminary
     id: 1
@@ -109,6 +109,20 @@ data:
     root_dir: /jfs/data
     cache_dir: ''
     use: False
+
+  - stage: preliminary
+    id: 1
+    task: image_text_to_image
+    data_name: lmms-lab/COCO-Caption2017
+    source: huggingface
+    batch_size: 12
+    image_size: 256
+    num_workers: 8
+    split: train
+    root_dir: /jfs/data
+    cache_dir: /jfs/data/COCO-Caption2017
+    use: True
+
 
   - stage: pretraining
     id: 1

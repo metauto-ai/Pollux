@@ -23,18 +23,18 @@ from apps.main.modules.gen_transformer import (
     RotaryEmbedding1D,
     GenTransformerArgs,
 )
-from apps.main.modules.plan_transformer import (
+from apps.main.modules.gen_transformer import (
     PlanTransformerArgs,
 )
 from apps.main.modules.vae import LatentVideoVAE, LatentVideoVAEArgs
-from apps.main.modules.preprocessing import random_mask_images
+from apps.main.modules.preprocess import random_mask_images
 from lingua.transformer import (
     BaseTransformerArgs,
     TransformerBlock,
     RMSNorm,
     FeedForward,
     Attention,
-    AdaLN_Modulation,
+    AdaLNModulation,
     InitStdFactor,
     TimestepEmbedder,
     ImageEmbedder,

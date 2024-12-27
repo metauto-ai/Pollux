@@ -23,6 +23,7 @@ encoded_user = quote_plus(MONGODB_USER)
 encoded_password = quote_plus(MONGODB_PASSWORD)
 MONGODB_URI = f"mongodb+srv://{encoded_user}:{encoded_password}@{MONGODB_URI}"
 
+
 # TODO: Add the logic of MongoDB data loading here
 class MongoDBDataLoad(Dataset):
     """

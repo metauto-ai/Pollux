@@ -59,7 +59,6 @@ from lingua.profiling import ProfilerArgs, maybe_run_profiler
 
 from apps.main.data import AutoDataLoader, DataArgs
 from apps.main.modules.schedulers import SchedulerArgs
-from apps.main.modules.plan_transformer import get_num_flop_per_token
 from apps.main.model import (
     Pollux,
     ModelArgs,
@@ -73,6 +72,8 @@ from apps.main.eval import (
     EVAL_FOLDER_NAME,
     EvalArgs,
 )
+
+from apps.main.utils.cal_flops import get_num_flop_per_token
 
 logger = logging.getLogger()
 
@@ -160,9 +161,15 @@ def validate_train_args(args: TrainArgs):
     for data_args in args.data:
         if data_args.use:
             if data_args.source == "local" and not os.path.exists(data_args.root_dir):
-                raise ValueError(f"Local dataset root_dir '{data_args.root_dir}' does not exist.")
-            if data_args.source == "huggingface" and not os.path.exists(data_args.cache_dir):
-                raise ValueError(f"HuggingFace cache_dir '{data_args.cache_dir}' does not exist.")
+                raise ValueError(
+                    f"Local dataset root_dir '{data_args.root_dir}' does not exist."
+                )
+            if data_args.source == "huggingface" and not os.path.exists(
+                data_args.root_dir
+            ):
+                raise ValueError(
+                    f"HuggingFace root_dir '{data_args.root_dir}' does not exist."
+                )
 
     if (
         args.distributed.dp_replicate
@@ -323,9 +330,7 @@ def train(args: TrainArgs):
             maybe_run_profiler(args.dump_dir, model, args.profiling)
         )
 
-        active_data = [
-            d for d in args.data if d.stage == args.train_stage and d.use
-        ]
+        active_data = [d for d in args.data if d.stage == args.train_stage and d.use]
         data_loader_factory = AutoDataLoader(
             shard_id=dp_rank,
             num_shards=dp_degree,
@@ -542,8 +547,6 @@ def train(args: TrainArgs):
 
 
 def main():
-
-
 
     # We remove 'config' attribute from config as the underlying DataClass does not have it
     del cli_args.config
