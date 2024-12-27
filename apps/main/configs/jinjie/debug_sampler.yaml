@@ -4,10 +4,10 @@
 version: v0.7
 # From now on, start to align train, data, and model setting with train stage (just finish refactor for dara)
 train_stage: preliminary # options: preliminary, pretraining, posttraining; aligned with data setting
-name: Pollux_v0.7_hunyuan_tvae # used for local dump and wandb log
+name: Pollux_v0.7_sampler # used for local dump and wandb log
 output_dir: /jfs/jinjie/code/Pollux/downloads/dump
 dump_dir: '' # No need now
-steps: 1000000
+steps: 8
 seed: 777
 optim:
     lr: 1.4e-4
@@ -83,7 +83,6 @@ model:
         norm_eps: 1e-5
     tokenizer:
         model_path: /jfs/checkpoints/Llama-3.2-1B/original/tokenizer.model
-
 data:
   - stage: preliminary
     id: 0
@@ -98,37 +97,36 @@ data:
     cache_dir: /jfs/data/imagenet-1k
     use: True
 
-  - stage: preliminary
-    id: 1
-    task: class_to_image
-    data_name: dummy
-    source: local
-    batch_size: 12
-    image_size: 256
-    num_workers: 8
-    split: train
-    root_dir: /jfs/data
-    cache_dir: ''
-    use: False
+#   - stage: preliminary
+#     id: 1
+#     task: class_to_image
+#     data_name: dummy
+#     source: local
+#     batch_size: 12
+#     image_size: 256
+#     num_workers: 8
+#     split: train
+#     root_dir: /jfs/data
+#     cache_dir: ''
+#     use: False
 
-  - stage: pretraining
-    id: 1
-    task: image_generation
-    data_name: NucluesIMG-100M
-    source: mongodb
-    batch_size: 12
-    image_size: 256
-    num_workers: 8
-    mongo_uri: mongodb://localhost:27017
-    use: False
-
+#   - stage: pretraining
+#     id: 1
+#     task: image_generation
+#     data_name: NucluesIMG-100M
+#     source: mongodb
+#     batch_size: 12
+#     image_size: 256
+#     num_workers: 8
+#     mongo_uri: mongodb://localhost:27017
+#     use: False
 
 profiling:
     run: true
 
 checkpoint:
     dump:
-        every: 2500
+        every: 4 # TODO: save at 4 steps
         keep: 0 # Don't remove the ckpt
     eval:
         every: 5000
