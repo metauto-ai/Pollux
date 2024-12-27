@@ -80,11 +80,11 @@ class MongoDBDataLoad(Dataset):
                     json_data = f.read()
                 self.data = json_util.loads(json_data)
             else:
-                self.client = MongoClient(MONGODB_URI)
-                self.db = self.client["world_model"]
-                self.collection = self.db[self.collection_name]
-                self.data = list(self.collection.find(self.query))
-                self.client.close()
+                client = MongoClient(MONGODB_URI)
+                db = client["world_model"]
+                collection = db[self.collection_name]
+                self.data = list(collection.find(self.query))
+                client.close()
                 with open(
                     self.pkl_res,
                     "w",
@@ -106,15 +106,6 @@ class MongoDBDataLoad(Dataset):
         start = self.shard_idx * shard_size + min(self.shard_idx, remainder)
         end = start + shard_size + (1 if self.shard_idx < remainder else 0)
         self.data = self.data[start:end]
-        new_data = []
-        for sample in self.data:
-            new_data.append(
-                {
-                    key: str(value) if isinstance(value, ObjectId) else value
-                    for key, value in sample.items()
-                }
-            )
-        self.data = new_data
 
     def clean_buffer(self):
         os.remove(f"{self.finish_signal}")
