@@ -6,7 +6,7 @@ from torch import nn
 from torch.nn import functional as F
 from torchvision.utils import save_image
 import numpy as np
-from apps.main.model import Pollux, ModelArgs
+from apps.gen_tran.model import Pollux, ModelArgs
 from typing import List, Optional, Tuple, Union, Dict, Any
 from apps.main.modules.schedulers import retrieve_timesteps, calculate_shift
 from lingua.args import dataclass_from_dict
@@ -54,67 +54,31 @@ class LatentGenerator(nn.Module):
         self.num_inference_steps = cfg.inference_steps
 
     def prepare_latent(self, context, device, dtype):
-        bsz = len(context["caption"])
+        bsz = len(context["label"])
         latent_size = (bsz, self.in_channel, self.resolution, self.resolution)
         latents = randn_tensor(latent_size, device=device, dtype=dtype)
         return latents
 
     @torch.no_grad()
-    def prepare_negative_context(self, context, device, dtype):
-        bsz = len(context["caption"])
-        context["masked_latent"] = torch.cat(
-            [
-                torch.zeros((bsz, self.in_channel, self.resolution, self.resolution)),
-                torch.ones((bsz, self.in_channel, self.resolution, self.resolution)),
-            ],
-            dim=1,
-        ).to(
+    def prepare_negative_context(self, context, device):
+        bsz = len(context["label"])
+        context = torch.tensor(
+            [self.model.plan_transformer.num_classes] * bsz,
             device=device,
-            dtype=dtype,
+            dtype=torch.long,
         )
-        context = self.model.cap_neg_tokenize(context)
-        return self.model.plan_transformer(context)
+        return self.model.plan_transformer(context, train=False)
 
     @torch.no_grad()
-    def prepare_positive_context(self, context, device, dtype):
-        if "image" in context and "mask" in context:
-            image = context["image"]
-            latent_masked_code = self.compressor.encode(image)
-            _, c, h, w = latent_masked_code.size()
-            mask = context["mask"]
-            resized_mask = F.interpolate(mask, size=(h, w), mode="nearest")
-            resized_mask = torch.cat([resized_mask] * c, dim=1)
-            context["masked_latent"] = torch.cat(
-                [latent_masked_code, resized_mask], dim=1
-            ).to(
-                device=device,
-                dtype=dtype,
-            )
-        else:
-            bsz = len(context["caption"])
-            context["masked_latent"] = torch.cat(
-                [
-                    torch.zeros(
-                        (bsz, self.in_channel, self.resolution, self.resolution)
-                    ),
-                    torch.ones(
-                        (bsz, self.in_channel, self.resolution, self.resolution)
-                    ),
-                ],
-                dim=1,
-            ).to(
-                device=device,
-                dtype=dtype,
-            )
-        context = self.model.cap_pos_tokenize(context)
-        return self.model.plan_transformer(context)
+    def prepare_positive_context(self, context, device):
+        context = torch.tensor(context["label"], device=device, dtype=torch.long)
+        return self.model.plan_transformer(context, train=False)
 
     def return_seq_len(self):
         return (self.resolution // self.model.gen_transformer.patch_size) ** 2
 
     @torch.no_grad()
     def forward(self, context: Dict[str, Any]) -> torch.Tensor:
-        assert "caption" in context
         cur_device = next(self.model.parameters()).device
         cur_type = next(self.model.parameters()).dtype
         image_seq_len = self.return_seq_len()
@@ -138,12 +102,14 @@ class LatentGenerator(nn.Module):
             mu=mu,
         )
         latent = self.prepare_latent(context, device=cur_device, dtype=cur_type)
-        pos_conditional_signal, _ = self.prepare_positive_context(
-            context, device=cur_device, dtype=cur_type
+        pos_conditional_signal = self.prepare_positive_context(
+            context, device=cur_device
         )
-        negative_conditional_signal, layout = self.prepare_negative_context(
-            context, device=cur_device, dtype=cur_type
+        negative_conditional_signal = self.prepare_negative_context(
+            context, device=cur_device
         )
+        negative_conditional_signal = self.model.token_proj(negative_conditional_signal)
+        pos_conditional_signal = self.model.token_proj(pos_conditional_signal)
         context = torch.cat([pos_conditional_signal, negative_conditional_signal])
         for i, t in enumerate(timesteps):
             latent_model_input = torch.cat([latent] * 2)
@@ -152,7 +118,6 @@ class LatentGenerator(nn.Module):
                 x=latent_model_input,
                 time_steps=timestep,
                 condition=context,
-                layout=layout,
             )
             noise_pred_text, noise_pred_uncond = noise_pred.chunk(2)
             noise_pred = noise_pred_uncond + self.guidance_scale * (
@@ -160,9 +125,7 @@ class LatentGenerator(nn.Module):
             )
             latent = self.scheduler.step(noise_pred, t, latent, return_dict=False)[0]
 
-        latent = (
-            latent / self.model.compressor.vae.config.scaling_factor
-        ) + self.model.compressor.vae.config.shift_factor
+        # latent = latent / self.model.compressor.vae.config.scaling_factor
         image = self.model.compressor.decode(latent)
         return image
 
@@ -266,13 +229,14 @@ def main():
     generator = LatentGenerator(gen_cfg, model)
 
     context = {
-        "caption": [
-            "goldfish, Carassius auratus",
-            "kit fox, Vulpes macrotis",
-            "ice bear, polar bear, Ursus Maritimus, Thalarctos maritimus",
-            "Egyptian cat",
-            "zebra",
-        ]
+        # "caption": [
+        #     "goldfish, Carassius auratus",
+        #     "kit fox, Vulpes macrotis",
+        #     "ice bear, polar bear, Ursus Maritimus, Thalarctos maritimus",
+        #     "Egyptian cat",
+        #     "zebra",
+        # ]
+        "label": [1, 2, 3, 4, 324, 532, 123, 456, 239]
     }
 
     # Start generation
