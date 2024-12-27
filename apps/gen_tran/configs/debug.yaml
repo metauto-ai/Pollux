@@ -1,5 +1,5 @@
 # Template config, need to change dump_dir, data.root_dir and data.tokenizer.path
-# torchrun --standalone --nnodes 1 --nproc-per-node 4 -m apps.main.train config=apps/main/configs/debug.yaml
+# torchrun --standalone --nnodes 1 --nproc-per-node 4 -m apps.gen_tran.train config=apps/gen_tran/configs/debug.yaml
 
 name: "ImageNet_1B_BaseLine_256_Flux_LLAMA_Pre_Train_v0.6_debug"
 output_dir: "/jfs/checkpoints/dump"
@@ -30,9 +30,7 @@ model:
     image_cfg_ratio: 0.5
     mask_patch: 16
     vae:
-        pretrained_model_name_or_path: '/jfs/checkpoints/models--tencent--HunyuanVideo/snapshots/2a15b5574ee77888e51ae6f593b2ceed8ce813e5/vae'
-        enable_tiling: true
-        enable_slicing: true
+        pretrained_model_name_or_path: '/jfs/checkpoints/Flux-dev'
     scheduler:
         num_train_timesteps: 1000
         base_image_seq_len: 256

@@ -33,7 +33,9 @@ model:
     image_cfg_ratio: 0.5
     mask_patch: 16
     vae:
-        pretrained_model_name_or_path: '/jfs/checkpoints/Flux-dev'
+        pretrained_model_name_or_path: '/jfs/checkpoints/models--tencent--HunyuanVideo/snapshots/2a15b5574ee77888e51ae6f593b2ceed8ce813e5/vae'
+        enable_tiling: true
+        enable_slicing: true
     scheduler:
         num_train_timesteps: 1000
         base_image_seq_len: 256
