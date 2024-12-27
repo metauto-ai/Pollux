@@ -133,6 +133,7 @@ class TrainState(Stateful):
         self.acc_step = state_dict["acc_step"]
         self.sampler.load_state_dict(state_dict["sampler"])
         self.scheduler.load_state_dict(state_dict["scheduler"])
+        logger.info(f"Resume training with distributed sampler state to {self.sampler.start_index} local step.")
         logger.info(
             "TrainState is loading state_dict: step, acc-step, sampler, scheduler are loaded."
         )

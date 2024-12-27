@@ -63,6 +63,8 @@ class StatefulDistributedSampler(DistributedSampler):
     def state_dict(self, global_step) -> dict:
         # * epoch = global_step // self.num_samples
         local_step = global_step % self.num_samples
+        # * we shouldn't update start index during training
+        # as it should only be init once the training start in self.__iter__
         return {"start_index": local_step}
 
     def load_state_dict(self, state_dict: dict) -> None:
