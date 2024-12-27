@@ -35,6 +35,12 @@ pip install python-dotenv
 
 ## Preliminary Usages
 
+* Before we develop a MongoDB dataloader, we could first use this to remove `.lock` files for HFDataLoader.
+
+```bash
+find /jfs/data/imagenet-1k/ -type f -name "*.lock" -exec rm -f {} \;
+```
+
 * We provides a minimal system to train diffusion model on ImageNet with parallelized system. The following example is how we train our pipeline on 4 GPUs.
 
 ```
