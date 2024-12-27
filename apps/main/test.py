@@ -85,14 +85,12 @@ if __name__ == "__main__":
             "preliminary": {
                 "ILSVRC/imagenet-1k": {
                     "use": True,
-                    "data_name": "ILSVRC/imagenet-1k",
+                    "data_name": "imagenet-1k",
                     "batch_size": 12,
                     "image_size": 256,
                     "num_workers": 8,
                     "split": "train",
-                    "root_dir": "/jfs/data",
-                    "cache_dir": "/jfs/data/imagenet-1k",
-                    "source": "huggingface",
+                    "source": "mongodb",
                     "task": "class_to_image",
                 }
             }
@@ -108,8 +106,6 @@ if __name__ == "__main__":
             image_size=config["image_size"],
             num_workers=config["num_workers"],
             split=config["split"],
-            root_dir=config["root_dir"],
-            cache_dir=config["cache_dir"],
             source=config["source"],
             task=config["task"],
         )
