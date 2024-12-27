@@ -96,7 +96,7 @@ data:
     split: train
     root_dir: /jfs/data
     cache_dir: /jfs/data/imagenet-1k
-    use: True
+    use: False
 
   - stage: preliminary
     id: 1
@@ -111,6 +111,17 @@ data:
     cache_dir: ''
     use: False
 
+  - stage: preliminary
+    id: 2
+    task: class_to_image
+    data_name: imagenet-1k
+    source: mongodb
+    batch_size: 96
+    image_size: 256
+    num_workers: 8
+    split: train
+    use: True
+
   - stage: pretraining
     id: 1
     task: image_generation
@@ -121,7 +132,6 @@ data:
     num_workers: 8
     mongo_uri: mongodb://localhost:27017
     use: False
-
 
 profiling:
     run: true

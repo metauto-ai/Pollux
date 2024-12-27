@@ -14,7 +14,7 @@ from torchvision import transforms
 from apps.main.modules.preprocessing import ImageProcessing
 from apps.main.utils.hf_data_load import HFDataLoad
 from apps.main.utils.dummy_data_load import DummyDataLoad
-from apps.main.utils.mongodb_data_load import MongoDBDataLoad
+from apps.main.utils.mongodb_data_load import MongoDBDataLoad, MongoDBImageNetDataLoad
 
 
 logger = logging.getLogger()
@@ -93,14 +93,21 @@ class AutoDataLoader:
         return DataLoader(dataset, batch_size=args.batch_size, shuffle=True)
 
     def _create_mongodb_dataloader(self, args: DataArgs) -> DataLoader:
-
-        dataset = MongoDBDataLoad(
-            mongo_uri=args.mongo_uri,
-            collection_name=args.data_name,
-            query={"aesthetic_score": {"$gt": 5.5}},
-            shard_id=self.shard_id,
-            num_shards=self.num_shards,
-        )
+        if args.data_name == "imagenet-1k":
+            dataset = MongoDBImageNetDataLoad(
+                num_shards=self.num_shards,
+                shard_idx=self.shard_id,
+                collection_name=args.data_name,
+                args=args,
+            )
+        else:
+            dataset = MongoDBDataLoad(
+                mongo_uri=args.mongo_uri,
+                collection_name=args.data_name,
+                query={"aesthetic_score": {"$gt": 5.5}},
+                shard_id=self.shard_id,
+                num_shards=self.num_shards,
+            )
         return DataLoader(
             dataset,
             batch_size=args.batch_size,
