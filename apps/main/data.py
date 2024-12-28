@@ -60,6 +60,7 @@ class AutoDataLoader:
         shard_id: int,
         num_shards: int,
         train_stage: str,
+        init_signal_handler: bool,
         data_config: List[DataArgs],
         # * following args should only be used by dataloader and sampler
         shuffle: Optional[bool] = True,
@@ -72,6 +73,7 @@ class AutoDataLoader:
         self.num_shards = num_shards
         self.train_stage = train_stage
         self.data_config = data_config
+        self.init_signal_handler = init_signal_handler
         # * used by dataloader and sampler
         self.shuffle = shuffle
         self.pin_memory = pin_memory
@@ -102,6 +104,8 @@ class AutoDataLoader:
             f"Read Data with Total Shard: {self.num_shards} Current Index: {self.shard_id} Split: {args.split}"
         )
         train_data = train_data.shard(num_shards=self.num_shards, index=self.shard_id)
+
+        self.dataset = train_data
         return self._warp_dataloader_with_stateful_sampler(args, train_data)
 
     def _create_dummy_dataloader(
@@ -114,6 +118,8 @@ class AutoDataLoader:
             image_size=(3, args.image_size, args.image_size),
             word_count=32,
         )
+
+        self.dataset = dataset
         return self._warp_dataloader_with_stateful_sampler(args, dataset)
 
     def _create_mongodb_dataloader(
@@ -124,6 +130,8 @@ class AutoDataLoader:
                 num_shards=self.num_shards,
                 shard_idx=self.shard_id,
                 collection_name=args.data_name,
+                init_signal_handler=self.init_signal_handler,
+                temporal_cache_name=args.data_name,
                 args=args,
             )
         else:
@@ -133,7 +141,13 @@ class AutoDataLoader:
                 query={"aesthetic_score": {"$gt": 5.5}},
                 shard_id=self.shard_id,
                 num_shards=self.num_shards,
+                temporal_cache_name=args.data_name,
+                init_signal_handler=self.init_signal_handler,
             )
+
+        dataset.set_local_cache()
+        dataset.set_sharding()
+        self.dataset = dataset
         return self._warp_dataloader_with_stateful_sampler(args, dataset)
 
     def _warp_dataloader_with_stateful_sampler(

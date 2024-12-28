@@ -4,7 +4,8 @@
 version: v0.7
 # From now on, start to align train, data, and model setting with train stage (just finish refactor for dara)
 train_stage: preliminary # options: preliminary, pretraining, posttraining; aligned with data setting
-name: Pollux_v0.7_gen_transformer_preliminary # used for local dump and wandb log
+# name: Pollux_v0.7_gen_transformer_preliminary # used for local dump and wandb log
+name: Pollux_v0.7_MongoDB_ImageNet-1k_Debug_hz
 output_dir: /jfs/checkpoints/dump
 dump_dir: '' # No need now
 steps: 1000000
@@ -17,7 +18,7 @@ optim:
     weight_decay: 0.01
 
 distributed:
-    gpus: 0,1,2,3,4,5,6,7,8
+    gpus: 0,1,2,3,4,5,6,7
     fsdp_type: full_shard
     dp_shard: 8
     dp_replicate: 1
@@ -101,6 +102,18 @@ data:
   - stage: preliminary
     id: 1
     task: class_to_image
+    data_name: imagenet-1k
+    source: mongodb
+    batch_size: 96
+    image_size: 256
+    num_workers: 8
+    split: train
+    use: True
+
+
+  - stage: preliminary
+    id: 2
+    task: class_to_image
     data_name: dummy
     source: local
     batch_size: 12
@@ -111,19 +124,8 @@ data:
     cache_dir: ''
     use: False
 
-  - stage: preliminary
-    id: 2
-    task: class_to_image
-    data_name: imagenet-1k
-    source: mongodb
-    batch_size: 96
-    image_size: 256
-    num_workers: 8
-    split: train
-    use: True
-
   - stage: pretraining
-    id: 1
+    id: 0
     task: image_generation
     data_name: NucluesIMG-100M
     source: mongodb
@@ -132,6 +134,7 @@ data:
     num_workers: 8
     mongo_uri: mongodb://localhost:27017
     use: False
+
 
 profiling:
     run: true
@@ -146,10 +149,10 @@ checkpoint:
 
 logging:
     freq: 100
-    wandb:
-        project: Pollux
-        entity: metauto
-        name: ''
+    # wandb:
+    #     project: Pollux
+    #     entity: metauto
+    #     name: ''
 
 env:
     ENABLE_INTRA_NODE_COMM: '0'  # '0' for local machine (otherwise errors happen); '1' for slurmn (need test)

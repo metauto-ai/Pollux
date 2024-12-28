@@ -41,6 +41,7 @@ from lingua.distributed import (
     get_device_mesh,
     get_is_master,
     get_world_size,
+    get_local_rank,
     parallelize_model,
     setup_env,
     setup_torch_distributed,
@@ -309,15 +310,26 @@ def train(args: TrainArgs):
         )
         logger.info(f"GPU memory usage: {gpu_memory_monitor}")
 
+        
         active_data = [d for d in args.data if d.stage == args.train_stage and d.use]
         data_loader_factory = AutoDataLoader(
             shard_id=dp_rank,
             num_shards=dp_degree,
             train_stage=args.train_stage,
+            init_signal_handler=get_local_rank() == 0,
             data_config=active_data,  # Pass the filtered data configuration
         )
         data_loader, sampler = data_loader_factory.create_dataloader()
-
+        
+        torch.distributed.barrier()
+        if (
+            get_local_rank() == 0
+            and args
+            and hasattr(data_loader_factory.dataset, "clean_buffer")
+        ):
+            data_loader_factory.dataset.clean_buffer()
+        
+        
         # build optimizer after apply parallelisms to the model
         optimizer, scheduler = build_optimizer(model, args.optim, args.steps)
         train_state = TrainState(
@@ -341,6 +353,7 @@ def train(args: TrainArgs):
         torch_profiler = context_stack.enter_context(
             maybe_run_profiler(args.dump_dir, model, args.profiling)
         )
+
 
         dataloader_iterator = iter(data_loader)
         nwords_since_last_log = 0
