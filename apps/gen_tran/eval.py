@@ -98,6 +98,7 @@ def launch_eval(cfg: EvalArgs):
         train_stage=cfg.stage,
         init_signal_handler=get_local_rank() == 0,
         data_config=active_data,  # Pass the filtered data configuration
+        drop_last=False,
     )
     data_loader, _ = data_loader_factory.create_dataloader()
     torch.distributed.barrier()
