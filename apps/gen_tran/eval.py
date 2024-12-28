@@ -43,7 +43,6 @@ class EvalArgs:
     generator: GeneratorArgs = field(default_factory=GeneratorArgs)
     eval_data: List[DataArgs] = field(default_factory=list)
     wandb: Optional[Any] = None
-    sample_num: int = 1000
 
     global_step: Optional[int] = None  # for in-training evaluation
 
@@ -100,11 +99,15 @@ def launch_eval(cfg: EvalArgs):
         data_config=active_data,  # Pass the filtered data configuration
         drop_last=False,
     )
-    data_loader, _ = data_loader_factory.create_dataloader()
+    if global_rank == 0:
+        data_loader, _ = data_loader_factory.create_dataloader()
+        print(f"Batch size: {active_data[0].batch_size}")
+        print(f"Data loader created length:{len(data_loader)}")
+        print(f"Data loader factory created length:{len(data_loader_factory.dataset)}")
     torch.distributed.barrier()
     if get_local_rank() == 0 and hasattr(data_loader_factory.dataset, "clean_buffer"):
         data_loader_factory.dataset.clean_buffer()
-    max_steps = cfg.sample_num // (active_data[0].batch_size * world_size)
+    raise NotImplementedError("Implement the rest of the evaluation logic")
     for idx, batch in enumerate(data_loader):
         generated_samples = generator(batch)
         save_images(
@@ -112,8 +115,6 @@ def launch_eval(cfg: EvalArgs):
             output_dir=Path(cfg.dump_dir) / f"samples",
             prefix=f"image_rank{global_rank}_batch{idx}",
         )
-        if idx + 1 >= max_steps:
-            break
     del generator
 
 

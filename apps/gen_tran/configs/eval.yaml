@@ -4,7 +4,6 @@ name: "debug_evals"
 stage: eval
 ckpt_dir:  /jfs/checkpoints/dump/Pollux_v0.7_gen_transformer_preliminary/checkpoints/0000120000
 dump_dir:  /jfs/checkpoints/dump/Pollux_v0.7_gen_transformer_preliminary/checkpoints/0000120000
-sample_num: 10000000
 generator:
   guidance_scale: 5.0
   dtype: bf16
