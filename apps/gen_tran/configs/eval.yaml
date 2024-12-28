@@ -1,8 +1,9 @@
 # python -m apps.gen_tran.generate config=apps/gen_tran/configs/eval.yaml
 # torchrun --nnodes 1 --nproc-per-node 4 -m apps.gen_tran.eval config=apps/gen_tran/configs/eval.yaml
 name: "debug_evals"
-ckpt_dir:  /jfs/checkpoints/dump/Pollux_v0.7_gen_transformer_preliminary/checkpoints/0000032500
-dump_dir:  /jfs/checkpoints/dump/Pollux_v0.7_gen_transformer_preliminary/checkpoints/0000032500
+stage: eval
+ckpt_dir:  /jfs/checkpoints/dump/Pollux_v0.7_gen_transformer_preliminary/checkpoints/0000120000
+dump_dir:  /jfs/checkpoints/dump/Pollux_v0.7_gen_transformer_preliminary/checkpoints/0000120000
 sample_num: 100000
 generator:
   guidance_scale: 5.0
@@ -11,10 +12,14 @@ generator:
   show_progress: False
   inference_steps: 50
 
-data:
-    batch_size: 24
+eval_data:
+  - stage: eval
+    id: 0
+    task: class_to_image
+    data_name: imagenet-1k
+    source: mongodb
+    batch_size: 256
     image_size: 256
     num_workers: 8
-    split: 'validation'
-    data_name: 'ILSVRC/imagenet-1k' # 'dummy' 
-    root_dir: '/jfs/data'
+    split: validation
+    use: True
