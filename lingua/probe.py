@@ -73,9 +73,25 @@ def log_stats(x: torch.Tensor, name: str) -> torch.Tensor:
 
 
 QUANTILES = [
-    0.0000001, 0.000001, 0.00001, 0.0001, 0.001, 0.01,
-    0.05, 0.1, 0.3, 0.5, 0.7, 0.9, 0.95,
-    0.99, 0.999, 0.9999, 0.99999, 0.999999, 0.9999999,
+    0.0000001,
+    0.000001,
+    0.00001,
+    0.0001,
+    0.001,
+    0.01,
+    0.05,
+    0.1,
+    0.3,
+    0.5,
+    0.7,
+    0.9,
+    0.95,
+    0.99,
+    0.999,
+    0.9999,
+    0.99999,
+    0.999999,
+    0.9999999,
 ]
 
 
@@ -206,7 +222,9 @@ def _compute_attn_stats_sdpa(
     logits = query[:, :, query_s] @ key.transpose(-1, -2) * scale
     logits = _mask_attn_logits(logits.float(), query_s, causal=is_causal)
     p = logits.float().softmax(-1)
-    masked_logsoft = logits.log_softmax(-1).where((logits > -math.inf), torch.zeros_like(logits))
+    masked_logsoft = logits.log_softmax(-1).where(
+        (logits > -math.inf), torch.zeros_like(logits)
+    )
     entropy = -(p * masked_logsoft).sum(-1)
     probe.log_tensor(f"{path}::attn_entropy", entropy)
     probe.log_tensor(f"{path}::attn_logits", logits, remove_inf=True)
@@ -234,7 +252,13 @@ def _compute_attn_stats_flash(
     unpadded_lse: bool = False,
 ) -> None:
     # Filter-out not supported cases
-    if seqused_k is not None or p != 0.0 or window_left >= 0 or window_right >= 0 or block_tables is not None:
+    if (
+        seqused_k is not None
+        or p != 0.0
+        or window_left >= 0
+        or window_right >= 0
+        or block_tables is not None
+    ):
         probe.store[f"{path}::attn"] = {
             "query.shape": tuple(query.shape),
             "key.shape": tuple(key.shape),
@@ -250,7 +274,11 @@ def _compute_attn_stats_flash(
 
     # Take a subset of the queries and compute the logits
     query_s = _attn_queries_subset(query.shape[1])
-    logits = query[:, query_s].transpose(1, 2) @ key.transpose(1, 2).transpose(-1, -2) * softmax_scale
+    logits = (
+        query[:, query_s].transpose(1, 2)
+        @ key.transpose(1, 2).transpose(-1, -2)
+        * softmax_scale
+    )
     logits = _mask_attn_logits(
         logits.float(),
         query_s,
@@ -259,7 +287,9 @@ def _compute_attn_stats_flash(
         causal=is_causal,
     )
     p = logits.float().softmax(-1)
-    masked_logsoft = logits.log_softmax(-1).where((logits > -math.inf), torch.zeros_like(logits))
+    masked_logsoft = logits.log_softmax(-1).where(
+        (logits > -math.inf), torch.zeros_like(logits)
+    )
     entropy = -(p * masked_logsoft).sum(-1)
     probe.log_tensor(f"{path}::attn_entropy", entropy)
     probe.log_tensor(f"{path}::attn_logits", logits, remove_inf=True)
@@ -316,7 +346,10 @@ class AutoProbeD(TorchDispatchMode):
     def _setup_tensors_logging(self):
         if self.write_file is not None:
             self.write_file.parent.mkdir(exist_ok=True)
-            self.write_tensors_tmpdir = self.write_file.parent / f"{self.write_file.name}-tmp-{str(uuid.uuid4())[:8]}"
+            self.write_tensors_tmpdir = (
+                self.write_file.parent
+                / f"{self.write_file.name}-tmp-{str(uuid.uuid4())[:8]}"
+            )
             self.write_tensors_tmpdir.mkdir(exist_ok=True)
 
     def _flush_and_clear(self) -> None:
@@ -351,7 +384,9 @@ class AutoProbeD(TorchDispatchMode):
         self.count_per_path.clear()
         self.uid_to_path.clear()
 
-    def _find_bw_path_and_type(self, path: str, out: torch.Tensor, args) -> Tuple[str, LinearBwType]:
+    def _find_bw_path_and_type(
+        self, path: str, out: torch.Tensor, args
+    ) -> Tuple[str, LinearBwType]:
         """
         We are in the BW pass, and process a GEMM.
         Let's figure out:
@@ -362,7 +397,9 @@ class AutoProbeD(TorchDispatchMode):
         def _is_path_correct_dw(path: str) -> bool:
             # dW.t = dY.t @ X
             in_shape, w_shape, out_shape, input_sm, weight_sm = self.linear_data[path]
-            return out.shape == (w_shape[1], w_shape[0]) and torch.allclose(input_sm, args[1][:4, :4])
+            return out.shape == (w_shape[1], w_shape[0]) and torch.allclose(
+                input_sm, args[1][:4, :4]
+            )
 
         def _is_path_correct_dx(path: str) -> bool:
             # dX = dY @ W.t
@@ -444,10 +481,14 @@ class AutoProbeD(TorchDispatchMode):
             torch.ops.aten._scaled_dot_product_flash_attention,
             torch.ops.aten._scaled_dot_product_cudnn_attention,
         ]:
-            _, kwargs = normalize_function(func, args=args, kwargs=kwargs, normalize_to_only_use_kwargs=True)
+            _, kwargs = normalize_function(
+                func, args=args, kwargs=kwargs, normalize_to_only_use_kwargs=True
+            )
             _compute_attn_stats_sdpa(self, path, **kwargs)
         elif func._overloadpacket == fmha.flash.FwOp.OPERATOR:
-            _, kwargs = normalize_function(func, args=args, kwargs=kwargs, normalize_to_only_use_kwargs=True)
+            _, kwargs = normalize_function(
+                func, args=args, kwargs=kwargs, normalize_to_only_use_kwargs=True
+            )
             _compute_attn_stats_flash(self, path, **kwargs)
         elif func._overloadpacket == torch.ops.torchprobe.log:
             uid = args[2]
@@ -478,7 +519,9 @@ class TorchCompileDisabler:
         # "undo" compilation
         self.submodules_compiled.clear()
         _find_all_submodules_compiled(self.submodules_compiled, self.module)
-        self.compiled_call_impl = [m._compiled_call_impl for m in self.submodules_compiled]
+        self.compiled_call_impl = [
+            m._compiled_call_impl for m in self.submodules_compiled
+        ]
         for m in self.submodules_compiled:
             m._compiled_call_impl = None
         self.disable_compile.__enter__()  # type: ignore
@@ -501,14 +544,20 @@ bs = 2
 class Attention1(nn.Module):
     def forward(self, x):
         attn_bias = fmha.attn_bias.LowerTriangularFromBottomRightMask()
-        return fmha.memory_efficient_attention(x, x, x, attn_bias=attn_bias).reshape([x.shape[0], seqlen, -1])
+        return fmha.memory_efficient_attention(x, x, x, attn_bias=attn_bias).reshape(
+            [x.shape[0], seqlen, -1]
+        )
 
 
 class Attention2(nn.Module):
     def forward(self, x):
-        attn_bias = fmha.attn_bias.BlockDiagonalMask.from_seqlens([seqlen] * bs).make_causal()
+        attn_bias = fmha.attn_bias.BlockDiagonalMask.from_seqlens(
+            [seqlen] * bs
+        ).make_causal()
         xr = x.reshape([1, 2 * seqlen, x.shape[2], x.shape[3]])
-        return fmha.memory_efficient_attention(xr, xr, xr, attn_bias=attn_bias).reshape([x.shape[0], seqlen, -1])
+        return fmha.memory_efficient_attention(xr, xr, xr, attn_bias=attn_bias).reshape(
+            [x.shape[0], seqlen, -1]
+        )
 
 
 class AttentionSDPA(nn.Module):
@@ -518,14 +567,22 @@ class AttentionSDPA(nn.Module):
 
     def forward(self, x):
         x = x.transpose(1, 2)
-        return self.wo(F.scaled_dot_product_attention(x, x, x).transpose(1, 2).reshape([x.shape[0], seqlen, -1]))
+        return self.wo(
+            F.scaled_dot_product_attention(x, x, x)
+            .transpose(1, 2)
+            .reshape([x.shape[0], seqlen, -1])
+        )
 
 
 class AttentionSDPAFlash(AttentionSDPA):
     def forward(self, x):
         x = x.transpose(1, 2)
         with sdpa_kernel(SDPBackend.FLASH_ATTENTION):
-            return self.wo(F.scaled_dot_product_attention(x, x, x).transpose(1, 2).reshape([x.shape[0], seqlen, -1]))
+            return self.wo(
+                F.scaled_dot_product_attention(x, x, x)
+                .transpose(1, 2)
+                .reshape([x.shape[0], seqlen, -1])
+            )
 
 
 class Model(nn.Module):
@@ -554,8 +611,12 @@ class Model(nn.Module):
 def test_masking() -> None:
     q_seqlen = [1, 1, 14, 12]
     kv_seqlen = [2, 2, 14, 18]
-    attn_bias = fmha.attn_bias.BlockDiagonalCausalMask.from_seqlens(q_seqlen, kv_seqlen).make_causal_from_bottomright()
-    logits = torch.randn([1, 1, sum(q_seqlen), sum(kv_seqlen)], dtype=torch.float32, device="cuda")
+    attn_bias = fmha.attn_bias.BlockDiagonalCausalMask.from_seqlens(
+        q_seqlen, kv_seqlen
+    ).make_causal_from_bottomright()
+    logits = torch.randn(
+        [1, 1, sum(q_seqlen), sum(kv_seqlen)], dtype=torch.float32, device="cuda"
+    )
     bias = attn_bias.materialize(logits.shape, dtype=logits.dtype, device=logits.device)
     logits_masked = logits.clone()
     _mask_attn_logits(
@@ -573,7 +634,9 @@ def test_toy_model() -> None:
     kw = dict(device="cuda", dtype=torch.float16)
     x = torch.randn([bs, seqlen, d], **kw)
     m = Model()
-    m.head = checkpoint_wrapper(m.head, checkpoint_impl=CheckpointImpl.NO_REENTRANT, preserve_rng_state=False)
+    m.head = checkpoint_wrapper(
+        m.head, checkpoint_impl=CheckpointImpl.NO_REENTRANT, preserve_rng_state=False
+    )
     m.to(**kw)
     m.compile()
     optim = torch.optim.SGD(m.parameters(), lr=0.0)
@@ -625,6 +688,8 @@ def test_toy_model() -> None:
                 # Check we don't have `nans`
                 for key, value in probe.store.items():
                     if "abs.mean" in value:
-                        assert math.isfinite(value["abs.mean"].item()), f"Inf/Nan for {key}"
+                        assert math.isfinite(
+                            value["abs.mean"].item()
+                        ), f"Inf/Nan for {key}"
             optim.step()
             optim.zero_grad()

@@ -9,6 +9,7 @@ logger = logging.getLogger()
 
 T = TypeVar("T")
 
+
 def set_struct_recursively(cfg, strict: bool = True):
     # Set struct mode for the current level
     OmegaConf.set_struct(cfg, strict)

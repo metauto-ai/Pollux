@@ -4,12 +4,10 @@ import datasets
 
 logger = logging.getLogger()
 
+
 def HFDataLoad(data_name: str, cache_dir: str) -> str:
 
-
-    if os.path.exists(
-        os.path.join(cache_dir, data_name.split("/")[-1])
-    ):
+    if os.path.exists(os.path.join(cache_dir, data_name.split("/")[-1])):
         data = datasets.load_dataset(
             path=data_name, cache_dir=os.path.join(cache_dir, data_name.split("/")[-1])
         )
@@ -28,4 +26,3 @@ def HFDataLoad(data_name: str, cache_dir: str) -> str:
     # )
 
     return data
-

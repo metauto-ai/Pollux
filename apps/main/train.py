@@ -7,7 +7,6 @@ import os
 import sys
 import time
 
-
 from omegaconf import OmegaConf
 
 cli_args = OmegaConf.from_cli()
@@ -88,6 +87,7 @@ class TrainArgs:
     output_dir: str = "/mnt/data/dump"
     dump_dir: str = ""
     seed: int = 42
+    shuffle: bool = False  # NOTE: detect the step = 0 to shuffle otherwise not shuffle
 
     # Number of gradient accumulation steps
     # Total batch size is batch_size*grad_acc_steps
@@ -132,7 +132,22 @@ class TrainState(Stateful):
     def load_state_dict(self, state_dict):
         self.step = state_dict["step"]
         self.acc_step = state_dict["acc_step"]
-        self.sampler.load_state_dict(state_dict["sampler"])
+
+        # NOTE: the first time of training the sampler will be loaded with the start_index of 0
+        if "sampler" in state_dict:
+            if self.sampler is not None:
+                self.sampler.load_state_dict(state_dict["sampler"])
+            else:
+                logger.warning(
+                    "Sampler exists in state_dict but no sampler initialized in TrainState."
+                )
+
+        elif self.sampler is not None:
+            logger.warning(
+                "Sampler does not exist in state_dict but sampler initialized in TrainState."
+            )
+            self.sampler.reset()
+
         self.scheduler.load_state_dict(state_dict["scheduler"])
         logger.info(
             f"Resume training with distributed sampler state to {self.sampler.start_index} local step."
@@ -248,6 +263,11 @@ def every_n_steps(train_state, freq, acc_step=None, acc_freq=None):
     return test
 
 
+def save_sampler_state(train_state, logger, reason: str = ""):
+    train_state.sampler.save_state(train_state.step)
+    logger.info(f"Sampler state saved at step {train_state.step} ({reason})")
+
+
 def train(args: TrainArgs):
     with ExitStack() as context_stack:
         validate_train_args(
@@ -330,6 +350,7 @@ def train(args: TrainArgs):
 
         # build optimizer after apply parallelisms to the model
         optimizer, scheduler = build_optimizer(model, args.optim, args.steps)
+
         train_state = TrainState(
             step=0,
             acc_step=0,
@@ -362,6 +383,10 @@ def train(args: TrainArgs):
             train_state.acc_step += 1
             train_state.acc_step = train_state.acc_step % args.grad_acc_steps
 
+            # NOTE: trigger 1 to save the state of the sampler
+            if train_state.step % 1000 == 0:
+                save_sampler_state(train_state, logger, reason="Periodic Save")
+
             # get batch
             curr_lr = float(optimizer.param_groups[0]["lr"])
             data_load_start = timer()
@@ -370,6 +395,9 @@ def train(args: TrainArgs):
             except:
                 logger.info("New Epoch!")
                 sampler.reset()
+
+                # NOTE: trigger 2 to save the state of the sampler
+                save_sampler_state(train_state, logger, reason="Epoch Reset")
                 dataloader_iterator = iter(data_loader)
                 batch = next(dataloader_iterator)
 
@@ -546,6 +574,8 @@ def train(args: TrainArgs):
                         args,
                         device_mesh=world_mesh,
                     )
+                # NOTE: trigger 3 to save the state of the sampler
+                save_sampler_state(train_state, logger, reason="Preemption")
                 requeue_slurm_job()
                 sys.exit(0)
 
@@ -557,6 +587,8 @@ def train(args: TrainArgs):
             args,
             device_mesh=world_mesh,
         )
+    # NOTE: trigger 4 to save the state of the sampler
+    save_sampler_state(train_state, logger, reason="Training Finished")
     gc.collect()
 
 
