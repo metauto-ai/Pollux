@@ -1,17 +1,19 @@
 from collections import OrderedDict, defaultdict
 from pprint import pformat
 from typing import Iterator, List, Optional
+import math
 
 import numpy as np
 import torch
 import torch.distributed as dist
-from torch.utils.data import Dataset, DistributedSampler
+from torch.utils.data import Dataset, Sampler
 
-class StatefulDistributedSampler(DistributedSampler):
+class StatefulDistributedSampler(Sampler):
 
     def __init__(
         self,
         dataset: Dataset,
+        batch_size: int,
         num_replicas: Optional[int] = None,
         rank: Optional[int] = None,
         shuffle: bool = True,
@@ -43,14 +45,52 @@ class StatefulDistributedSampler(DistributedSampler):
                 
             * shard_id and num_shard could be changed when loading and saving, we only save start idx
         """
-        super().__init__(dataset, num_replicas, rank, shuffle, seed, drop_last)
+        self.dataset = dataset
+        self.batch_size = batch_size
+        self.num_replicas = num_replicas
+        self.rank = rank
+        self.epoch = 0
+        self.drop_last = drop_last
+        
+        # * no need to consider sharding
+        self.num_samples = len(self.dataset)
+        self.total_size = self.num_samples
+        self.shuffle = shuffle
+        self.seed = seed
+         
+        # * most important variable, dataset traverse pointer
         self.start_index: int = 0
+        
+        # * alias
         self.shard_id=rank
         self.num_shard=num_replicas
 
     def __iter__(self) -> Iterator:
-        iterator = super().__iter__()
-        indices = list(iterator)
+        if self.shuffle:
+            # deterministically shuffle based on epoch and seed
+            g = torch.Generator()
+            g.manual_seed(self.seed + self.epoch)
+            indices = torch.randperm(len(self.dataset), generator=g).tolist()  # type: ignore[arg-type]
+        else:
+            indices = list(range(len(self.dataset)))  # type: ignore[arg-type]
+
+        if not self.drop_last:
+            # add extra samples to make it evenly divisible
+            padding_size = self.total_size - len(indices)
+            if padding_size <= len(indices):
+                indices += indices[:padding_size]
+            else:
+                indices += (indices * math.ceil(padding_size / len(indices)))[
+                    :padding_size
+                ]
+        else:
+            # remove tail of data to make it evenly divisible.
+            indices = indices[: self.total_size]
+            
+        assert len(indices) == self.total_size
+        assert len(indices) == self.num_samples
+        
+        # * clip index list from start from state
         indices = indices[self.start_index :]
         return iter(indices)
 
@@ -61,11 +101,24 @@ class StatefulDistributedSampler(DistributedSampler):
         self.start_index = 0
 
     def state_dict(self, global_step) -> dict:
-        # * epoch = global_step // self.num_samples
-        local_step = global_step % self.num_samples
+        local_step = (global_step * self.batch_size) % self.num_samples
         # * we shouldn't update start index during training
         # as it should only be init once the training start in self.__iter__
         return {"start_index": local_step}
 
     def load_state_dict(self, state_dict: dict) -> None:
         self.__dict__.update(state_dict)
+        
+        
+    def set_epoch(self, epoch: int) -> None:
+        r"""
+        Set the epoch for this sampler.
+
+        When :attr:`shuffle=True`, this ensures all replicas
+        use a different random ordering for each epoch. Otherwise, the next iteration of this
+        sampler will yield the same ordering.
+
+        Args:
+            epoch (int): Epoch number.
+        """
+        self.epoch = epoch

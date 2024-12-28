@@ -1,0 +1,24 @@
+# python -m apps.gen_tran.generate config=apps/gen_tran/configs/eval.yaml
+# torchrun --nnodes 1 --nproc-per-node 4 -m apps.gen_tran.eval config=apps/gen_tran/configs/eval.yaml
+name: "debug_evals"
+stage: eval
+ckpt_dir:  /jfs/checkpoints/dump/Pollux_v0.7_gen_transformer_preliminary/checkpoints/0000120000
+dump_dir:  /jfs/jinjie/code/Pollux/downloads/dump/Pollux_debug_sampler
+generator:
+  guidance_scale: 5.0
+  dtype: bf16
+  resolution: 256
+  show_progress: False
+  inference_steps: 50
+
+eval_data:
+  - stage: eval
+    id: 0
+    task: class_to_image
+    data_name: imagenet-1k
+    source: mongodb
+    batch_size: 256
+    image_size: 256
+    num_workers: 8
+    split: validation
+    use: True

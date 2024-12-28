@@ -157,6 +157,7 @@ class AutoDataLoader:
     ) -> Tuple[DataLoader, StatefulDistributedSampler]:
         sampler = StatefulDistributedSampler(
             dataset,
+            batch_size=args.batch_size,
             num_replicas=self.num_shards,
             rank=self.shard_id,
             shuffle=self.shuffle,
