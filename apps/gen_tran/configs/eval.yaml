@@ -1,5 +1,5 @@
 # python -m apps.gen_tran.generate config=apps/gen_tran/configs/eval.yaml
-# torchrun --nnodes 1 --nproc-per-node 4 -m apps.gen_tran.eval config=apps/gen_tran/configs/eval.yaml
+# torchrun --nnodes 1 --nproc-per-node 8 -m apps.gen_tran.eval config=apps/gen_tran/configs/eval.yaml
 name: "debug_evals"
 stage: eval
 ckpt_dir:  /jfs/checkpoints/dump/Pollux_v0.7_gen_transformer_preliminary/checkpoints/0000120000

@@ -99,15 +99,10 @@ def launch_eval(cfg: EvalArgs):
         data_config=active_data,  # Pass the filtered data configuration
         drop_last=False,
     )
-    if global_rank == 0:
-        data_loader, _ = data_loader_factory.create_dataloader()
-        print(f"Batch size: {active_data[0].batch_size}")
-        print(f"Data loader created length:{len(data_loader)}")
-        print(f"Data loader factory created length:{len(data_loader_factory.dataset)}")
+    data_loader, _ = data_loader_factory.create_dataloader()
     torch.distributed.barrier()
     if get_local_rank() == 0 and hasattr(data_loader_factory.dataset, "clean_buffer"):
         data_loader_factory.dataset.clean_buffer()
-    raise NotImplementedError("Implement the rest of the evaluation logic")
     for idx, batch in enumerate(data_loader):
         generated_samples = generator(batch)
         save_images(
