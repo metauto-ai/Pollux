@@ -100,6 +100,17 @@ data:
   - stage: preliminary
     id: 1
     task: class_to_image
+    data_name: imagenet-1k
+    source: mongodb
+    batch_size: 48
+    image_size: 256
+    num_workers: 8
+    split: train
+    use: True
+
+  - stage: preliminary
+    id: 1
+    task: class_to_image
     data_name: dummy
     source: local
     batch_size: 12

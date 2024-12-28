@@ -1,16 +1,19 @@
 import os
 import logging
-import datasets
 import random
+
 import numpy as np
 from PIL import Image
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List, Dict, Any, Iterator, Optional, TypedDict, Final, Tuple
+
+import datasets
+import numpy as np
+from PIL import Image
 from pymongo import MongoClient
 import torch
 from torch.utils.data import Dataset, DataLoader
-
 from torchvision import transforms
 
 from apps.main.modules.preprocessing import ImageProcessing
@@ -28,7 +31,7 @@ logger = logging.getLogger()
 
 # Deterministic distributed dataloader
 def get_seed_worker(seed):
-    def seed_worker(worker_id):
+    def seed_worker(worker_id):  # TODO: MC - Check wether this has been used.
         worker_seed = seed
         np.random.seed(worker_seed)
         torch.manual_seed(worker_seed)
@@ -90,13 +93,25 @@ class AutoDataLoader:
 
     def create_dataloader(self) -> DataLoader:
         for dataset_config in self.data_config:
-            if dataset_config.stage == self.train_stage and dataset_config.use:
+            logger.info(
+                f"Initializing dataloader for dataset: {dataset_config.data_name}"
+            )
+            try:
                 if dataset_config.source == "huggingface":
                     return self._create_imagenet_dataloader(dataset_config)
                 elif dataset_config.source == "local":
                     return self._create_dummy_dataloader(dataset_config)
                 elif dataset_config.source == "mongodb":
                     return self._create_mongodb_dataloader(dataset_config)
+                else:
+                    raise ValueError(
+                        f"Unsupported data source: {dataset_config.source}"
+                    )
+            except Exception as e:
+                # NOTE: we need to through the error to the upper level if the dataloader is failed to load
+                logger.error(f"Error initializing dataloader: {str(e)}")
+                raise
+
 
         raise ValueError(
             f"No dataset configured for stage {self.train_stage} with `use: True`."
