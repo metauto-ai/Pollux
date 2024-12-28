@@ -94,7 +94,9 @@ class AutoDataLoader:
             f"No dataset configured for stage {self.train_stage} with `use: True`."
         )
 
-    def _create_imagenet_dataloader(self, args: DataArgs) -> Tuple[DataLoader, StatefulDistributedSampler]:
+    def _create_imagenet_dataloader(
+        self, args: DataArgs
+    ) -> Tuple[DataLoader, StatefulDistributedSampler]:
 
         data = HFDataLoad(data_name=args.data_name, cache_dir=args.root_dir)
         train_data = data[args.split]
@@ -155,6 +157,7 @@ class AutoDataLoader:
     ) -> Tuple[DataLoader, StatefulDistributedSampler]:
         sampler = StatefulDistributedSampler(
             dataset,
+            batch_size=args.batch_size,
             num_replicas=self.num_shards,
             rank=self.shard_id,
             shuffle=self.shuffle,

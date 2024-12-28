@@ -123,6 +123,7 @@ class TrainState(Stateful):
 
     def state_dict(self) -> Dict[str, Any]:
         return {
+            "epoch": self.sampler.epoch,
             "step": self.step,
             "acc_step": self.acc_step,
             "sampler": self.sampler.state_dict(self.step),
@@ -134,8 +135,9 @@ class TrainState(Stateful):
         self.acc_step = state_dict["acc_step"]
         self.sampler.load_state_dict(state_dict["sampler"])
         self.scheduler.load_state_dict(state_dict["scheduler"])
+        self.sampler.set_epoch(state_dict["epoch"])
         logger.info(
-            f"Resume training with distributed sampler state to {self.sampler.start_index} local step."
+            f"Resume training with distributed sampler state to Epoch: {self.sampler.epoch} at data item index: {self.sampler.start_index}."
         )
         logger.info(
             "TrainState is loading state_dict: step, acc-step, sampler, scheduler are loaded."
@@ -370,6 +372,8 @@ def train(args: TrainArgs):
             except:
                 logger.info("New Epoch!")
                 sampler.reset()
+                # * sampler need to keep track of the exact epoch
+                sampler.epoch += 1
                 dataloader_iterator = iter(data_loader)
                 batch = next(dataloader_iterator)
 
