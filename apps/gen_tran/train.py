@@ -30,7 +30,7 @@ from pathlib import Path
 from timeit import default_timer as timer
 from typing import Any, Dict, List, Optional
 
-
+from apps.main.utils.sampler import StatefulDistributedSampler
 from lingua.args import dump_config, flatten_dict, dataclass_from_dict
 from lingua.checkpoint import CheckpointArgs, CheckpointManager, load_from_checkpoint
 from lingua.distributed import (
