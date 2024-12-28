@@ -1,7 +1,10 @@
 import os
 import logging
 import random
-from dataclasses import dataclass
+
+import numpy as np
+from PIL import Image
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List, Dict, Any, Iterator, Optional, TypedDict, Final, Tuple
 
@@ -16,7 +19,11 @@ from torchvision import transforms
 from apps.main.modules.preprocessing import ImageProcessing
 from apps.main.utils.hf_data_load import HFDataLoad
 from apps.main.utils.dummy_data_load import DummyDataLoad
-from apps.main.utils.mongodb_data_load import MongoDBDataLoad, MongoDBImageNetDataLoad
+from apps.main.utils.mongodb_data_load import (
+    MongoDBDataLoad,
+    MongoDBImageNetDataLoad,
+    MongoDBCC12MDataLoad,
+)
 from apps.main.utils.sampler import StatefulDistributedSampler
 
 logger = logging.getLogger()
@@ -51,6 +58,10 @@ class DataArgs:
     usage: Optional[str] = None  # "class_to_image", "image_generation"
     source: Optional[str] = None  # "huggingface", "mongodb", "local"
     stage: Optional[str] = None  # "preliminary", "pretraining", "posttraining"
+    query: Optional[Dict[str, Any]] = field(
+        default_factory=dict
+    )  # MongoDB query  # MongoDB query
+    retries: Optional[int] = 3  # Number of retries for MongoDB connection
     use: bool = False  # Whether to use this dataset
 
 
@@ -101,6 +112,11 @@ class AutoDataLoader:
                 logger.error(f"Error initializing dataloader: {str(e)}")
                 raise
 
+
+        raise ValueError(
+            f"No dataset configured for stage {self.train_stage} with `use: True`."
+        )
+
     def _create_imagenet_dataloader(
         self, args: DataArgs
     ) -> Tuple[DataLoader, StatefulDistributedSampler]:
@@ -143,12 +159,24 @@ class AutoDataLoader:
                 temporal_cache_name=args.data_name,
                 args=args,
             )
+        elif args.data_name == "cc12m":
+            dataset = MongoDBCC12MDataLoad(
+                collection_name=args.data_name,
+                query=args.query,
+                shard_idx=self.shard_id,
+                num_shards=self.num_shards,
+                temporal_cache_name=args.data_name,
+                init_signal_handler=self.init_signal_handler,
+                extract_field={
+                    "s3url": "image",
+                },
+                args=args,
+            )
         else:
             dataset = MongoDBDataLoad(
-                mongo_uri=args.mongo_uri,
                 collection_name=args.data_name,
-                query={"aesthetic_score": {"$gt": 5.5}},
-                shard_id=self.shard_id,
+                query=args.query,
+                shard_idx=self.shard_id,
                 num_shards=self.num_shards,
                 temporal_cache_name=args.data_name,
                 init_signal_handler=self.init_signal_handler,
@@ -164,6 +192,7 @@ class AutoDataLoader:
     ) -> Tuple[DataLoader, StatefulDistributedSampler]:
         sampler = StatefulDistributedSampler(
             dataset,
+            batch_size=args.batch_size,
             num_replicas=self.num_shards,
             rank=self.shard_id,
             shuffle=self.shuffle,

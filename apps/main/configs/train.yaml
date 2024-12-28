@@ -122,16 +122,16 @@ data:
     use: False
 
   - stage: pretraining
-    id: 1
-    task: image_generation
-    data_name: NucluesIMG-100M
+    id: 0
+    task: text_to_image
+    data_name: cc12m
     source: mongodb
-    batch_size: 12
+    batch_size: 64
     image_size: 256
     num_workers: 8
     mongo_uri: mongodb://localhost:27017
     use: False
-
+    retries: 3
 
 profiling:
     run: true

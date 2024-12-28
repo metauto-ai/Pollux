@@ -4,13 +4,14 @@ python -m apps.main.test
 
 import logging
 from torchvision.utils import save_image
-from apps.main.data import AutoDataLoader, DataArgs
 from apps.main.modules.vae import LatentVideoVAEArgs
 from apps.main.modules.schedulers import SchedulerArgs
 from apps.main.modules.plan_transformer import PlanTransformerArgs
 from apps.main.modules.gen_transformer import GenTransformerArgs
 from apps.main.modules.tokenizer import TokenizerArgs
 from apps.main.model import ModelArgs, Pollux
+from dotenv import load_dotenv
+from apps.main.data import AutoDataLoader, DataArgs
 
 # Configure logging
 logging.basicConfig(
@@ -83,15 +84,16 @@ if __name__ == "__main__":
     data_config_dict = {
         "data": {
             "preliminary": {
-                "ILSVRC/imagenet-1k": {
+                "cc12m": {
                     "use": True,
-                    "data_name": "imagenet-1k",
+                    "data_name": "cc12m",
                     "batch_size": 12,
                     "image_size": 256,
                     "num_workers": 8,
                     "split": "train",
                     "source": "mongodb",
                     "task": "class_to_image",
+                    "retries": 3,
                 }
             }
         }
@@ -115,19 +117,24 @@ if __name__ == "__main__":
     dp_rank = 0
     dp_degree = 1
     data_loader_factory = AutoDataLoader(
-        dp_rank, dp_degree, train_stage="preliminary", data_config=data_config
+        dp_rank,
+        dp_degree,
+        train_stage="preliminary",
+        init_signal_handler=True,
+        data_config=data_config,
     )
-    data_loader = data_loader_factory.create_dataloader()
-
+    data_loader, _ = data_loader_factory.create_dataloader()
+    print(len(data_loader))
+    data_loader_factory.dataset.clean_buffer()
     # Initialize model
-    model = Pollux(model_arg)
-    model.cuda()
+    # model = Pollux(model_arg)
+    # model.cuda()
 
     # Run test
     for batch in data_loader:
-        print(batch)
-        batch["image"] = batch["image"].cuda()
+        logging.warning(batch)
+        # batch["image"] = batch["image"].cuda()
 
         # Forward pass
-        model(batch)
+        # model(batch)
         break

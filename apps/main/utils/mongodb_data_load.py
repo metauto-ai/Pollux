@@ -16,7 +16,11 @@ from PIL import Image
 from pathlib import Path
 from bson import json_util, ObjectId
 
+
 from apps.main.modules.preprocessing import ImageProcessing
+import time
+import random
+
 
 logging.getLogger("pymongo").setLevel(logging.WARNING)
 
@@ -117,12 +121,6 @@ class MongoDBDataLoad(Dataset):
     def __getitem__(self, idx: int) -> dict[str, Any]:
         return self.data[idx]
 
-    def __enter__(self):
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        self.client.close()
-
 
 class MongoDBImageNetDataLoad(MongoDBDataLoad):
     def __init__(
@@ -162,8 +160,59 @@ class MongoDBImageNetDataLoad(MongoDBDataLoad):
             "caption": self.data[idx]["caption"],
         }
 
-    def __enter__(self):
-        return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        self.client.close()
+class MongoDBCC12MDataLoad(MongoDBDataLoad):
+    def __init__(
+        self,
+        num_shards,
+        shard_idx,
+        query,
+        collection_name,
+        init_signal_handler,
+        temporal_cache_name,
+        extract_field,
+        args,
+    ) -> None:
+        super().__init__(
+            num_shards=num_shards,
+            shard_idx=shard_idx,
+            collection_name=collection_name,
+            query=query,
+            temporal_cache_name=temporal_cache_name,
+            init_signal_handler=init_signal_handler,
+        )
+        self.image_processing = ImageProcessing(args)
+        self.extract_field = extract_field
+        self.retries = args.retries
+        self.place_holder_image = Image.new("RGB", (args.image_size, args.image_size))
+
+    def __len__(self) -> int:
+        return len(self.data)
+
+    def __getitem__(self, idx: int) -> dict[str, Any]:
+        sample = self.data[idx]
+        return_sample = {}
+        return_sample["_id"] = str(sample["_id"])
+        return_sample["caption"] = sample["caption"]
+        for k, v in self.extract_field.items():
+            imageUrl = sample[k]
+            for attempt in range(self.retries):
+                try:
+                    response = requests.get(imageUrl)
+                    image = Image.open(io.BytesIO(response.content)).convert("RGB")
+                    if random.random() > 0.9:
+                        self.place_holder_image = (
+                            image  # frequently update the placeholder image
+                        )
+                    return_sample[v] = self.image_processing.transform(image)
+                    break
+                except Exception as e:
+                    logging.warning(
+                        f"Attempt {attempt + 1}/{self.retries} - Error loading image: {e}"
+                    )
+                    if attempt == self.retries - 1:
+                        image = self.place_holder_image
+                        return_sample[v] = self.image_processing.transform(image)
+                        return_sample["_id"] = "-1"
+                        return_sample["caption"] = ""
+        return return_sample
