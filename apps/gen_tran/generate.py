@@ -71,14 +71,16 @@ class LatentGenerator(nn.Module):
 
     @torch.no_grad()
     def prepare_positive_context(self, context, device):
-        context = torch.tensor(context["label"], device=device, dtype=torch.long)
-        return self.model.plan_transformer(context, train=False)
+        return self.model.plan_transformer(context["label"], train=False)
 
     def return_seq_len(self):
         return (self.resolution // self.model.gen_transformer.patch_size) ** 2
 
     @torch.no_grad()
     def forward(self, context: Dict[str, Any]) -> torch.Tensor:
+        context = {
+            k: v.cuda() for k, v in context.items() if isinstance(v, torch.Tensor)
+        }
         cur_device = next(self.model.parameters()).device
         cur_type = next(self.model.parameters()).dtype
         image_seq_len = self.return_seq_len()
@@ -236,7 +238,9 @@ def main():
         #     "Egyptian cat",
         #     "zebra",
         # ]
-        "label": [1, 2, 3, 4, 324, 532, 123, 456, 239]
+        "label": torch.tensor(
+            [1, 2, 3, 4, 324, 532, 123, 456, 239], dtype=torch.long
+        ).cuda()
     }
 
     # Start generation

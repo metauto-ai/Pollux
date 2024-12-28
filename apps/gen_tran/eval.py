@@ -21,9 +21,13 @@ from lingua.distributed import (
     get_local_rank,
 )
 from apps.main.data import AutoDataLoader, DataArgs
-from apps.main.generate import LatentGenerator, GeneratorArgs, load_consolidated_model
+from apps.gen_tran.generate import (
+    LatentGenerator,
+    GeneratorArgs,
+    load_consolidated_model,
+)
 
-from apps.main.model import Pollux, ModelArgs
+from apps.gen_tran.model import Pollux, ModelArgs
 
 EVAL_FOLDER_NAME = "{:010d}"
 
@@ -33,10 +37,11 @@ logger = logging.getLogger()
 @dataclass
 class EvalArgs:
     name: str = "evals"
+    stage: str = "eval"
     dump_dir: Optional[str] = None
     ckpt_dir: str = ""
     generator: GeneratorArgs = field(default_factory=GeneratorArgs)
-    eval_data: DataArgs = field(default_factory=DataArgs)
+    eval_data: List[DataArgs] = field(default_factory=list)
     wandb: Optional[Any] = None
     sample_num: int = 1000
 
@@ -86,12 +91,19 @@ def launch_eval(cfg: EvalArgs):
     logger.info("Model loaded")
     model.eval()
     generator = LatentGenerator(cfg.generator, model)
-    data_loader = create_dataloader(
+    active_data = [d for d in cfg.eval_data if d.stage == cfg.stage and d.use]
+    data_loader_factory = AutoDataLoader(
         shard_id=global_rank,
         num_shards=world_size,
-        args=cfg.eval_data,
+        train_stage=cfg.stage,
+        init_signal_handler=get_local_rank() == 0,
+        data_config=active_data,  # Pass the filtered data configuration
     )
-    max_steps = cfg.sample_num // (cfg.eval_data.batch_size * world_size)
+    data_loader, _ = data_loader_factory.create_dataloader()
+    torch.distributed.barrier()
+    if get_local_rank() == 0 and hasattr(data_loader_factory.dataset, "clean_buffer"):
+        data_loader_factory.dataset.clean_buffer()
+    max_steps = cfg.sample_num // (active_data[0].batch_size * world_size)
     for idx, batch in enumerate(data_loader):
         generated_samples = generator(batch)
         save_images(

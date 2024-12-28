@@ -134,7 +134,9 @@ class TrainState(Stateful):
         self.acc_step = state_dict["acc_step"]
         self.sampler.load_state_dict(state_dict["sampler"])
         self.scheduler.load_state_dict(state_dict["scheduler"])
-        logger.info(f"Resume training with distributed sampler state to {self.sampler.start_index} local step.")
+        logger.info(
+            f"Resume training with distributed sampler state to {self.sampler.start_index} local step."
+        )
         logger.info(
             "TrainState is loading state_dict: step, acc-step, sampler, scheduler are loaded."
         )
@@ -310,7 +312,6 @@ def train(args: TrainArgs):
         )
         logger.info(f"GPU memory usage: {gpu_memory_monitor}")
 
-        
         active_data = [d for d in args.data if d.stage == args.train_stage and d.use]
         data_loader_factory = AutoDataLoader(
             shard_id=dp_rank,
@@ -320,16 +321,13 @@ def train(args: TrainArgs):
             data_config=active_data,  # Pass the filtered data configuration
         )
         data_loader, sampler = data_loader_factory.create_dataloader()
-        
+
         torch.distributed.barrier()
-        if (
-            get_local_rank() == 0
-            and args
-            and hasattr(data_loader_factory.dataset, "clean_buffer")
+        if get_local_rank() == 0 and hasattr(
+            data_loader_factory.dataset, "clean_buffer"
         ):
             data_loader_factory.dataset.clean_buffer()
-        
-        
+
         # build optimizer after apply parallelisms to the model
         optimizer, scheduler = build_optimizer(model, args.optim, args.steps)
         train_state = TrainState(
@@ -353,7 +351,6 @@ def train(args: TrainArgs):
         torch_profiler = context_stack.enter_context(
             maybe_run_profiler(args.dump_dir, model, args.profiling)
         )
-
 
         dataloader_iterator = iter(data_loader)
         nwords_since_last_log = 0
