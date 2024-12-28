@@ -273,6 +273,7 @@ class CheckpointManager:
         # If none of those are available don't do anything
         if path is None:
             # If no checkpoints exist do nothing
+            logger.info("No checkpoints found ! Init train state from sratch...")
             return
 
         # Only load train state if it's provided, the files exist and we're not loading from init path
@@ -300,7 +301,7 @@ class CheckpointManager:
             optim_state_dict=state_dict["optim"],
         )
         logger.info("Model and optim reloaded")
-    
+
     @classmethod
     def instantiate_and_make_dir(cls, args: CheckpointArgs):
         if get_is_master():

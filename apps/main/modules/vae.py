@@ -5,6 +5,7 @@ import torch
 from torch import nn
 from diffusers import AutoencoderKLHunyuanVideo
 
+
 @dataclass
 class LatentVideoVAEArgs:
     pretrained_model_name_or_path: str = "tencent/HunyuanVideo"
@@ -12,7 +13,7 @@ class LatentVideoVAEArgs:
     variant: Optional[str] = None
     model_dtype: str = "bf16"
     enable_tiling: bool = True
-    enable_slicing: bool = True 
+    enable_slicing: bool = True
 
 
 class LatentVideoVAE(nn.Module):
@@ -47,17 +48,19 @@ class LatentVideoVAE(nn.Module):
         x = self.vae.encode(x).latent_dist.sample()
         if x.ndim == 5 and x.shape[2] == 1:  # Check if T=1
             x = x.squeeze(2)  # Remove the temporal dimension at index 2
-        return x # return 4d image tensor now
+        x = x * self.vae.config.scaling_factor
+        return x  # return 4d image tensor now
 
     @torch.no_grad()
     def decode(self, x: torch.Tensor) -> torch.Tensor:
         if x.ndim == 4:  # Check if the input tensor is 4D, BCHW, image tensor
             x = x.unsqueeze(2)  # Add a temporal dimension (T=1) for video vae
         x = x.to(self.vae.dtype)
+        x = x / self.vae.config.scaling_factor
         x = self.vae.decode(x).sample
         if x.ndim == 5 and x.shape[2] == 1:  # Check if T=1
             x = x.squeeze(2)  # Remove the temporal dimension at index 2
-        return x # return 4d image tensor now
+        return x  # return 4d image tensor now
 
     @torch.no_grad()
     def forward(self, x=torch.Tensor):

@@ -41,6 +41,7 @@ from lingua.distributed import (
     get_device_mesh,
     get_is_master,
     get_world_size,
+    get_local_rank,
     parallelize_model,
     setup_env,
     setup_torch_distributed,
@@ -334,6 +335,7 @@ def train(args: TrainArgs):
             shard_id=dp_rank,
             num_shards=dp_degree,
             train_stage=args.train_stage,
+            init_signal_handler=get_local_rank() == 0,
             data_config=active_data,  # Pass the filtered data configuration
         )
         data_loader = data_loader_factory.create_dataloader()
@@ -342,6 +344,14 @@ def train(args: TrainArgs):
         nwords_since_last_log = 0
         time_last_log = timer()
         gc.collect()
+
+        torch.distributed.barrier()
+        if (
+            get_local_rank() == 0
+            and args
+            and hasattr(data_loader_factory.dataset, "clean_buffer")
+        ):
+            data_loader_factory.dataset.clean_buffer()
 
         while train_state.step < args.steps:
             # We constrain train_state.acc_step to be in range 0 to args.grad_acc_steps - 1

@@ -95,7 +95,7 @@ data:
     split: train
     root_dir: /jfs/data
     cache_dir: /jfs/data/imagenet-1k
-    use: True
+    use: False
 
   - stage: preliminary
     id: 1

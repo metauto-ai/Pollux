@@ -1,8 +1,8 @@
 # python -m apps.gen_tran.generate config=apps/gen_tran/configs/eval.yaml
 # torchrun --nnodes 1 --nproc-per-node 4 -m apps.gen_tran.eval config=apps/gen_tran/configs/eval.yaml
 name: "debug_evals"
-ckpt_dir:  /jfs/checkpoints/dump/ImageNet_Pollux_v0.6/checkpoints/0000017500
-dump_dir:  /jfs/checkpoints/dump/ImageNet_Pollux_v0.6/checkpoints/0000017500
+ckpt_dir:  /jfs/checkpoints/dump/Pollux_v0.7_gen_transformer_preliminary/checkpoints/0000032500
+dump_dir:  /jfs/checkpoints/dump/Pollux_v0.7_gen_transformer_preliminary/checkpoints/0000032500
 sample_num: 100000
 generator:
   guidance_scale: 5.0
