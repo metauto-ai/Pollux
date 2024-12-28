@@ -38,10 +38,11 @@ class OfflineInference(nn.Module):
         #     num_classes=args.num_classes,
         #     hidden_size=args.gen_transformer.dim,
         #     dropout_prob=args.image_cfg_ratio,
-        # )
+        # )# TODO Haozhe will add LLAMA3 3B here
 
     def forward(self, batch: dict[str:any]) -> dict[str:any]:
 
         image = batch["image"]
         latent_code = self.compressor.encode(image)
-        return latent_code
+        batch["latent_code"] = latent_code
+        return batch

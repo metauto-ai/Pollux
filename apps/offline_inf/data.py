@@ -4,7 +4,7 @@ import datasets
 from apps.main.utils.mongodb_data_load import MONGODB_URI
 from apps.main.utils.imagenet_classes import IMAGENET2012_CLASSES
 from pymongo import MongoClient
-from typing import Dict
+from typing import Dict, Any
 from pathlib import Path
 import uuid
 from torch.utils.data import Dataset, DataLoader
@@ -33,8 +33,8 @@ def data_submit(
 def save_tensor(
     tensors: torch.Tensor,
     output_dir: str,
-    prefix: str = "latent",
     batch: Dict[str, Any],
+    prefix: str = "latent",
 ):
     # Input should be B x ... Tensor
     os.makedirs(output_dir, exist_ok=True)
@@ -48,8 +48,9 @@ def save_tensor(
             pickle.dump(tensors, f)
         tensor_paths.append(tensor_path)
     batch["tensor_path"] = tensor_paths
-    logger.warning(f"Saved {len(tensors)} images to {output_dir}")
+    logger.warning(f"Saved {len(tensors)} tensor to {output_dir}")
     return batch
+
 
 class ImageProcessing(nn.Module):
     def __init__(self, split="val") -> nn.Module:
