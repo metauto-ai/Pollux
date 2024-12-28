@@ -17,7 +17,7 @@ optim:
     weight_decay: 0.01
 
 distributed:
-    gpus: 4,5,6,7
+    gpus: 4,5,6,7 # 0,1,2,3 #4,5,6,7
     fsdp_type: full_shard
     dp_shard: 4
     dp_replicate: 1

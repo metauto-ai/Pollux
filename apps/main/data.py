@@ -17,7 +17,7 @@ from apps.main.modules.preprocessing import ImageProcessing
 from apps.main.utils.hf_data_load import HFDataLoad
 from apps.main.utils.dummy_data_load import DummyDataLoad
 from apps.main.utils.mongodb_data_load import MongoDBDataLoad, MongoDBImageNetDataLoad
-from apps.main.sampler import StatefulDistributedSampler
+from apps.main.utils.sampler import StatefulDistributedSampler
 
 logger = logging.getLogger()
 
