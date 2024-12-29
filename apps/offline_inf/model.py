@@ -7,9 +7,6 @@ import random
 import torch
 from torch import nn
 import torch.nn.functional as F
-from apps.main.modules.plan_transformer import (
-    PlanTransformerArgs,
-)
 from apps.main.modules.vae import LatentVideoVAE, LatentVideoVAEArgs
 from apps.main.modules.plan_transformer import (
     BasePlanTransformer,
@@ -17,8 +14,29 @@ from apps.main.modules.plan_transformer import (
     RMSNorm,
 )
 from apps.main.modules.tokenizer import Tokenizer, TokenizerArgs
+from apps.main.modules.ops import create_causal_mask
+from lingua.transformer import (
+    TransformerBlock,
+    RMSNorm,
+    InitStdFactor,
+    BaseTransformerArgs,
+)
+
 
 logger = logging.getLogger()
+
+
+@dataclass
+class PlanTransformerArgs(BaseTransformerArgs):
+
+    seed: int = 42
+    patch_size: int = 16
+    in_channels: int = 3
+    pre_trained_path: Optional[str] = None
+    text_seqlen: int = 256
+    vocab_size: int = -1
+    attn_type: str = "causal"
+    text_only: bool = True
 
 
 @dataclass
@@ -28,8 +46,25 @@ class ModelArgs:
     tokenizer: TokenizerArgs = field(default_factory=TokenizerArgs)
 
 
+class BaseLanguageTransformer(BasePlanTransformer):
+    def __init__(self, args: PlanTransformerArgs):
+        super().__init__(args)
+
+    def forward(
+        self,
+        h,
+        freqs_cis,
+        attn_impl: str = "sdpa",
+    ):
+        seq_len = h.size(1)
+        mask = create_causal_mask(seq_len, attn_impl, None)
+        for idx, layer in enumerate(self.layers):
+            h = layer(h, freqs_cis, mask=mask, attn_impl=attn_impl)
+        return h
+
+
 class PlanTransformer(
-    BasePlanTransformer
+    BaseLanguageTransformer
 ):  # TODO As planning model is not finished, we use a pure LLAMA model here, we will update this with the latest planning  model
     def __init__(self, args: PlanTransformerArgs):
         super().__init__(args)
@@ -52,7 +87,7 @@ class PlanTransformer(
         x_cap = self.tok_embeddings(batch["cap_token"])
 
         freqs_cis = self.rope_embeddings_cap.freqs_cis[: x_cap.size(1)]
-        h = super().forward(x, freqs_cis, attn_impl=attn_impl)
+        h = super().forward(x_cap, freqs_cis, attn_impl=attn_impl)
 
         return self.norm(h)
 
@@ -117,3 +152,6 @@ class OfflineInference(nn.Module):
         latent_code = self.compressor.encode(image)
         batch["latent_code"] = latent_code
         return batch
+
+    def init_weights(self, args: ModelArgs):
+        self.plan_transformer.init_weights(args.plan_transformer.pre_trained_path)
