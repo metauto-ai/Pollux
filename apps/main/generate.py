@@ -141,9 +141,11 @@ class LatentGenerator(nn.Module):
         pos_conditional_signal, _ = self.prepare_positive_context(
             context, device=cur_device, dtype=cur_type
         )
+        pos_conditional_signal = self.model.token_proj(pos_conditional_signal)
         negative_conditional_signal, layout = self.prepare_negative_context(
             context, device=cur_device, dtype=cur_type
         )
+        negative_conditional_signal = self.model.token_proj(negative_conditional_signal)
         context = torch.cat([pos_conditional_signal, negative_conditional_signal])
         for i, t in enumerate(timesteps):
             latent_model_input = torch.cat([latent] * 2)

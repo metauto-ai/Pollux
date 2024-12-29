@@ -48,6 +48,7 @@ class LatentVideoVAE(nn.Module):
         x = self.vae.encode(x).latent_dist.sample()
         if x.ndim == 5 and x.shape[2] == 1:  # Check if T=1
             x = x.squeeze(2)  # Remove the temporal dimension at index 2
+        x = x * self.vae.config.scaling_factor
         return x  # return 4d image tensor now
 
     @torch.no_grad()
@@ -55,6 +56,7 @@ class LatentVideoVAE(nn.Module):
         if x.ndim == 4:  # Check if the input tensor is 4D, BCHW, image tensor
             x = x.unsqueeze(2)  # Add a temporal dimension (T=1) for video vae
         x = x.to(self.vae.dtype)
+        x = x / self.vae.config.scaling_factor
         x = self.vae.decode(x).sample
         if x.ndim == 5 and x.shape[2] == 1:  # Check if T=1
             x = x.squeeze(2)  # Remove the temporal dimension at index 2

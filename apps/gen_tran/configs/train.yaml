@@ -4,7 +4,8 @@
 version: v0.7
 # From now on, start to align train, data, and model setting with train stage (just finish refactor for dara)
 train_stage: preliminary # options: preliminary, pretraining, posttraining; aligned with data setting
-name: Pollux_v0.7_gen_transformer_preliminary # used for local dump and wandb log
+# name: Pollux_v0.7_gen_transformer_preliminary # used for local dump and wandb log
+name: Pollux_v0.7_MongoDB_ImageNet-1k_debug_mc
 output_dir: /jfs/checkpoints/dump
 dump_dir: '' # No need now
 steps: 1000000
@@ -17,7 +18,7 @@ optim:
     weight_decay: 0.01
 
 distributed:
-    gpus: 0,1,2,3,4,5,6,7,8
+    gpus: 4,5,6,7
     fsdp_type: full_shard
     dp_shard: 8
     dp_replicate: 1
@@ -35,6 +36,8 @@ model:
     num_classes: 1000
     vae:
         pretrained_model_name_or_path: '/jfs/checkpoints/models--tencent--HunyuanVideo/snapshots/2a15b5574ee77888e51ae6f593b2ceed8ce813e5/vae'
+        enable_tiling: false
+        enable_slicing: false
     scheduler:
         num_train_timesteps: 1000
         base_image_seq_len: 256
@@ -88,16 +91,28 @@ data:
     task: class_to_image
     data_name: ILSVRC/imagenet-1k
     source: huggingface
-    batch_size: 128
+    batch_size: 96
     image_size: 256
     num_workers: 8
     split: train
     root_dir: /jfs/data
     cache_dir: /jfs/data/imagenet-1k
-    use: True
+    use: False
 
   - stage: preliminary
     id: 1
+    task: class_to_image
+    data_name: imagenet-1k
+    source: mongodb
+    batch_size: 48 #96
+    image_size: 256
+    num_workers: 8
+    split: train
+    use: True
+
+
+  - stage: preliminary
+    id: 2
     task: class_to_image
     data_name: dummy
     source: local
@@ -110,7 +125,7 @@ data:
     use: False
 
   - stage: pretraining
-    id: 1
+    id: 0
     task: image_generation
     data_name: NucluesIMG-100M
     source: mongodb
@@ -134,10 +149,10 @@ checkpoint:
 
 logging:
     freq: 100
-    wandb:
-        project: Pollux
-        entity: metauto
-        name: ''
+    # wandb:
+    #     project: Pollux
+    #     entity: metauto
+    #     name: ''
 
 env:
     ENABLE_INTRA_NODE_COMM: '0'  # '0' for local machine (otherwise errors happen); '1' for slurmn (need test)

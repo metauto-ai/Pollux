@@ -1,12 +1,18 @@
 import os
 import logging
+import random
+
+import numpy as np
+from PIL import Image
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import List, Dict, Any, Iterator, Optional, TypedDict, Final, Tuple
+
 import datasets
 import numpy as np
 from PIL import Image
-from dataclasses import dataclass
-from pathlib import Path
-from typing import List, Dict, Any, Iterator, Optional, TypedDict, Final
 from pymongo import MongoClient
+from functools import partial
 import torch
 from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms
@@ -14,14 +20,35 @@ from torchvision import transforms
 from apps.main.modules.preprocess import ImageProcessing
 from apps.main.utils.hf_data_load import HFDataLoad
 from apps.main.utils.dummy_data_load import DummyDataLoad
-from apps.main.utils.mongodb_data_load import MongoDBDataLoad
-
+from apps.main.utils.mongodb_data_load import (
+    MongoDBDataLoad,
+    MongoDBImageNetDataLoad,
+    MongoDBCC12MDataLoad,
+)
+from apps.main.utils.sampler import StatefulDistributedSampler
 
 logger = logging.getLogger()
+
+"""
+Deterministic distributed dataloader
+
+    we disbale different random augmentations being applied 
+    by each worker by comment out workder_id now
+    
+    if each dataloader worker should apply different transform randomly,
+    set  seed + workder_id
+"""
+
+
+def worker_init(workder_id, seed):
+    torch.manual_seed(seed)  # + worker_id)
+    np.random.seed(seed)  # + worker_id)
+    random.seed(seed)  # + worker_id)
 
 
 @dataclass
 class DataArgs:
+    # * TODO: Jinjie: we should have seperate configs for data args and dataloader args
     id: str = 0
     data_name: str = (
         "ILSVRC/imagenet-1k"  # Supported values: "ILSVRC/imagenet-1k", "dummy", "NucluesIMG-100M"
@@ -37,6 +64,10 @@ class DataArgs:
     usage: Optional[str] = None  # "class_to_image", "image_generation"
     source: Optional[str] = None  # "huggingface", "mongodb", "local"
     stage: Optional[str] = None  # "preliminary", "pretraining", "posttraining"
+    query: Optional[Dict[str, Any]] = field(
+        default_factory=dict
+    )  # MongoDB query  # MongoDB query
+    retries: Optional[int] = 3  # Number of retries for MongoDB connection
     use: bool = False  # Whether to use this dataset
 
 
@@ -46,30 +77,54 @@ class AutoDataLoader:
         shard_id: int,
         num_shards: int,
         train_stage: str,
+        init_signal_handler: bool,
         data_config: List[DataArgs],
+        # * following args should only be used by dataloader and sampler
+        shuffle: Optional[bool] = True,
+        pin_memory: Optional[bool] = True,
+        drop_last: Optional[bool] = True,
+        seed: Optional[int] = 1024,
     ):
 
         self.shard_id = shard_id
         self.num_shards = num_shards
         self.train_stage = train_stage
         self.data_config = data_config
+        self.init_signal_handler = init_signal_handler
+        # * used by dataloader and sampler
+        self.shuffle = shuffle
+        self.pin_memory = pin_memory
+        self.drop_last = drop_last
+        self.seed = seed
 
     def create_dataloader(self) -> DataLoader:
-
         for dataset_config in self.data_config:
-            if dataset_config.stage == self.train_stage and dataset_config.use:
+            logger.info(
+                f"Initializing dataloader for dataset: {dataset_config.data_name}"
+            )
+            try:
                 if dataset_config.source == "huggingface":
                     return self._create_imagenet_dataloader(dataset_config)
                 elif dataset_config.source == "local":
                     return self._create_dummy_dataloader(dataset_config)
                 elif dataset_config.source == "mongodb":
                     return self._create_mongodb_dataloader(dataset_config)
+                else:
+                    raise ValueError(
+                        f"Unsupported data source: {dataset_config.source}"
+                    )
+            except Exception as e:
+                # NOTE: we need to through the error to the upper level if the dataloader is failed to load
+                logger.error(f"Error initializing dataloader: {str(e)}")
+                raise
 
         raise ValueError(
             f"No dataset configured for stage {self.train_stage} with `use: True`."
         )
 
-    def _create_imagenet_dataloader(self, args: DataArgs) -> DataLoader:
+    def _create_imagenet_dataloader(
+        self, args: DataArgs
+    ) -> Tuple[DataLoader, StatefulDistributedSampler]:
 
         data = HFDataLoad(data_name=args.data_name, cache_dir=args.root_dir)
         train_data = data[args.split]
@@ -79,11 +134,13 @@ class AutoDataLoader:
             f"Read Data with Total Shard: {self.num_shards} Current Index: {self.shard_id} Split: {args.split}"
         )
         train_data = train_data.shard(num_shards=self.num_shards, index=self.shard_id)
-        return DataLoader(
-            train_data, batch_size=args.batch_size, num_workers=args.num_workers
-        )
 
-    def _create_dummy_dataloader(self, args: DataArgs) -> DataLoader:
+        self.dataset = train_data
+        return self._warp_dataloader_with_stateful_sampler(args, train_data)
+
+    def _create_dummy_dataloader(
+        self, args: DataArgs
+    ) -> Tuple[DataLoader, StatefulDistributedSampler]:
 
         dataset = DummyDataLoad(
             num_samples=1000,
@@ -91,20 +148,69 @@ class AutoDataLoader:
             image_size=(3, args.image_size, args.image_size),
             word_count=32,
         )
-        return DataLoader(dataset, batch_size=args.batch_size, shuffle=True)
 
-    def _create_mongodb_dataloader(self, args: DataArgs) -> DataLoader:
+        self.dataset = dataset
+        return self._warp_dataloader_with_stateful_sampler(args, dataset)
 
-        dataset = MongoDBDataLoad(
-            mongo_uri=args.mongo_uri,
-            collection_name=args.data_name,
-            query={"aesthetic_score": {"$gt": 5.5}},
-            shard_id=self.shard_id,
-            num_shards=self.num_shards,
-        )
-        return DataLoader(
+    def _create_mongodb_dataloader(
+        self, args: DataArgs
+    ) -> Tuple[DataLoader, StatefulDistributedSampler]:
+        if args.data_name == "imagenet-1k":
+            dataset = MongoDBImageNetDataLoad(
+                num_shards=self.num_shards,
+                shard_idx=self.shard_id,
+                collection_name=args.data_name,
+                init_signal_handler=self.init_signal_handler,
+                temporal_cache_name=args.data_name,
+                args=args,
+            )
+        elif args.data_name == "cc12m":
+            dataset = MongoDBCC12MDataLoad(
+                collection_name=args.data_name,
+                query=args.query,
+                shard_idx=self.shard_id,
+                num_shards=self.num_shards,
+                temporal_cache_name=args.data_name,
+                init_signal_handler=self.init_signal_handler,
+                extract_field={
+                    "s3url": "image",
+                },
+                args=args,
+            )
+        else:
+            dataset = MongoDBDataLoad(
+                collection_name=args.data_name,
+                query=args.query,
+                shard_idx=self.shard_id,
+                num_shards=self.num_shards,
+                temporal_cache_name=args.data_name,
+                init_signal_handler=self.init_signal_handler,
+            )
+
+        dataset.set_local_cache()
+        dataset.set_sharding()
+        self.dataset = dataset
+        return self._warp_dataloader_with_stateful_sampler(args, dataset)
+
+    def _warp_dataloader_with_stateful_sampler(
+        self, args: DataArgs, dataset: Dataset
+    ) -> Tuple[DataLoader, StatefulDistributedSampler]:
+        sampler = StatefulDistributedSampler(
             dataset,
             batch_size=args.batch_size,
-            num_workers=args.num_workers,
-            shuffle=True,
+            num_replicas=self.num_shards,
+            rank=self.shard_id,
+            shuffle=self.shuffle,
+        )
+        return (
+            DataLoader(
+                dataset,
+                batch_size=args.batch_size,
+                sampler=sampler,
+                worker_init_fn=partial(worker_init, seed=self.seed),
+                drop_last=self.drop_last,
+                pin_memory=self.pin_memory,
+                num_workers=args.num_workers,
+            ),
+            sampler,
         )

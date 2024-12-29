@@ -100,6 +100,17 @@ data:
   - stage: preliminary
     id: 1
     task: class_to_image
+    data_name: imagenet-1k
+    source: mongodb
+    batch_size: 48
+    image_size: 256
+    num_workers: 8
+    split: train
+    use: True
+
+  - stage: preliminary
+    id: 1
+    task: class_to_image
     data_name: dummy
     source: local
     batch_size: 12
@@ -125,16 +136,16 @@ data:
 
 
   - stage: pretraining
-    id: 1
-    task: image_generation
-    data_name: NucluesIMG-100M
+    id: 0
+    task: text_to_image
+    data_name: cc12m
     source: mongodb
-    batch_size: 12
+    batch_size: 64
     image_size: 256
     num_workers: 8
     mongo_uri: mongodb://localhost:27017
     use: False
-
+    retries: 3
 
 profiling:
     run: true

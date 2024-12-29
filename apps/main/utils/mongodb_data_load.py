@@ -3,14 +3,26 @@ import os
 import requests
 import logging
 from typing import Any
+import time
 
-
+import tempfile
 from urllib.parse import quote_plus
 from dotenv import load_dotenv
 from pymongo import MongoClient
 from typing import Final
 from tqdm import tqdm
 from torch.utils.data import Dataset, DataLoader
+from PIL import Image
+from pathlib import Path
+from bson import json_util, ObjectId
+
+
+from apps.main.modules.preprocess import ImageProcessing
+import time
+import random
+
+
+logging.getLogger("pymongo").setLevel(logging.WARNING)
 
 
 load_dotenv()
@@ -22,6 +34,8 @@ MONGODB_PASSWORD: Final[str] = os.environ["MONGODB_PASSWORD"]
 encoded_user = quote_plus(MONGODB_USER)
 encoded_password = quote_plus(MONGODB_PASSWORD)
 MONGODB_URI = f"mongodb+srv://{encoded_user}:{encoded_password}@{MONGODB_URI}"
+LOCAL_TEMP_DIR: Final[str] = "/dev/shm/"
+
 
 
 # TODO: Add the logic of MongoDB data loading here
@@ -43,22 +57,64 @@ class MongoDBDataLoad(Dataset):
         num_shards,
         shard_idx,
         collection_name: str,
+        init_signal_handler: bool,
+        temporal_cache_name: str,
         query: dict[str, Any],
     ) -> None:
         super().__init__()
         assert shard_idx >= 0 and shard_idx < num_shards, "Invalid shard index"
-        self.client = MongoClient(MONGODB_URI)
-        self.db = self.client["world_model"]
+        self.pkl_res = str(
+            Path(LOCAL_TEMP_DIR)
+            / f"{temporal_cache_name}_mongo_{collection_name}_{query}.json"
+        )
+        self.finish_signal = str(
+            Path(LOCAL_TEMP_DIR)
+            / f"{temporal_cache_name}_mongo_{collection_name}_{query}_ready.signal"
+        )
         self.collection_name = collection_name
         self.query = query
-        self.collection = self.db[collection_name]
-        self.data = list(self.collection.find(query))
-        shard_size = len(self.data) // num_shards
-        remainder = len(self.data) % num_shards
-        start = shard_idx * shard_size + min(shard_idx, remainder)
-        end = start + shard_size + (1 if shard_idx < remainder else 0)
+        self.init_signal_handler = init_signal_handler
+        self.num_shards = num_shards
+        self.shard_idx = shard_idx
+        self.data = None
 
+    def set_local_cache(self):
+        if self.init_signal_handler:
+            if os.path.exists(self.finish_signal):
+                with open(f"{self.pkl_res}", "r") as f:
+                    json_data = f.read()
+                self.data = json_util.loads(json_data)
+            else:
+                client = MongoClient(MONGODB_URI)
+                db = client["world_model"]
+                collection = db[self.collection_name]
+                self.data = list(collection.find(self.query))
+                client.close()
+                with open(
+                    self.pkl_res,
+                    "w",
+                ) as temp_file:
+                    logging.info(f"Temporary file in tmpfs: {temp_file.name}")
+                    temp_file.write(json_util.dumps(self.data))
+                open(f"{self.finish_signal}", "w").close()
+        else:
+            logging.info("Waiting for data readiness signal...")
+            while not os.path.exists(self.finish_signal):
+                time.sleep(5)
+            with open(f"{self.pkl_res}", "r") as f:
+                json_data = f.read()
+            self.data = json_util.loads(json_data)
+
+    def set_sharding(self):
+        shard_size = len(self.data) // self.num_shards
+        remainder = len(self.data) % self.num_shards
+        start = self.shard_idx * shard_size + min(self.shard_idx, remainder)
+        end = start + shard_size + (1 if self.shard_idx < remainder else 0)
         self.data = self.data[start:end]
+
+    def clean_buffer(self):
+        os.remove(f"{self.finish_signal}")
+        os.remove(f"{self.pkl_res}")
 
     def __len__(self) -> int:
         return len(self.data)
@@ -66,8 +122,98 @@ class MongoDBDataLoad(Dataset):
     def __getitem__(self, idx: int) -> dict[str, Any]:
         return self.data[idx]
 
-    def __enter__(self):
-        return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        self.client.close()
+class MongoDBImageNetDataLoad(MongoDBDataLoad):
+    def __init__(
+        self,
+        num_shards,
+        shard_idx,
+        collection_name,
+        init_signal_handler,
+        temporal_cache_name,
+        args,
+    ) -> None:
+        if args.split == "train":
+            query = {"split": "train"}
+        elif args.split == "validation":
+            query = {"split": "validation"}
+        else:
+            raise ValueError(f"Invalid split: {args.split}")
+        super().__init__(
+            num_shards=num_shards,
+            shard_idx=shard_idx,
+            collection_name=collection_name,
+            query=query,
+            temporal_cache_name=temporal_cache_name,
+            init_signal_handler=init_signal_handler,
+        )
+        self.image_processing = ImageProcessing(args)
+
+    def __len__(self) -> int:
+        return len(self.data)
+
+    def __getitem__(self, idx: int) -> dict[str, Any]:
+        image_url = self.data[idx]["image"]
+        image = Image.open(image_url)
+        return {
+            "image": self.image_processing.transform(image),
+            "label": self.data[idx]["label"],
+            "caption": self.data[idx]["caption"],
+        }
+
+
+class MongoDBCC12MDataLoad(MongoDBDataLoad):
+    def __init__(
+        self,
+        num_shards,
+        shard_idx,
+        query,
+        collection_name,
+        init_signal_handler,
+        temporal_cache_name,
+        extract_field,
+        args,
+    ) -> None:
+        super().__init__(
+            num_shards=num_shards,
+            shard_idx=shard_idx,
+            collection_name=collection_name,
+            query=query,
+            temporal_cache_name=temporal_cache_name,
+            init_signal_handler=init_signal_handler,
+        )
+        self.image_processing = ImageProcessing(args)
+        self.extract_field = extract_field
+        self.retries = args.retries
+        self.place_holder_image = Image.new("RGB", (args.image_size, args.image_size))
+
+    def __len__(self) -> int:
+        return len(self.data)
+
+    def __getitem__(self, idx: int) -> dict[str, Any]:
+        sample = self.data[idx]
+        return_sample = {}
+        return_sample["_id"] = str(sample["_id"])
+        return_sample["caption"] = sample["caption"]
+        for k, v in self.extract_field.items():
+            imageUrl = sample[k]
+            for attempt in range(self.retries):
+                try:
+                    response = requests.get(imageUrl)
+                    image = Image.open(io.BytesIO(response.content)).convert("RGB")
+                    if random.random() > 0.9:
+                        self.place_holder_image = (
+                            image  # frequently update the placeholder image
+                        )
+                    return_sample[v] = self.image_processing.transform(image)
+                    break
+                except Exception as e:
+                    logging.warning(
+                        f"Attempt {attempt + 1}/{self.retries} - Error loading image: {e}"
+                    )
+                    if attempt == self.retries - 1:
+                        image = self.place_holder_image
+                        return_sample[v] = self.image_processing.transform(image)
+                        return_sample["_id"] = "-1"
+                        return_sample["caption"] = ""
+        return return_sample

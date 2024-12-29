@@ -4,13 +4,14 @@ python -m apps.main.test
 
 import logging
 from torchvision.utils import save_image
-from apps.main.data import DataLoaderFactory, DataArgs
 from apps.main.modules.vae import LatentVideoVAEArgs
 from apps.main.modules.schedulers import SchedulerArgs
 from apps.main.modules.gen_transformer import GenTransformerArgs
 from apps.main.modules.plan_transformer import PlanTransformerArgs
 from apps.main.modules.tokenizer import TokenizerArgs
 from apps.main.model import ModelArgs, Pollux
+from dotenv import load_dotenv
+from apps.main.data import AutoDataLoader, DataArgs
 
 # Configure logging
 logging.basicConfig(
@@ -22,7 +23,7 @@ logging.basicConfig(
 if __name__ == "__main__":
     # Define model arguments
     vae_arg = LatentVideoVAEArgs(
-        pretrained_model_name_or_path="/jfs/checkpoints/Flux-dev"
+        pretrained_model_name_or_path="/jfs/checkpoints/models--tencent--HunyuanVideo/snapshots/2a15b5574ee77888e51ae6f593b2ceed8ce813e5/vae",
     )
     scheduler_arg = SchedulerArgs(
         num_train_timesteps=1000,
@@ -40,7 +41,7 @@ if __name__ == "__main__":
         n_kv_heads=8,
         n_layers=16,
         patch_size=2,
-        in_channels=16,
+        in_channels=32,
         gen_seqlen=1000,  # for video/image
         attn_type="bi_causal",
         text_seqlen=256,
@@ -56,7 +57,7 @@ if __name__ == "__main__":
         n_layers=16,
         ada_dim=2048,
         patch_size=2,
-        in_channels=32,
+        in_channels=16,
         out_channels=16,
         tmb_size=256,
         gen_seqlen=1000,
@@ -79,38 +80,61 @@ if __name__ == "__main__":
     )
 
     # Define data arguments and DataLoaderFactory
-    data_config = {
+
+    data_config_dict = {
         "data": {
             "preliminary": {
-                "ILSVRC/imagenet-1k": {
+                "cc12m": {
                     "use": True,
-                    "data_name": "ILSVRC/imagenet-1k",
+                    "data_name": "cc12m",
                     "batch_size": 12,
                     "image_size": 256,
                     "num_workers": 8,
                     "split": "train",
-                    "root_dir": "/jfs/data",
-                    "cache_dir": "/jfs/data/imagenet-1k",
-                    "source": "huggingface",
+                    "source": "mongodb",
                     "task": "class_to_image",
+                    "retries": 3,
                 }
             }
         }
     }
+
+    data_config = [
+        DataArgs(
+            stage=stage,
+            use=config["use"],
+            data_name=config["data_name"],
+            batch_size=config["batch_size"],
+            image_size=config["image_size"],
+            num_workers=config["num_workers"],
+            split=config["split"],
+            source=config["source"],
+            task=config["task"],
+        )
+        for stage, datasets in data_config_dict["data"].items()
+        for dataset_name, config in datasets.items()
+    ]
     dp_rank = 0
     dp_degree = 1
-    data_loader_factory = DataLoaderFactory(dp_rank, dp_degree, data_config)
-    data_loader = data_loader_factory.create_dataloader("preliminary")
-
+    data_loader_factory = AutoDataLoader(
+        dp_rank,
+        dp_degree,
+        train_stage="preliminary",
+        init_signal_handler=True,
+        data_config=data_config,
+    )
+    data_loader, _ = data_loader_factory.create_dataloader()
+    print(len(data_loader))
+    data_loader_factory.dataset.clean_buffer()
     # Initialize model
-    model = Pollux(model_arg)
-    model.cuda()
+    # model = Pollux(model_arg)
+    # model.cuda()
 
     # Run test
     for batch in data_loader:
-        print(batch)
-        batch["image"] = batch["image"].cuda()
+        logging.warning(batch)
+        # batch["image"] = batch["image"].cuda()
 
         # Forward pass
-        model(batch)
+        # model(batch)
         break

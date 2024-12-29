@@ -30,7 +30,7 @@ from pathlib import Path
 from timeit import default_timer as timer
 from typing import Any, Dict, List, Optional
 
-
+from apps.main.utils.sampler import StatefulDistributedSampler
 from lingua.args import dump_config, flatten_dict, dataclass_from_dict
 from lingua.checkpoint import CheckpointArgs, CheckpointManager, load_from_checkpoint
 from lingua.distributed import (
@@ -41,6 +41,7 @@ from lingua.distributed import (
     get_device_mesh,
     get_is_master,
     get_world_size,
+    get_local_rank,
     parallelize_model,
     setup_env,
     setup_torch_distributed,
@@ -117,22 +118,27 @@ class TrainState(Stateful):
     step: int  # Nb of steps taken by the optimizer
     acc_step: int  # Nb of accumulation steps done since last optimizer step
     scheduler: lr_scheduler.LambdaLR
-    # data_loader_state: PackTokensState
-    # TODO: StatefulDataloader
+    sampler: StatefulDistributedSampler
 
     def state_dict(self) -> Dict[str, Any]:
         return {
             "step": self.step,
             "acc_step": self.acc_step,
-            # "data_loader_state": self.data_loader_state,
+            "sampler": self.sampler.state_dict(self.step),
             "scheduler": self.scheduler.state_dict(),
         }
 
     def load_state_dict(self, state_dict):
         self.step = state_dict["step"]
         self.acc_step = state_dict["acc_step"]
-        # self.data_loader_state = PackTokensState(**state_dict["data_loader_state"])
+        self.sampler.load_state_dict(state_dict["sampler"])
         self.scheduler.load_state_dict(state_dict["scheduler"])
+        logger.info(
+            f"Resume training with distributed sampler state to {self.sampler.start_index} local step."
+        )
+        logger.info(
+            "TrainState is loading state_dict: step, acc-step, sampler, scheduler are loaded."
+        )
 
 
 def validate_train_args(args: TrainArgs):
@@ -305,12 +311,28 @@ def train(args: TrainArgs):
         )
         logger.info(f"GPU memory usage: {gpu_memory_monitor}")
 
+        active_data = [d for d in args.data if d.stage == args.train_stage and d.use]
+        data_loader_factory = AutoDataLoader(
+            shard_id=dp_rank,
+            num_shards=dp_degree,
+            train_stage=args.train_stage,
+            init_signal_handler=get_local_rank() == 0,
+            data_config=active_data,  # Pass the filtered data configuration
+        )
+        data_loader, sampler = data_loader_factory.create_dataloader()
+
+        torch.distributed.barrier()
+        if get_local_rank() == 0 and hasattr(
+            data_loader_factory.dataset, "clean_buffer"
+        ):
+            data_loader_factory.dataset.clean_buffer()
+
         # build optimizer after apply parallelisms to the model
         optimizer, scheduler = build_optimizer(model, args.optim, args.steps)
         train_state = TrainState(
             step=0,
             acc_step=0,
-            # data_loader_state=data_loader_state,
+            sampler=sampler,
             scheduler=scheduler,
         )
 
@@ -329,15 +351,6 @@ def train(args: TrainArgs):
             maybe_run_profiler(args.dump_dir, model, args.profiling)
         )
 
-        active_data = [d for d in args.data if d.stage == args.train_stage and d.use]
-        data_loader_factory = AutoDataLoader(
-            shard_id=dp_rank,
-            num_shards=dp_degree,
-            train_stage=args.train_stage,
-            data_config=active_data,  # Pass the filtered data configuration
-        )
-        data_loader = data_loader_factory.create_dataloader()
-
         dataloader_iterator = iter(data_loader)
         nwords_since_last_log = 0
         time_last_log = timer()
@@ -355,6 +368,7 @@ def train(args: TrainArgs):
                 batch = next(dataloader_iterator)
             except:
                 logger.info("New Epoch!")
+                sampler.reset()
                 dataloader_iterator = iter(data_loader)
                 batch = next(dataloader_iterator)
 
@@ -364,7 +378,6 @@ def train(args: TrainArgs):
                 # run the GC at different times so they slow down the whole pipeline
                 gc.collect()
             batch["image"] = batch["image"].cuda()
-            batch["label"] = batch["label"].cuda()
             data_load_time = round(timer() - data_load_start, 4)
             nwords_since_last_log += batch["image"].numel()
 

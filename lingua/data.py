@@ -61,6 +61,7 @@ Both can be called with a resume_state to resume from any given position determi
 
 TRAIN_DATA_FILE_PATTERN = "*.chunk.*.jsonl"
 
+
 class JSONLState(TypedDict):
     """Represents the current state of a JSON line reader.
 
@@ -466,7 +467,9 @@ def batch_and_shuffle_prefetched_sequences(
         idx = (idx + 1) % prefetch_size
 
 
-def find_and_sanitize_chunks(dataset_path: str, world_size: int, file_pattern: str = TRAIN_DATA_FILE_PATTERN):
+def find_and_sanitize_chunks(
+    dataset_path: str, world_size: int, file_pattern: str = TRAIN_DATA_FILE_PATTERN
+):
     dataset_chunks = [str(p) for p in Path(dataset_path).glob(file_pattern)]
     n_chunks = len(dataset_chunks)
 
@@ -483,7 +486,9 @@ def find_and_sanitize_chunks(dataset_path: str, world_size: int, file_pattern: s
     return dataset_chunks
 
 
-def distribute_data_to_rank(dataset_path: str, rank: int, world_size: int, file_pattern: str):
+def distribute_data_to_rank(
+    dataset_path: str, rank: int, world_size: int, file_pattern: str
+):
     """
     Distributes the chunk files in a dataset path to each worker.
     If world_size is smaller than the number of chunks, the extra chunks are discarded.
@@ -550,10 +555,15 @@ def init_state(
     add_eos: bool,
     tokenizer_name: str,
     tokenizer_path: Optional[str] = None,
-    file_pattern: str = TRAIN_DATA_FILE_PATTERN
+    file_pattern: str = TRAIN_DATA_FILE_PATTERN,
 ):
     multi_choice_state = init_choice_state(
-        root_dir=root_dir, sources=sources, seed=seed, rank=rank, world_size=world_size, file_pattern=file_pattern
+        root_dir=root_dir,
+        sources=sources,
+        seed=seed,
+        rank=rank,
+        world_size=world_size,
+        file_pattern=file_pattern,
     )
     tokenizer_state = TokenizerState(
         it_state=multi_choice_state,
