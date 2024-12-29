@@ -246,8 +246,10 @@ class GenTransformer(BaseDiffusionTransformer):
         )
         self.ada_dim = args.ada_dim
         self.dim = args.dim
-        self.img_cond_token = nn.Parameter(torch.zeros(1, 1, self.dim))
-        self.cap_cond_token = nn.Parameter(torch.zeros(1, 1, self.dim))
+        # [BEGING_OF_TEXT, END_OF_TEXT, BEGIN_OF_IMAGE, END_OF_IMAGE]
+        self.bot_token = nn.Parameter(torch.zeros(1, 1, self.dim))
+        self.eot_token = nn.Parameter(torch.zeros(1, 1, self.dim))
+        #self.cap_cond_token = nn.Parameter(torch.zeros(1, 1, self.dim))
         self.norm = RMSNorm(args.dim, eps=args.norm_eps)
 
     def patchify_and_embed_image(
@@ -275,26 +277,39 @@ class GenTransformer(BaseDiffusionTransformer):
         x: torch.Tensor,
         time_steps: torch.Tensor,
         condition: torch.Tensor,
-        layout: Dict[str, int],
+        #layout: Dict[str, int],
         attn_impl: str = "sdpa",
     ):
         x, img_size, freqs_cis_img = self.patchify_and_embed_image(x)
         x_l = x.size(1)
-        c_l = condition.size(1)
-        indicator = torch.cat(
+        modulation_signal = self.tmb_embed(time_steps)
+
+        
+        # indicator = torch.cat(
+        #     [
+        #         torch.cat([self.cap_cond_token] * layout["cap"], dim=1),
+        #         torch.cat([self.img_cond_token] * layout["img"], dim=1),
+        #     ],
+        #     dim=1,
+        # )
+        # condition = condition + indicator
+
+        condition_ = torch.cat(
             [
-                torch.cat([self.cap_cond_token] * layout["cap"], dim=1),
-                torch.cat([self.img_cond_token] * layout["img"], dim=1),
+                self.bot_token.repeat(len(condition), 1, 1),
+                condition.unsqueeze(1),
+                self.eot_token.repeat(len(condition), 1, 1),
             ],
             dim=1,
         )
-        condition = condition + indicator
+
+        c_l = condition_.size(1)
+
         freqs_cis_img = freqs_cis_img.to(x.device)
         freqs_cis_cond = self.rope_embeddings_conditions.freqs_cis[:c_l].to(x.device)
         x = torch.cat([condition, x], dim=1)
         freqs_cis = torch.cat([freqs_cis_cond, freqs_cis_img], dim=0)
 
-        modulation_signal = self.tmb_embed(time_steps)
 
         h = super().forward(x, freqs_cis, modulation_signal, attn_impl=attn_impl)
 
@@ -333,5 +348,7 @@ class GenTransformer(BaseDiffusionTransformer):
             a=-3 * init_std,
             b=3 * init_std,
         )
-        nn.init.normal_(self.img_cond_token, std=0.02)
-        nn.init.normal_(self.cap_cond_token, std=0.02)
+        # nn.init.normal_(self.img_cond_token, std=0.02)
+        # nn.init.normal_(self.cap_cond_token, std=0.02)
+        nn.init.normal_(self.bot_token, std=0.02)
+        nn.init.normal_(self.eot_token, std=0.02)

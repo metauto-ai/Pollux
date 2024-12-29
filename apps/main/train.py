@@ -59,8 +59,7 @@ from lingua.profiling import ProfilerArgs, maybe_run_profiler
 
 from apps.main.data import AutoDataLoader, DataArgs
 from apps.main.modules.schedulers import SchedulerArgs
-from apps.main.utils.sampler import StatefulDistributedSampler
-from apps.main.modules.plan_transformer import get_num_flop_per_token
+from apps.main.utils.sampler import StatefulDistributedSampler 
 from apps.main.model import (
     Pollux,
     ModelArgs,
@@ -89,7 +88,7 @@ class TrainArgs:
     output_dir: str = "/mnt/data/dump"
     dump_dir: str = ""
     seed: int = 42
-    shuffle: bool = False  # NOTE: detect the step = 0 to shuffle otherwise not shuffle
+    #shuffle: bool = False  # NOTE: detect the step = 0 to shuffle otherwise not shuffle
 
     # Number of gradient accumulation steps
     # Total batch size is batch_size*grad_acc_steps
@@ -125,7 +124,7 @@ class TrainState(Stateful):
 
     def state_dict(self) -> Dict[str, Any]:
         return {
-            "epoch": self.sampler.epoch,
+            #"epoch": self.sampler.epoch,
             "step": self.step,
             "acc_step": self.acc_step,
             "sampler": self.sampler.state_dict(self.step),

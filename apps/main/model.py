@@ -21,12 +21,13 @@ from apps.main.modules.gen_transformer import (
     GenTransformer,
     GenTransformerArgs,
 )
-from apps.main.modules.plan_transformer import (
-    PlanTransformer,
-    PlanTransformerArgs,
+from apps.main.modules.vlm import (
+    PolluxVL,
+    PolluxVLArgs,
 )
 from apps.main.modules.vae import LatentVideoVAE, LatentVideoVAEArgs
 from apps.main.modules.preprocess import random_mask_images
+from apps.main.modules.embedder import LabelEmbedder
 
 logger = logging.getLogger()
 
@@ -34,13 +35,14 @@ logger = logging.getLogger()
 @dataclass
 class ModelArgs:
     gen_transformer: GenTransformerArgs = field(default_factory=GenTransformerArgs)
-    plan_transformer: PlanTransformerArgs = field(default_factory=PlanTransformerArgs)
+    plan_transformer: PolluxVLArgs = field(default_factory=PolluxVLArgs)
     vae: LatentVideoVAEArgs = field(default_factory=LatentVideoVAEArgs)
     scheduler: SchedulerArgs = field(default_factory=SchedulerArgs)
     tokenizer: TokenizerArgs = field(default_factory=TokenizerArgs)
     text_cfg_ratio: float = 0.1
     image_cfg_ratio: float = 0.1
     mask_patch: int = 16
+    num_classes: int = 1000
 
 
 class Pollux(nn.Module):
@@ -56,21 +58,36 @@ class Pollux(nn.Module):
         self.compressor = LatentVideoVAE(args.vae)
         self.scheduler = RectifiedFlow(args.scheduler)
         self.gen_transformer = GenTransformer(args.gen_transformer)
-        self.tokenizer = Tokenizer(model_path=args.tokenizer.model_path)
+        # self.tokenizer = Tokenizer(model_path=args.tokenizer.model_path)
 
-        assert args.plan_transformer.vocab_size == self.tokenizer.n_words
+        # assert args.plan_transformer.vocab_size == self.tokenizer.n_words
 
-        self.plan_transformer = PlanTransformer(args.plan_transformer)
-        self.text_seqlen = self.plan_transformer.text_seqlen
-        self.text_cfg_ratio = args.text_cfg_ratio
+        if args.plan_transformer.text_only:
+            self.plan_transformer = LabelEmbedder(
+                num_classes=args.num_classes,
+                hidden_size=args.gen_transformer.dim,
+                dropout_prob=args.image_cfg_ratio,
+            )
+        else:
+            #self.plan_transformer = PolluxVL(args.plan_transformer)
+            logger.error(f"Please wait for this feature. Will add soon.")
+
+
+        #self.text_seqlen = self.plan_transformer.text_seqlen
+        #self.text_cfg_ratio = args.text_cfg_ratio
         self.image_cfg_ratio = args.image_cfg_ratio
-        self.mask_patch = args.mask_patch
+        # self.mask_patch = args.mask_patch
+        # self.token_proj = nn.Linear(
+        #     in_features=args.plan_transformer.dim,
+        #     out_features=args.gen_transformer.dim,
+        #     bias=False,
+        # )
         self.token_proj = nn.Linear(
-            in_features=args.plan_transformer.dim,
+            in_features=args.gen_transformer.dim,
             out_features=args.gen_transformer.dim,
             bias=False,
         )
-        init_std = self.plan_transformer.dim ** (-0.5)
+        init_std = self.gen_transformer.dim ** (-0.5)
         nn.init.trunc_normal_(
             self.token_proj.weight,
             mean=0.0,
@@ -78,6 +95,7 @@ class Pollux(nn.Module):
             a=-3 * init_std,
             b=3 * init_std,
         )
+        self.plan_transformer.reset_parameters()
 
     def cap_pos_tokenize(self, batch: dict[str:any]) -> dict[str:any]:
         batch["cap_token"] = [
@@ -122,29 +140,41 @@ class Pollux(nn.Module):
     def forward(self, batch: dict[str:any]) -> dict[str:any]:
 
         image = batch["image"]
-        batch = self.cap_tokenize(batch)
-
-        mask, masked_image = random_mask_images(
-            image,
-            mask_ratio=random.random(),
-            mask_patch=self.mask_patch,
-            mask_all=random.random() < self.image_cfg_ratio,
-        )
-
-        latent_masked_code = self.compressor.encode(masked_image)
-
-        _, c, h, w = latent_masked_code.size()
-        resized_mask = F.interpolate(mask, size=(h, w), mode="nearest")
-        resized_mask = torch.cat([resized_mask] * c, dim=1)
-        batch["masked_latent"] = torch.cat([latent_masked_code, resized_mask], dim=1)
-        conditional_signal, layout = self.plan_transformer(batch)
-
+        #batch = self.cap_tokenize(batch)
+        conditional_signal = self.plan_transformer(batch["label"], train=True)
         latent_code = self.compressor.encode(image)
         conditional_signal = self.token_proj(conditional_signal)
         noised_x, t, target = self.scheduler.sample_noised_input(latent_code)
+
+
+        # mask, masked_image = random_mask_images(
+        #     image,
+        #     mask_ratio=random.random(),
+        #     mask_patch=self.mask_patch,
+        #     mask_all=random.random() < self.image_cfg_ratio,
+        # )
+
         output = self.gen_transformer(
-            x=noised_x, time_steps=t, condition=conditional_signal, layout=layout
+            x=noised_x, time_steps=t, condition=conditional_signal
         )
+
+        #latent_masked_code = self.compressor.encode(masked_image)
+
+        # _, c, h, w = latent_masked_code.size()
+        # resized_mask = F.interpolate(mask, size=(h, w), mode="nearest")
+        # resized_mask = torch.cat([resized_mask] * c, dim=1)
+        # batch["masked_latent"] = torch.cat([latent_masked_code, resized_mask], dim=1)
+        # conditional_signal, layout = self.plan_transformer(batch)
+
+        # latent_code = self.compressor.encode(image)
+        # conditional_signal = self.token_proj(conditional_signal)
+        # noised_x, t, target = self.scheduler.sample_noised_input(latent_code)
+        # output = self.gen_transformer(
+        #     x=noised_x, time_steps=t, condition=conditional_signal, layout=layout
+        # )
+
+
+
         batch["prediction"] = output
         batch["target"] = target
         target = target.to(output.dtype)
@@ -162,7 +192,7 @@ class Pollux(nn.Module):
 
     def init_weights(self, args: ModelArgs):
         self.gen_transformer.init_weights(args.gen_transformer.pre_trained_path)
-        self.plan_transformer.init_weights(args.plan_transformer.pre_trained_path)
+        #self.plan_transformer.init_weights(args.plan_transformer.pre_trained_path)
 
 
 # Optional policy for activation checkpointing. With None, we stick to the default (defined distributed.py: default_no_recompute_ops)
@@ -177,8 +207,8 @@ def build_fsdp_grouping_plan(model_args: ModelArgs, vae_config: dict):
     for i in range(len(vae_config.down_block_types)):
         group_plan.append((f"compressor.vae.encoder.down_blocks.{i}", False))
 
-    for i in range(model_args.plan_transformer.n_layers):
-        group_plan.append((f"plan_transformer.layers.{i}", False))
+    # for i in range(model_args.plan_transformer.n_layers):
+    #     group_plan.append((f"plan_transformer.layers.{i}", False))
 
     for i in range(model_args.gen_transformer.n_layers):
         group_plan.append((f"gen_transformer.layers.{i}", False))
@@ -191,11 +221,11 @@ def build_fsdp_grouping_plan(model_args: ModelArgs, vae_config: dict):
 
 def tp_parallelize(model, tp_mesh, model_args: ModelArgs, distributed_args):
 
-    assert model_args.plan_transformer.dim % distributed_args.tp_size == 0
-    assert model_args.plan_transformer.vocab_size % distributed_args.tp_size == 0
-    assert model_args.plan_transformer.n_heads % distributed_args.tp_size == 0
-    assert (model_args.plan_transformer.n_kv_heads or 0) % distributed_args.tp_size == 0
-    assert model_args.plan_transformer.n_heads % (model_args.n_kv_heads or 1) == 0
+    # assert model_args.plan_transformer.dim % distributed_args.tp_size == 0
+    # assert model_args.plan_transformer.vocab_size % distributed_args.tp_size == 0
+    # assert model_args.plan_transformer.n_heads % distributed_args.tp_size == 0
+    # assert (model_args.plan_transformer.n_kv_heads or 0) % distributed_args.tp_size == 0
+    # assert model_args.plan_transformer.n_heads % (model_args.n_kv_heads or 1) == 0
 
     assert model_args.gen_transformer.dim % distributed_args.tp_size == 0
     assert model_args.gen_transformer.vocab_size % distributed_args.tp_size == 0

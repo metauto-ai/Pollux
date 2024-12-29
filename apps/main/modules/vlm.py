@@ -26,7 +26,7 @@ logger = logging.getLogger()
 
 
 @dataclass
-class PlanTransformerArgs(BaseTransformerArgs):
+class PolluxVLArgs(BaseTransformerArgs):
 
     seed: int = 42
     patch_size: int = 16
@@ -38,6 +38,7 @@ class PlanTransformerArgs(BaseTransformerArgs):
     text_seqlen: int = 256
     gen_seqlen: int = 256
     vocab_size: int = -1
+    text_only: bool = False
 
 
 def create_multimodal_mask(
@@ -78,8 +79,8 @@ def create_multimodal_mask(
     return mask
 
 
-class BasePlanTransformer(nn.Module):
-    def __init__(self, args: PlanTransformerArgs):
+class BasePolluxVL(nn.Module):
+    def __init__(self, args: PolluxVLArgs):
         super().__init__()
         self.dim = args.dim
         self.init_base_std = args.init_base_std
@@ -91,6 +92,7 @@ class BasePlanTransformer(nn.Module):
         assert not (args.n_layers % 2 != 0)
         for _ in range(args.n_layers):
             self.layers.append(TransformerBlock(args))
+        self.text_only = args.text_only
 
     def forward(
         self,
@@ -158,8 +160,8 @@ class BasePlanTransformer(nn.Module):
             logger.warning(f"Unexpected keys: {unexpected_keys}")
 
 
-class PlanTransformer(BasePlanTransformer):
-    def __init__(self, args: PlanTransformerArgs):
+class PolluxVL(BasePolluxVL):
+    def __init__(self, args: PolluxVLArgs):
         super().__init__(args)
 
         self.text_seqlen = args.text_seqlen
