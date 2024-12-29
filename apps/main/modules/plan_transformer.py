@@ -75,6 +75,7 @@ def create_multimodal_mask(
         for j in range(img2_start, img2_end):
             mask[i, j] = True
 
+
 @dataclass
 class PlanTransformerArgs(BaseTransformerArgs):
 
