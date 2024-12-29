@@ -1,11 +1,12 @@
-# torchrun --standalone --nnodes 1 --nproc-per-node 4 -m apps.main.train config=apps/main/configs/pollux_v0.6.yaml
+# torchrun --standalone --nnodes 1 --nproc-per-node 8 -m apps.gen_tran.train config=apps/gen_tran/configs/train.yaml
 
 # Set up single experiment
 version: v0.7
 # From now on, start to align train, data, and model setting with train stage (just finish refactor for dara)
 train_stage: preliminary # options: preliminary, pretraining, posttraining; aligned with data setting
-name: Pollux_v0.7_hunyuan_tvae # used for local dump and wandb log
-output_dir: /jfs/jinjie/code/Pollux/downloads/dump
+# name: Pollux_v0.7_gen_transformer_preliminary # used for local dump and wandb log
+name: Pollux_v0.7_MongoDB_ImageNet-1k_Debug
+output_dir: /jfs/jinjie/code/downloads/dump
 dump_dir: '' # No need now
 steps: 1000000
 seed: 777
@@ -17,9 +18,9 @@ optim:
     weight_decay: 0.01
 
 distributed:
-    gpus: 0,1,2,3
+    gpus: 0,1,2,3,4,5,6,7
     fsdp_type: full_shard
-    dp_shard: 4
+    dp_shard: 8
     dp_replicate: 1
     compile: false
     model_dtype: bf16 # options: `fb8` is only supported by H100
@@ -30,10 +31,13 @@ distributed:
 
 model:
     text_cfg_ratio: 0.1
-    image_cfg_ratio: 0.5
+    image_cfg_ratio: 0.1
     mask_patch: 16
+    num_classes: 1000
     vae:
-        pretrained_model_name_or_path: '/jfs/checkpoints/Flux-dev'
+        pretrained_model_name_or_path: '/jfs/checkpoints/models--tencent--HunyuanVideo/snapshots/2a15b5574ee77888e51ae6f593b2ceed8ce813e5/vae'
+        enable_tiling: false
+        enable_slicing: false
     scheduler:
         num_train_timesteps: 1000
         base_image_seq_len: 256
@@ -87,16 +91,28 @@ data:
     task: class_to_image
     data_name: ILSVRC/imagenet-1k
     source: huggingface
-    batch_size: 12
+    batch_size: 96
     image_size: 256
     num_workers: 8
     split: train
     root_dir: /jfs/data
     cache_dir: /jfs/data/imagenet-1k
-    use: True
+    use: False
 
   - stage: preliminary
     id: 1
+    task: class_to_image
+    data_name: imagenet-1k
+    source: mongodb
+    batch_size: 96
+    image_size: 256
+    num_workers: 8
+    split: train
+    use: True
+
+
+  - stage: preliminary
+    id: 2
     task: class_to_image
     data_name: dummy
     source: local
@@ -109,7 +125,7 @@ data:
     use: False
 
   - stage: pretraining
-    id: 1
+    id: 0
     task: image_generation
     data_name: NucluesIMG-100M
     source: mongodb
@@ -133,11 +149,10 @@ checkpoint:
 
 logging:
     freq: 100
-    wandb:
-        project: Pollux
-        # entity: metauto
-        name: ''
-        dir: /jfs/jinjie/code/Pollux/downloads/dump/wandb
+    # wandb:
+    #     project: Pollux
+    #     entity: metauto
+    #     name: ''
 
 env:
     ENABLE_INTRA_NODE_COMM: '0'  # '0' for local machine (otherwise errors happen); '1' for slurmn (need test)
