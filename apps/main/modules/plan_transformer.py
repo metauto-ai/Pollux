@@ -146,7 +146,6 @@ class RotaryEmbedding2D(torch.nn.Module):
             return self.freqs_cis[0:seqlen]
 
 
-
 @dataclass
 class PlanTransformerArgs(BaseTransformerArgs):
 
@@ -158,7 +157,6 @@ class PlanTransformerArgs(BaseTransformerArgs):
     text_seqlen: int = 256
     gen_seqlen: int = 256
     vocab_size: int = -1
-
 
 
 class BasePlanTransformer(nn.Module):

@@ -10,9 +10,12 @@ from torch import nn
 
 from apps.main.utils.imagenet_classes import IMAGENET2012_CLASSES
 
+
 @dataclass
 class DataArgs:
-    data_name: str = "ILSVRC/imagenet-1k"  # Supported values: "ILSVRC/imagenet-1k", "dummy", "NucluesIMG-100M"
+    data_name: str = (
+        "ILSVRC/imagenet-1k"  # Supported values: "ILSVRC/imagenet-1k", "dummy", "NucluesIMG-100M"
+    )
     batch_size: int = 12
     num_workers: int = 8
     image_size: int = 256
@@ -24,7 +27,9 @@ class DataArgs:
     source: Optional[str] = None  # "huggingface", "mongodb", "local"
     stage: Optional[str] = None  # "preliminary", "pretraining", "posttraining"
 
+
 ######################## FOR IMAGE ########################
+
 
 class ImageProcessing(nn.Module):
     def __init__(self, args: DataArgs) -> nn.Module:
@@ -66,6 +71,7 @@ class ImageProcessing(nn.Module):
             caption_list.append(cap)
         data["caption"] = caption_list
         return data
+
 
 def random_mask_images(img_tensor, mask_ratio, mask_patch, mask_all=False):
     """

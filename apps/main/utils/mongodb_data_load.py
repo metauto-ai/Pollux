@@ -3,8 +3,9 @@ import os
 import requests
 import logging
 from typing import Any
+import time
 
-
+import tempfile
 from urllib.parse import quote_plus
 from dotenv import load_dotenv
 from pymongo import MongoClient
@@ -12,12 +13,14 @@ from typing import Final
 from tqdm import tqdm
 from torch.utils.data import Dataset, DataLoader
 from PIL import Image
-from apps.main.modules.preprocessing import ImageProcessing
 from pathlib import Path
-import tempfile
 from bson import json_util, ObjectId
+
+
+from apps.main.modules.preprocessing import ImageProcessing
 import time
 import random
+
 
 logging.getLogger("pymongo").setLevel(logging.WARNING)
 
