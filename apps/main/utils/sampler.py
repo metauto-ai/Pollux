@@ -10,8 +10,8 @@ import torch
 import torch.distributed as dist
 from torch.utils.data import Dataset, Sampler
 
-class StatefulDistributedSampler(Sampler):
 
+class StatefulDistributedSampler(Sampler):
 
     def __init__(
         self,
@@ -55,20 +55,19 @@ class StatefulDistributedSampler(Sampler):
         self.rank = rank
         self.epoch = 0
         self.drop_last = drop_last
-        
+
         # * no need to consider sharding
         self.num_samples = len(self.dataset)
         self.total_size = self.num_samples
         self.shuffle = shuffle
         self.seed = seed
-         
+
         # * most important variable, dataset traverse pointer
         self.start_index: int = 0
         self.shard_id = rank
         self.num_shard = num_replicas
         self.shuffle = shuffle
         self.save_dir = save_dir
-
 
     def __iter__(self) -> Iterator:
         if self.shuffle:
@@ -91,10 +90,10 @@ class StatefulDistributedSampler(Sampler):
         else:
             # remove tail of data to make it evenly divisible.
             indices = indices[: self.total_size]
-            
+
         assert len(indices) == self.total_size
         assert len(indices) == self.num_samples
-        
+
         # * clip index list from start from state
         indices = indices[self.start_index :]
         return iter(indices)
@@ -142,7 +141,7 @@ class StatefulDistributedSampler(Sampler):
 
         # NOTE: For safety, it is better we save the minimal info,
         # e.g., start index, seed, shuffle, global step for recovery.
-        state = {
+        state_set_info = {
             "start_index": self.start_index,
             "seed": self.seed,
             "shuffle": self.shuffle,
@@ -156,7 +155,7 @@ class StatefulDistributedSampler(Sampler):
         state_path = os.path.join(
             timestamped_dir, f"sampler_state_rank_{self.shard_id}.pth"
         )
-        torch.save(state, state_path)
+        torch.save(state_set_info, state_path)
 
     def set_epoch(self, epoch: int) -> None:
         r"""
