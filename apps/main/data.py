@@ -69,6 +69,7 @@ class DataArgs:
     )  # MongoDB query  # MongoDB query
     retries: Optional[int] = 3  # Number of retries for MongoDB connection
     use: bool = False  # Whether to use this dataset
+    partition_key: str = "key"  # MongoDB partition key
 
 
 class AutoDataLoader:
@@ -77,7 +78,6 @@ class AutoDataLoader:
         shard_id: int,
         num_shards: int,
         train_stage: str,
-        init_signal_handler: bool,
         data_config: List[DataArgs],
         # * following args should only be used by dataloader and sampler
         shuffle: Optional[bool] = True,
@@ -90,7 +90,6 @@ class AutoDataLoader:
         self.num_shards = num_shards
         self.train_stage = train_stage
         self.data_config = data_config
-        self.init_signal_handler = init_signal_handler
         # * used by dataloader and sampler
         self.shuffle = shuffle
         self.pin_memory = pin_memory
@@ -160,8 +159,8 @@ class AutoDataLoader:
                 num_shards=self.num_shards,
                 shard_idx=self.shard_id,
                 collection_name=args.data_name,
-                init_signal_handler=self.init_signal_handler,
                 temporal_cache_name=args.data_name,
+                partition_key=args.partition_key,
                 args=args,
             )
         elif args.data_name == "cc12m":
@@ -171,10 +170,10 @@ class AutoDataLoader:
                 shard_idx=self.shard_id,
                 num_shards=self.num_shards,
                 temporal_cache_name=args.data_name,
-                init_signal_handler=self.init_signal_handler,
                 extract_field={
                     "s3url": "image",
                 },
+                partition_key=args.partition_key,
                 args=args,
             )
         else:
@@ -184,11 +183,10 @@ class AutoDataLoader:
                 shard_idx=self.shard_id,
                 num_shards=self.num_shards,
                 temporal_cache_name=args.data_name,
-                init_signal_handler=self.init_signal_handler,
+                partition_key=args.partition_key,
             )
 
-        dataset.set_local_cache()
-        dataset.set_sharding()
+        dataset.set_local_partition()
         self.dataset = dataset
         return self._warp_dataloader_with_stateful_sampler(args, dataset)
 
