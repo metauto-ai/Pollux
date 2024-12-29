@@ -16,20 +16,6 @@ import torch
 logger = logging.getLogger()
 
 
-def data_submit(
-    data_name: str = "ILSVRC/imagenet-1k",
-    cache_dir="/jfs/data/imagenet",
-    split="validation",
-) -> str:
-
-    data = datasets.load_dataset(path=data_name, cache_dir=cache_dir)
-    logger.info(f'Dataset "{data_name}" loaded from local cache.')
-    data = data[split]
-    data_pipeline = ImageProcessing(split)
-    data.set_transform(data_pipeline)
-    return DataLoader(data, batch_size=64, num_workers=32)
-
-
 def save_tensor(
     tensors: torch.Tensor,
     output_dir: str,
@@ -47,46 +33,19 @@ def save_tensor(
         with open(tensor_path, "wb") as f:
             pickle.dump(tensors, f)
         tensor_paths.append(tensor_path)
-    batch["tensor_path"] = tensor_paths
+    batch[f"{prefix}_tensor_path"] = tensor_paths
     logger.warning(f"Saved {len(tensors)} tensor to {output_dir}")
     return batch
 
 
-class ImageProcessing(nn.Module):
-    def __init__(self, split="val") -> nn.Module:
-        super().__init__()
-        self.client = MongoClient(MONGODB_URI)
-        self.db = self.client["world_model"]
-        self.collection = self.db["imagenet-1k"]
-        self.cls_list = list(IMAGENET2012_CLASSES.items())
-        self.dir = f"/jfs/data/imagenet-MongoDB/{split}"
-        self.split = split
+def transform_dict(input_dict):
+    keys = list(input_dict.keys())
+    values = list(zip(*input_dict.values()))
+    return [{key: value for key, value in zip(keys, v)} for v in values]
 
-    def forward(self, data: Dict) -> Dict:
-        success = 0.0
-        for idx, image in enumerate(data["image"]):
-            if image.mode != "RGB":
-                continue
-            try:
-                img_path = str(Path(self.dir) / f"{uuid.uuid4()}.jpg")
-                label = data["label"][idx]
-                _, caption = self.cls_list[label]
-                width, height = image.size
-                image.save(img_path)
-                res = self.collection.insert_one(
-                    {
-                        "image": img_path,
-                        "label": label,
-                        "caption": caption,
-                        "width": width,
-                        "height": height,
-                        "split": self.split,
-                    }
-                )
-                logger.info(f"success to upload the image with {res}")
-                success += 1
-            except Exception as e:
-                logger.warning(f"Error to process the image: {e}")
-                # pass
-                success -= 1
-        return {"label": data["label"]}
+
+def remove_tensors(input_dict):
+    return {
+        k: [v for v in values if not isinstance(v, torch.Tensor)]
+        for k, values in input_dict.items()
+    }

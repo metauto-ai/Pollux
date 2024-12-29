@@ -146,7 +146,6 @@ class RotaryEmbedding2D(torch.nn.Module):
             return self.freqs_cis[0:seqlen]
 
 
-
 @dataclass
 class PlanTransformerArgs(BaseTransformerArgs):
 
@@ -160,14 +159,12 @@ class PlanTransformerArgs(BaseTransformerArgs):
     vocab_size: int = -1
 
 
-
 class BasePlanTransformer(nn.Module):
     def __init__(self, args: PlanTransformerArgs):
         super().__init__()
         self.dim = args.dim
         self.init_base_std = args.init_base_std
         self.init_std_factor = InitStdFactor(args.init_std_factor)
-        self.gen_seqlen = args.gen_seqlen
         self.attn_type = args.attn_type
         self.layers = nn.ModuleList()
         assert not (self.attn_type == "bi_causal" and args.n_layers % 2 != 0)
@@ -243,6 +240,7 @@ class PlanTransformer(BasePlanTransformer):
             in_dim=self.patch_size * self.patch_size * args.in_channels,
             out_dim=args.dim,
         )
+        self.gen_seqlen = args.gen_seqlen
         self.tok_embeddings = torch.nn.Embedding(args.vocab_size, args.dim)
         self.rope_embeddings_image = RotaryEmbedding2D(
             theta=args.rope_theta,
@@ -300,6 +298,7 @@ class PlanTransformer(BasePlanTransformer):
         # Either use fixed base std or sqrt model dim
         super().reset_parameters()
         self.rope_embeddings_image.reset_parameters()
+        self.rope_embeddings_cap.reset_parameters()
         init_std = init_std or (self.dim ** (-0.5))
         self.norm.reset_parameters()
         self.img_embed.reset_parameters()
