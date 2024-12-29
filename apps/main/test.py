@@ -6,7 +6,7 @@ import logging
 from torchvision.utils import save_image
 from apps.main.modules.vae import LatentVideoVAEArgs
 from apps.main.modules.schedulers import SchedulerArgs
-from Pollux.apps.main.modules.vlm import PlanTransformerArgs
+from apps.main.modules.plan_transformer import PlanTransformerArgs
 from apps.main.modules.gen_transformer import GenTransformerArgs
 from apps.main.modules.tokenizer import TokenizerArgs
 from apps.main.model import ModelArgs, Pollux

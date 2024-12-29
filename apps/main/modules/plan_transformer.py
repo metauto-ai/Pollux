@@ -26,7 +26,7 @@ logger = logging.getLogger()
 
 
 @dataclass
-class PolluxVLArgs(BaseTransformerArgs):
+class PlanTransformerArgs(BaseTransformerArgs):
 
     seed: int = 42
     patch_size: int = 16
@@ -79,8 +79,8 @@ def create_multimodal_mask(
     return mask
 
 
-class BasePolluxVL(nn.Module):
-    def __init__(self, args: PolluxVLArgs):
+class BasePlanTransformer(nn.Module):
+    def __init__(self, args: PlanTransformerArgs):
         super().__init__()
         self.dim = args.dim
         self.init_base_std = args.init_base_std
@@ -160,8 +160,8 @@ class BasePolluxVL(nn.Module):
             logger.warning(f"Unexpected keys: {unexpected_keys}")
 
 
-class PolluxVL(BasePolluxVL):
-    def __init__(self, args: PolluxVLArgs):
+class PlanTransformer(BasePlanTransformer):
+    def __init__(self, args: PlanTransformerArgs):
         super().__init__(args)
 
         self.text_seqlen = args.text_seqlen

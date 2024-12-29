@@ -51,7 +51,7 @@ find /jfs/data/imagenet-1k/ -type f -name "*.lock" -exec rm -f {} \;
 * We provides a minimal system to train diffusion model on ImageNet with parallelized system. The following example is how we train our pipeline on 4 GPUs.
 
 ```
-torchrun --standalone --nnodes 1 --nproc-per-node 4 -m apps.main.train config=apps/main/configs/train.yaml
+torchrun --standalone --nnodes 1 --nproc-per-node 8 -m apps.main.train config=apps/main/configs/train.yaml
 ```
 
 * Generate visualizations:

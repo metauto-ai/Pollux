@@ -21,9 +21,9 @@ from apps.main.modules.gen_transformer import (
     GenTransformer,
     GenTransformerArgs,
 )
-from apps.main.modules.vlm import (
-    PolluxVL,
-    PolluxVLArgs,
+from apps.main.modules.plan_transformer import (
+    PlanTransformer,
+    PlanTransformerArgs,
 )
 from apps.main.modules.vae import LatentVideoVAE, LatentVideoVAEArgs
 from apps.main.modules.preprocess import random_mask_images
@@ -35,7 +35,7 @@ logger = logging.getLogger()
 @dataclass
 class ModelArgs:
     gen_transformer: GenTransformerArgs = field(default_factory=GenTransformerArgs)
-    plan_transformer: PolluxVLArgs = field(default_factory=PolluxVLArgs)
+    plan_transformer: PlanTransformerArgs = field(default_factory=PlanTransformerArgs)
     vae: LatentVideoVAEArgs = field(default_factory=LatentVideoVAEArgs)
     scheduler: SchedulerArgs = field(default_factory=SchedulerArgs)
     tokenizer: TokenizerArgs = field(default_factory=TokenizerArgs)
@@ -69,7 +69,7 @@ class Pollux(nn.Module):
                 dropout_prob=args.image_cfg_ratio,
             )
         else:
-            #self.plan_transformer = PolluxVL(args.plan_transformer)
+            #self.plan_transformer = PlanTransformer(args.plan_transformer)
             logger.error(f"Please wait for this feature. Will add soon.")
 
 

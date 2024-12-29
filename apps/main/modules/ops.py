@@ -1,6 +1,7 @@
 from xformers.ops import fmha, AttentionBias
 from torch.nn.attention.flex_attention import create_block_mask, BlockMask
 import torch
+import torch.nn.functional as F
 from typing import Optional
 import torch.nn as nn
 

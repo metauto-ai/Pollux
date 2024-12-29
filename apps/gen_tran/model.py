@@ -23,7 +23,7 @@ from apps.main.modules.gen_transformer import (
     RotaryEmbedding1D,
     GenTransformerArgs,
 )
-from Pollux.apps.main.modules.vlm import (
+from apps.main.modules.plan_transformer import (
     PlanTransformerArgs,
 )
 from apps.main.modules.vae import LatentVideoVAE, LatentVideoVAEArgs

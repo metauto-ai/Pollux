@@ -307,7 +307,7 @@ class GenTransformer(BaseDiffusionTransformer):
 
         freqs_cis_img = freqs_cis_img.to(x.device)
         freqs_cis_cond = self.rope_embeddings_conditions.freqs_cis[:c_l].to(x.device)
-        x = torch.cat([condition, x], dim=1)
+        x = torch.cat([condition_, x], dim=1)
         freqs_cis = torch.cat([freqs_cis_cond, freqs_cis_img], dim=0)
 
 
