@@ -79,9 +79,11 @@ def launch_inference(cfg: InferenceArgs):
                 output_dir=Path(cfg.dump_dir),
                 prefix=v,
             )
-        remove_tensors(batch)
-        transform_dict(batch)
+        batch = remove_tensors(batch)
+        batch = transform_dict(batch)
+        collection.insert_many(batch)
         break
+        # TODO Checking the saved tensors and the mongodb collections
     del model
     client.close()
 
