@@ -17,8 +17,7 @@ import torch
 from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms
 
-
-from apps.main.modules.preprocessing import ImageProcessing
+from apps.main.modules.preprocess import ImageProcessing
 from apps.main.utils.hf_data_load import HFDataLoad
 from apps.main.utils.dummy_data_load import DummyDataLoad
 from apps.main.utils.mongodb_data_load import (

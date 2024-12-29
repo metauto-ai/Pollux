@@ -1,149 +1,28 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 
+import os
+import logging
 from dataclasses import dataclass
-from typing import Optional, Tuple, Union, Dict
+from typing import Optional, Tuple
 
 import torch
 from torch import nn
-from torch.nn.attention.flex_attention import create_block_mask, BlockMask
 
+from apps.main.modules.embedder import ImageEmbedder, TimestepEmbedder, LabelEmbedder
+from apps.main.modules.ops import (
+    # create_causal_mask,
+    RotaryEmbedding1D,
+    RotaryEmbedding2D,
+)
 
-from xformers.ops import fmha, AttentionBias
 from lingua.transformer import (
     BaseTransformerArgs,
     TransformerBlock,
     RMSNorm,
-    FeedForward,
-    Attention,
-    AdaLN_Modulation,
     InitStdFactor,
-    TimestepEmbedder,
-    ImageEmbedder,
-    LabelEmbedder,
-    modulate,
 )
-from lingua.transformer import RotaryEmbedding as RotaryEmbedding1D
-import os
-import logging
 
 logger = logging.getLogger()
-
-
-def precompute_2d_freqs_cls(
-    dim: int,
-    end: int,
-    theta: float = 10000.0,
-):
-    """
-    Precompute the frequency tensor for complex exponentials (cis) with
-    given dimensions.
-
-    This function calculates a frequency tensor with complex exponentials
-    using the given dimension 'dim' and the end index 'end'. The 'theta'
-    parameter scales the frequencies. The returned tensor contains complex
-    values in complex64 data type.
-
-    Args:
-        dim (int): Dimension of the frequency tensor.
-        end (int): End index for precomputing frequencies.
-        theta (float, optional): Scaling factor for frequency computation.
-            Defaults to 10000.0.
-
-    Returns:
-        torch.Tensor: Precomputed frequency tensor with complex
-            exponentials.
-    """
-
-    freqs = 1.0 / (theta ** (torch.arange(0, dim, 4)[: (dim // 4)].float() / dim))
-    t = torch.arange(end, device=freqs.device)
-    freqs = torch.outer(t, freqs).float()
-
-    cos, sin = freqs.cos(), freqs.sin()
-
-    freqs_cis = torch.stack((cos, -sin, sin, cos), dim=-1).view(*freqs.size(), 2, 2)
-
-    freqs_cis_h = freqs_cis.view(end, 1, dim // 4, 2, 2).repeat(1, end, 1, 1, 1)
-    freqs_cis_w = freqs_cis.view(1, end, dim // 4, 2, 2).repeat(end, 1, 1, 1, 1)
-    freqs_cis = torch.cat([freqs_cis_h, freqs_cis_w], dim=2)
-
-    return freqs_cis
-
-
-def create_causal_mask(seqlen, attn_impl, sliding_window):
-    if sliding_window is not None and attn_impl == "xformers":
-        return fmha.attn_bias.LocalAttentionFromBottomRightMask(
-            window_left=sliding_window - 1, window_right=0
-        )
-    elif attn_impl == "xformers":
-        return fmha.attn_bias.LowerTriangularMask()
-    elif attn_impl == "sdpa":
-        return "causal"
-    elif attn_impl == "flex_attention":
-        return create_block_mask(causal_mask, None, None, seqlen, seqlen)
-    else:
-        raise NotImplementedError(
-            f"Attention {attn_impl} with {sliding_window} sliding window not implemented"
-        )
-
-
-def attention_flops_per_token(n_layers, seq_len, dim, causal):
-    # Formula from https://github.com/Dao-AILab/flash-attention/blob/main/benchmarks/benchmark_flash_attention.py#L27-L30
-    return 3.5 * (4 * n_layers * seq_len * dim // (2 if causal else 1))
-
-
-def get_num_flop_per_token(
-    num_non_embed_params: int, n_layers: int, dim: int, seq_len: int
-) -> int:
-    return 6 * num_non_embed_params + attention_flops_per_token(
-        n_layers, seq_len, dim, False
-    )
-
-
-def causal_mask(b, h, q_idx, kv_idx):
-    return q_idx >= kv_idx
-
-
-class RotaryEmbedding2D(torch.nn.Module):
-    """
-    RotaryEmbedding Module
-    """
-
-    def __init__(self, theta: float, head_dim: int, max_seqlen: int = 1024):
-        super().__init__()
-
-        self.theta = theta
-        self.head_dim = head_dim
-        self.max_seqlen = max_seqlen
-
-        self.register_buffer(
-            "freqs_cis",
-            precompute_2d_freqs_cls(dim=head_dim, end=max_seqlen, theta=theta),
-            persistent=False,
-        )
-
-    def reset_parameters(self):
-        self.freqs_cis[...] = precompute_2d_freqs_cls(
-            dim=self.head_dim, end=self.max_seqlen, theta=self.theta
-        )
-
-    def forward(
-        self, seqlen: Optional[int] = None, tok_idx: Optional[torch.Tensor] = None
-    ):
-        """
-        Return freqs_cis corresponding to consecutive seqlen positions or the corresponding tok_idx positions
-        Args:
-            seqlen (int): Contiguous sequence length
-            tok_idx (torch.Tensor[int]): Position indices of each token this overrides seqlen
-
-        Returns:
-            Tuple(torch.Tensor, torch.Tensor): Embedded input tensor and freqs_cis
-        """
-        test = (seqlen is not None) or (tok_idx is not None)
-        assert test, "Should provide atleast seqlen or tok_idx"
-        if tok_idx is not None:
-            return self.freqs_cis[tok_idx]
-        elif seqlen is not None:
-            return self.freqs_cis[0:seqlen]
 
 
 @dataclass
@@ -153,10 +32,51 @@ class PlanTransformerArgs(BaseTransformerArgs):
     patch_size: int = 16
     in_channels: int = 3
     pre_trained_path: Optional[str] = None
-    attn_type: str = "bi_causal"  # Options: 'full', 'bi_causal' and 'causal'.
+    attn_type: str = (
+        "multimodal"  # Options: 'multimodal', 'full', 'bi_causal' and 'causal'.
+    )
     text_seqlen: int = 256
     gen_seqlen: int = 256
     vocab_size: int = -1
+    text_only: bool = False
+
+
+def create_multimodal_mask(
+    seq_len_txt: int,
+    seq_len_img1: int,
+    seq_len_img2: int,
+    attn_impl: str = "sdpa",
+) -> torch.Tensor:
+
+    # NOTE: text: `causal`, img1: `full`, img2: `full`
+
+    total_len = seq_len_txt + seq_len_img1 + seq_len_img2
+    mask = torch.zeros(total_len, total_len, dtype=torch.bool)  # 先全0
+
+    # text attn: [0, seq_len_cap)
+    for i in range(seq_len_txt):
+        for j in range(seq_len_txt):
+            if j <= i:
+                mask[i, j] = True
+
+    # img1 attn: [seq_len_cap, seq_len_cap + seq_len_img1)
+    img1_start = seq_len_txt
+    img1_end = seq_len_txt + seq_len_img1
+
+    for i in range(img1_start, img1_end):
+        for j in range(img1_start, img1_end):
+            mask[i, j] = True
+
+    # img2 attn: [img1_end, img1_end + seq_len_img2)
+    img2_start = img1_end
+    img2_end = img1_end + seq_len_img2
+
+    for i in range(img2_start, img2_end):
+        for j in range(img2_start, img2_end):
+            mask[i, j] = True
+
+    mask = mask[None, None, :, :]  # [1, 1, total_len, total_len]
+    return mask
 
 
 class BasePlanTransformer(nn.Module):
@@ -168,9 +88,11 @@ class BasePlanTransformer(nn.Module):
         self.gen_seqlen = args.gen_seqlen
         self.attn_type = args.attn_type
         self.layers = nn.ModuleList()
-        assert not (self.attn_type == "bi_causal" and args.n_layers % 2 != 0)
+        # assert not (self.attn_type == "bi_causal" and args.n_layers % 2 != 0)
+        assert not (args.n_layers % 2 != 0)
         for _ in range(args.n_layers):
             self.layers.append(TransformerBlock(args))
+        self.text_only = args.text_only
 
     def forward(
         self,
@@ -179,10 +101,16 @@ class BasePlanTransformer(nn.Module):
         attn_impl: str = "sdpa",
     ):
 
-        if self.attn_type in ["causal", "bi_causal"]:
-            seqlen = h.size(1)
-            mask = create_causal_mask(seqlen, attn_impl, None)
-
+        if self.attn_type == "multimodal":
+            mask = create_multimodal_mask(
+                self.text_seqlen,
+                self.gen_seqlen,
+                self.gen_seqlen,
+                attn_impl,
+            )
+        # elif self.attn_type in ["causal", "bi_causal"]:
+        #     seqlen = h.size(1)
+        #     mask = create_causal_mask(seqlen, attn_impl, None)
         elif self.attn_type == "full":
             mask = None
         else:
@@ -190,8 +118,9 @@ class BasePlanTransformer(nn.Module):
 
         for idx, layer in enumerate(self.layers):
             h = layer(h, freqs_cis, mask=mask, attn_impl=attn_impl)
-            if self.attn_type == "bi_causal":
-                h = h.flip(1)
+            # NOTE: no need for current planning transformer
+            # if self.attn_type == "bi_causal":
+            #      h = h.flip(1)
         return h
 
     def reset_parameters(self):
@@ -234,37 +163,51 @@ class BasePlanTransformer(nn.Module):
 class PlanTransformer(BasePlanTransformer):
     def __init__(self, args: PlanTransformerArgs):
         super().__init__(args)
-        self.patch_size = args.patch_size
+
         self.text_seqlen = args.text_seqlen
-        self.in_channels = args.in_channels
-        self.img_embed = ImageEmbedder(
-            in_dim=self.patch_size * self.patch_size * args.in_channels,
-            out_dim=args.dim,
-        )
         self.tok_embeddings = torch.nn.Embedding(args.vocab_size, args.dim)
-        self.rope_embeddings_image = RotaryEmbedding2D(
-            theta=args.rope_theta,
-            head_dim=args.head_dim or args.dim // args.n_heads,
-            max_seqlen=args.gen_seqlen,
-        )
-        self.rope_embeddings_cap = RotaryEmbedding1D(
+        self.rope_embeddings_text = RotaryEmbedding1D(
             theta=args.rope_theta,
             head_dim=args.head_dim or args.dim // args.n_heads,
             max_seqlen=args.text_seqlen,
         )
+
+        self.patch_size = args.patch_size
+        self.in_channels = args.in_channels
+
+        # TODO: check wether need 2 image embedders
+        self.img_embedder = ImageEmbedder(
+            in_dim=self.patch_size * self.patch_size * args.in_channels,
+            out_dim=args.dim,
+        )
+
+        # NOTE: This could be shared with image_emb and image_latent
+        self.rope_image = RotaryEmbedding2D(
+            theta=args.rope_theta,
+            head_dim=args.head_dim or args.dim // args.n_heads,
+            max_seqlen=args.gen_seqlen,
+        )
+
         self.dim = args.dim
         self.norm = RMSNorm(args.dim, eps=args.norm_eps)
+
+        self.txt_head = nn.Linear(args.dim, args.vocab_size)
+
+        # TODO: need to setup the vit_emb_dim and vae_emb_dim
+        self.img_emb_head = nn.Linear(args.dim, args.vit_emb_dim)
+        self.img_latent_head = nn.Linear(args.dim, args.vae_emb_dim)
 
     def patchify_and_embed_image(  # TODO: Rewrite to concat the mask
         self, x: torch.Tensor
     ) -> Tuple[torch.Tensor, torch.Tensor, Tuple[int, int], torch.Tensor]:
+
         self.rope_embeddings_image.freqs_cis = self.rope_embeddings_image.freqs_cis.to(
             x[0].device
         )
         pH = pW = self.patch_size
         B, C, H, W = x.size()
         x = x.view(B, C, H // pH, pH, W // pW, pW).permute(0, 2, 4, 1, 3, 5).flatten(3)
-        x = self.img_embed(x)
+        x = self.img_embedder(x)
         x = x.flatten(1, 2)
         freqs_cis = self.rope_embeddings_image.freqs_cis[: H // pH, : W // pW].flatten(
             0, 1
@@ -280,19 +223,59 @@ class PlanTransformer(BasePlanTransformer):
         batch: dict[str:any],
         attn_impl: str = "sdpa",
     ):
-        x_cap = self.tok_embeddings(batch["cap_token"])
-        x_img, _, freqs_cis_img = self.patchify_and_embed_image(batch["masked_latent"])
 
-        freqs_cis_img = freqs_cis_img.to(x_img.device)
-        freqs_cis_cap = self.rope_embeddings_cap.freqs_cis[: x_cap.size(1)]
-        x = torch.cat([x_cap, x_img], dim=1)
-        freqs_cis = torch.cat([freqs_cis_cap, freqs_cis_img], dim=0)
-        h = super().forward(x, freqs_cis, attn_impl=attn_impl)
+        txt_emb = self.tok_embeddings(batch["cap_token"])
+        freqs_cis_txt = self.rope_embeddings_cap.freqs_cis[: txt_emb.size(1)]
+
+        # TODO: directly use patchify
+        img_latent, _, freqs_cis_img_latent = self.patchify_and_embed_image(
+            batch["masked_latent"]
+        )
+        freqs_cis_img_latent = freqs_cis_img_latent.to(img_latent.device)
+
+        # TODO: only embedding
+        img_emb, _, freqs_cis_img_emb = self.patchify_and_embed_image(
+            batch["masked_latent"]
+        )
+        freqs_cis_img_emb = freqs_cis_img_emb.to(img_emb.device)
+
+        input_tokens = torch.cat([txt_emb, img_emb, img_latent], dim=1)
+        freqs_cis = torch.cat(
+            [freqs_cis_txt, freqs_cis_img_emb, freqs_cis_img_latent], dim=0
+        )
+
+        h = super().forward(input_tokens, freqs_cis, attn_impl=attn_impl)
+        h = self.norm(h)
+
+        b = h.size(0)
+        len_txt = txt_emb.size(1)
+        len_img_emb = img_emb.size(1)
+        len_img_latent = img_latent.size(1)
+
+        h_txt = h[:, :len_txt]  # [b, len_txt, dim]
+        h_img_emb = h[:, len_txt : len_txt + len_img_emb]  # [b, len_img_emb, dim]
+        h_img_latent = h[:, len_txt + len_img_emb :]  # [b, len_img_latent, dim]
+
+        text_logits = self.txt_head(h[:, : self.text_seqlen])
+        img_emb_preds = self.img_emb_head(
+            h[:, self.text_seqlen : self.text_seqlen + self.gen_seqlen]
+        )
+        img_latent_preds = self.img_latent_head(
+            h[:, self.text_seqlen + self.gen_seqlen :]
+        )
+
         layout = {
-            "cap": x_cap.size(1),
-            "img": x_img.size(1),
+            "txt_emb": txt_emb.size(1),
+            "img_emb": img_latent.size(1),
+            "img_latent": img_latent.size(1),
         }
-        return self.norm(h), layout
+
+        return {
+            "text_logits": text_logits,
+            "img_emb_preds": img_emb_preds,
+            "img_latent_preds": img_latent_preds,
+            "layout": layout,
+        }
 
     def reset_parameters(self, init_std=None):
         # Either use fixed base std or sqrt model dim
@@ -300,7 +283,7 @@ class PlanTransformer(BasePlanTransformer):
         self.rope_embeddings_image.reset_parameters()
         init_std = init_std or (self.dim ** (-0.5))
         self.norm.reset_parameters()
-        self.img_embed.reset_parameters()
+        self.img_embedder.reset_parameters()
         nn.init.trunc_normal_(
             self.tok_embeddings.weight,
             mean=0.0,

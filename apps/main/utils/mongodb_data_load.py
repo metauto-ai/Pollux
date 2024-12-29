@@ -17,7 +17,7 @@ from pathlib import Path
 from bson import json_util, ObjectId
 
 
-from apps.main.modules.preprocessing import ImageProcessing
+from apps.main.modules.preprocess import ImageProcessing
 import time
 import random
 
@@ -35,6 +35,7 @@ encoded_user = quote_plus(MONGODB_USER)
 encoded_password = quote_plus(MONGODB_PASSWORD)
 MONGODB_URI = f"mongodb+srv://{encoded_user}:{encoded_password}@{MONGODB_URI}"
 LOCAL_TEMP_DIR: Final[str] = "/dev/shm/"
+
 
 
 # TODO: Add the logic of MongoDB data loading here

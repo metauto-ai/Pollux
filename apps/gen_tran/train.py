@@ -60,7 +60,7 @@ from lingua.profiling import ProfilerArgs, maybe_run_profiler
 
 from apps.main.data import AutoDataLoader, DataArgs
 from apps.main.modules.schedulers import SchedulerArgs
-from apps.main.modules.plan_transformer import get_num_flop_per_token
+from apps.main.modules.gen_transformer import get_num_flop_per_token
 from apps.gen_tran.model import (
     Pollux,
     ModelArgs,
