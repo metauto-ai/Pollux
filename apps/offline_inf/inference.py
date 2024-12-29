@@ -6,7 +6,7 @@ import logging
 import os
 from pathlib import Path
 from typing import Any, List, Optional, Tuple, Union
-
+from pymongo import MongoClient
 from omegaconf import OmegaConf
 import torchvision.transforms as transforms
 import torch
@@ -23,30 +23,27 @@ from lingua.distributed import (
 from apps.main.data import AutoDataLoader, DataArgs
 
 from apps.offline_inf.model import OfflineInference, ModelArgs
-from apps.offline_inf.data import save_tensor
+from apps.offline_inf.data import save_tensor, transform_dict, remove_tensors
+from apps.main.utils.mongodb_data_load import MONGODB_URI
 
 logger = logging.getLogger()
 
 
 @dataclass
-class EvalArgs:
+class InferenceArgs:
     name: str = "evals"
     stage: str = "eval"
     dump_dir: Optional[str] = None
-    ckpt_dir: str = ""
     model: ModelArgs = field(default_factory=ModelArgs)
     source_data: List[DataArgs] = field(default_factory=list)
-    target_data: DataArgs = field(default_factory=DataArgs)
+    prefix_mapping: Optional[dict[str, str]] = field(default_factory=dict)
+    collection_name: str = ""
 
-    global_step: Optional[int] = None  # for in-training evaluation
 
-
-def launch_inference(cfg: EvalArgs):
+def launch_inference(cfg: InferenceArgs):
     if not torch.distributed.is_initialized():
         setup_torch_distributed(DistributedArgs())
 
-    if cfg.ckpt_dir:
-        pass  # Haozhe: TODO I will add LLAMA3 3B here
     Path(cfg.dump_dir).mkdir(parents=True, exist_ok=True)
     dump_config(cfg, Path(cfg.dump_dir) / "config.yaml", log_config=False)
     torch.distributed.barrier()
@@ -54,6 +51,7 @@ def launch_inference(cfg: EvalArgs):
     global_rank = get_global_rank()
     logger.info("Loading model")
     model = OfflineInference(cfg.model)
+    model.init_weights()
     logger.info("Model loaded")
     model.eval()
     active_data = [d for d in cfg.eval_data if d.stage == cfg.stage and d.use]
@@ -69,22 +67,24 @@ def launch_inference(cfg: EvalArgs):
     torch.distributed.barrier()
     if get_local_rank() == 0 and hasattr(data_loader_factory.dataset, "clean_buffer"):
         data_loader_factory.dataset.clean_buffer()
+
+    client = MongoClient(MONGODB_URI)
+    db = client["world_model"]
+    collection = db[cfg.collection_name]
     for idx, batch in enumerate(data_loader):
         batch = model(batch)
-        save_tensor(
-            tensors=batch["latent_code"],
-            batch=batch,
-            output_dir=Path(cfg.dump_dir),
-            prefix="latent_code",
-        )
-        save_tensor(
-            tensors=batch["text_token"],
-            batch=batch,
-            output_dir=Path(cfg.dump_dir),
-            prefix="text_token",
-        )
-    # TODO: need dataloader state dict
-    # TODO: need to update the mongoDB (Haozhe can handle this)
+        for k, v in cfg.prefix_mapping.items():
+            save_tensor(
+                tensors=batch[k],
+                batch=batch,
+                output_dir=Path(cfg.dump_dir),
+                prefix=v,
+            )
+        remove_tensors(batch)
+        transform_dict(batch)
+        break
+    del model
+    client.close()
 
 
 def main():
@@ -93,7 +93,7 @@ def main():
     # We remove 'config' attribute from config as the underlying DataClass does not have it
     del cli_args.config
 
-    default_cfg = OmegaConf.structured(EvalArgs())
+    default_cfg = OmegaConf.structured(InferenceArgs())
     cfg = OmegaConf.merge(default_cfg, file_cfg, cli_args)
     cfg = OmegaConf.to_object(cfg)
     launch_inference(cfg)
