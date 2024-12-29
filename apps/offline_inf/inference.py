@@ -51,10 +51,10 @@ def launch_inference(cfg: InferenceArgs):
     global_rank = get_global_rank()
     logger.info("Loading model")
     model = OfflineInference(cfg.model)
-    model.init_weights()
+    model.init_weights(cfg.model)
     logger.info("Model loaded")
     model.eval()
-    active_data = [d for d in cfg.eval_data if d.stage == cfg.stage and d.use]
+    active_data = [d for d in cfg.source_data if d.stage == cfg.stage and d.use]
     data_loader_factory = AutoDataLoader(
         shard_id=global_rank,
         num_shards=world_size,
@@ -64,10 +64,9 @@ def launch_inference(cfg: InferenceArgs):
         drop_last=False,
     )
     data_loader, _ = data_loader_factory.create_dataloader()
-    torch.distributed.barrier()
-    if get_local_rank() == 0 and hasattr(data_loader_factory.dataset, "clean_buffer"):
-        data_loader_factory.dataset.clean_buffer()
-
+    # torch.distributed.barrier()
+    # if get_local_rank() == 0 and hasattr(data_loader_factory.dataset, "clean_buffer"):
+    #     data_loader_factory.dataset.clean_buffer() for debugging we may not clean buffer here
     client = MongoClient(MONGODB_URI)
     db = client["world_model"]
     collection = db[cfg.collection_name]

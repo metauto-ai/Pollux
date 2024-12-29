@@ -8,13 +8,11 @@ from typing import Optional, Tuple
 import torch
 from torch import nn
 
-from apps.main.modules.embedder import ImageEmbedder, TimestepEmbedder, LabelEmbedder
+from apps.main.modules.embedder import ImageEmbedder
 from apps.main.modules.ops import (
-    # create_causal_mask,
     RotaryEmbedding1D,
     RotaryEmbedding2D,
 )
-
 from lingua.transformer import (
     BaseTransformerArgs,
     TransformerBlock,

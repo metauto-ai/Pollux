@@ -190,3 +190,18 @@ class AdaLN(nn.Module):
             a=-3 * init_std,
             b=3 * init_std,
         )
+
+
+def causal_mask(b, h, q_idx, kv_idx):
+    return q_idx >= kv_idx
+
+
+def create_causal_mask(seqlen, attn_impl):
+    if attn_impl == "xformers":
+        return fmha.attn_bias.LowerTriangularMask()
+    elif attn_impl == "sdpa":
+        return "causal"
+    elif attn_impl == "flex_attention":
+        return create_block_mask(causal_mask, None, None, seqlen, seqlen)
+    else:
+        raise NotImplementedError(f"Attention {attn_impl} is not implemented")

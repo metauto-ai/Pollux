@@ -15,7 +15,7 @@ source_data:
     batch_size: 64
     image_size: 256
     num_workers: 8
-    use: False
+    use: True
     retries: 3
 
 
@@ -30,13 +30,10 @@ model:
         multiple_of: 256
         n_heads: 24
         n_kv_heads: 8
-        n_layers: 28
-        patch_size: 2
-        in_channels: 32  
+        n_layers: 28 
         vocab_size: 128256  
         text_seqlen: 128 
         pre_trained_path: /jfs/checkpoints/Llama-3.2-3B/original/consolidated.00.pth
-        attn_type: causal
         norm_eps: 1e-5
     tokenizer:
         model_path: /jfs/checkpoints/Llama-3.2-3B/original/tokenizer.model
