@@ -12,9 +12,11 @@ import datasets
 import numpy as np
 from PIL import Image
 from pymongo import MongoClient
+from functools import partial
 import torch
 from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms
+
 
 from apps.main.modules.preprocessing import ImageProcessing
 from apps.main.utils.hf_data_load import HFDataLoad
@@ -28,16 +30,21 @@ from apps.main.utils.sampler import StatefulDistributedSampler
 
 logger = logging.getLogger()
 
+"""
+Deterministic distributed dataloader
 
-# Deterministic distributed dataloader
-def get_seed_worker(seed):
-    def seed_worker(worker_id):  # TODO: MC - Check wether this has been used.
-        worker_seed = seed
-        np.random.seed(worker_seed)
-        torch.manual_seed(worker_seed)
-        random.seed(worker_seed)
+    we disbale different random augmentations being applied 
+    by each worker by comment out workder_id now
+    
+    if each dataloader worker should apply different transform randomly,
+    set  seed + workder_id
+"""
+def worker_init(workder_id, seed):
+    torch.manual_seed(seed)  # + worker_id)
+    np.random.seed(seed)  # + worker_id)
+    random.seed(seed)  # + worker_id)
 
-    return seed_worker
+
 
 
 @dataclass
@@ -202,9 +209,10 @@ class AutoDataLoader:
                 dataset,
                 batch_size=args.batch_size,
                 sampler=sampler,
-                worker_init_fn=get_seed_worker(self.seed),
+                worker_init_fn=partial(worker_init, seed=self.seed),
                 drop_last=self.drop_last,
                 pin_memory=self.pin_memory,
+                num_workers=args.num_workers,
             ),
             sampler,
         )
