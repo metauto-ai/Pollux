@@ -18,14 +18,9 @@ from lingua.transformer import (
     FeedForward,
     Attention,
     InitStdFactor,
-    modulate,
 )
 
-from apps.main.modules.ops import (
-    RotaryEmbedding1D,
-    RotaryEmbedding2D,
-    AdaLN,
-)
+from apps.main.modules.ops import RotaryEmbedding1D, RotaryEmbedding2D, AdaLN, modulate
 from apps.main.modules.embedder import ImageEmbedder, TimestepEmbedder, LabelEmbedder
 
 
@@ -249,7 +244,7 @@ class GenTransformer(BaseDiffusionTransformer):
         # [BEGING_OF_TEXT, END_OF_TEXT, BEGIN_OF_IMAGE, END_OF_IMAGE]
         self.bot_token = nn.Parameter(torch.zeros(1, 1, self.dim))
         self.eot_token = nn.Parameter(torch.zeros(1, 1, self.dim))
-        #self.cap_cond_token = nn.Parameter(torch.zeros(1, 1, self.dim))
+        # self.cap_cond_token = nn.Parameter(torch.zeros(1, 1, self.dim))
         self.norm = RMSNorm(args.dim, eps=args.norm_eps)
 
     def patchify_and_embed_image(
@@ -277,14 +272,13 @@ class GenTransformer(BaseDiffusionTransformer):
         x: torch.Tensor,
         time_steps: torch.Tensor,
         condition: torch.Tensor,
-        #layout: Dict[str, int],
+        # layout: Dict[str, int],
         attn_impl: str = "sdpa",
     ):
         x, img_size, freqs_cis_img = self.patchify_and_embed_image(x)
         x_l = x.size(1)
         modulation_signal = self.tmb_embed(time_steps)
 
-        
         # indicator = torch.cat(
         #     [
         #         torch.cat([self.cap_cond_token] * layout["cap"], dim=1),
@@ -309,7 +303,6 @@ class GenTransformer(BaseDiffusionTransformer):
         freqs_cis_cond = self.rope_embeddings_conditions.freqs_cis[:c_l].to(x.device)
         x = torch.cat([condition_, x], dim=1)
         freqs_cis = torch.cat([freqs_cis_cond, freqs_cis_img], dim=0)
-
 
         h = super().forward(x, freqs_cis, modulation_signal, attn_impl=attn_impl)
 

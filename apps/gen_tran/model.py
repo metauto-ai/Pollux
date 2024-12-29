@@ -28,18 +28,29 @@ from apps.main.modules.plan_transformer import (
 )
 from apps.main.modules.vae import LatentVideoVAE, LatentVideoVAEArgs
 from apps.main.modules.preprocess import random_mask_images
+
+# from apps.main.em import (
+#     BaseTransformerArgs,
+#     TransformerBlock,
+#     RMSNorm,
+#     FeedForward,
+#     Attention,
+#     AdaLNModulation,
+#     InitStdFactor,
+#     TimestepEmbedder,
+#     ImageEmbedder,
+#     LabelEmbedder,
+#     modulate,
+# )
+from apps.main.modules.embedder import LabelEmbedder, ImageEmbedder, TimestepEmbedder
+from apps.main.modules.ops import AdaLN as AdaLNModulation, modulate
 from lingua.transformer import (
     BaseTransformerArgs,
     TransformerBlock,
     RMSNorm,
     FeedForward,
     Attention,
-    AdaLNModulation,
     InitStdFactor,
-    TimestepEmbedder,
-    ImageEmbedder,
-    LabelEmbedder,
-    modulate,
 )
 
 logger = logging.getLogger()

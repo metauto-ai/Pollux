@@ -218,10 +218,6 @@ def generate_doc_mask_mod(
     return doc_mask_mod
 
 
-def modulate(x, scale):
-    return x * (1 + scale.unsqueeze(1))
-
-
 # Rotary embedding as in xformer, see if torchtrain implementation is not better. Also might be usefull to make it work with batch*seqlen collapsed.
 class RotaryEmbedding(torch.nn.Module):
     """

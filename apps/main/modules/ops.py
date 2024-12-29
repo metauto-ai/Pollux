@@ -31,6 +31,10 @@ def precompute_freqs_cis(dim: int, end: int, theta: float = 10000.0):
     return torch.stack((cos, -sin, sin, cos), dim=-1).view(*freqs.size(), 2, 2)
 
 
+def modulate(x, scale):
+    return x * (1 + scale.unsqueeze(1))
+
+
 def precompute_2d_freqs_cls(
     dim: int,
     end: int,
