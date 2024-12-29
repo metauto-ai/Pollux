@@ -53,20 +53,16 @@ def launch_inference(cfg: InferenceArgs):
     model = OfflineInference(cfg.model)
     model.init_weights(cfg.model)
     logger.info("Model loaded")
-    model.eval()
+    model.cuda().eval()
     active_data = [d for d in cfg.source_data if d.stage == cfg.stage and d.use]
     data_loader_factory = AutoDataLoader(
         shard_id=global_rank,
         num_shards=world_size,
         train_stage=cfg.stage,
-        init_signal_handler=get_local_rank() == 0,
         data_config=active_data,  # Pass the filtered data configuration
         drop_last=False,
     )
     data_loader, _ = data_loader_factory.create_dataloader()
-    # torch.distributed.barrier()
-    # if get_local_rank() == 0 and hasattr(data_loader_factory.dataset, "clean_buffer"):
-    #     data_loader_factory.dataset.clean_buffer() for debugging we may not clean buffer here
     client = MongoClient(MONGODB_URI)
     db = client["world_model"]
     collection = db[cfg.collection_name]
@@ -82,8 +78,6 @@ def launch_inference(cfg: InferenceArgs):
         batch = remove_tensors(batch)
         batch = transform_dict(batch)
         collection.insert_many(batch)
-        break
-        # TODO Checking the saved tensors and the mongodb collections
     del model
     client.close()
 

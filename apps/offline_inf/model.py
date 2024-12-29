@@ -16,9 +16,7 @@ from apps.main.modules.plan_transformer import (
 from apps.main.modules.tokenizer import Tokenizer, TokenizerArgs
 from apps.main.modules.ops import create_causal_mask
 from lingua.transformer import (
-    TransformerBlock,
     RMSNorm,
-    InitStdFactor,
     BaseTransformerArgs,
 )
 
@@ -57,7 +55,7 @@ class BaseLanguageTransformer(BasePlanTransformer):
         attn_impl: str = "sdpa",
     ):
         seq_len = h.size(1)
-        mask = create_causal_mask(seq_len, attn_impl, None)
+        mask = create_causal_mask(seq_len, attn_impl)
         for idx, layer in enumerate(self.layers):
             h = layer(h, freqs_cis, mask=mask, attn_impl=attn_impl)
         return h
@@ -141,14 +139,14 @@ class OfflineInference(nn.Module):
                 tokens[k, :] = torch.tensor(
                     t[: tokens.size(1)], dtype=torch.long, device="cuda"
                 )
-        batch["cap_token"] = tokens
+        batch["cap_token"] = tokens.cuda()
         return batch
 
     @torch.no_grad()
     def forward(self, batch: dict[str:any]) -> dict[str:any]:
         batch = self.cap_pos_tokenize(batch)
         batch["text_embedding"] = self.plan_transformer(batch)
-        image = batch["image"]
+        image = batch["image"].cuda()
         latent_code = self.compressor.encode(image)
         batch["latent_code"] = latent_code
         return batch

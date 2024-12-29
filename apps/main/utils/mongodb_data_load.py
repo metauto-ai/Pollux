@@ -160,6 +160,7 @@ class MongoDBImageNetDataLoad(MongoDBDataLoad):
             "image": self.image_processing.transform(image),
             "label": self.data[idx]["label"],
             "caption": self.data[idx]["caption"],
+            "_id": str(self.data[idx]["_id"]),
         }
 
 

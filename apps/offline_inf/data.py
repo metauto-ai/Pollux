@@ -45,7 +45,8 @@ def transform_dict(input_dict):
 
 
 def remove_tensors(input_dict):
-    return {
-        k: [v for v in values if not isinstance(v, torch.Tensor)]
-        for k, values in input_dict.items()
-    }
+    return_dict = {}
+    for k, values in input_dict.items():
+        if not isinstance(values[0], torch.Tensor):
+            return_dict[k] = values
+    return return_dict
