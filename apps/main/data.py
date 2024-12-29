@@ -39,12 +39,12 @@ Deterministic distributed dataloader
     if each dataloader worker should apply different transform randomly,
     set  seed + workder_id
 """
+
+
 def worker_init(workder_id, seed):
     torch.manual_seed(seed)  # + worker_id)
     np.random.seed(seed)  # + worker_id)
     random.seed(seed)  # + worker_id)
-
-
 
 
 @dataclass
@@ -118,7 +118,6 @@ class AutoDataLoader:
                 # NOTE: we need to through the error to the upper level if the dataloader is failed to load
                 logger.error(f"Error initializing dataloader: {str(e)}")
                 raise
-
 
         raise ValueError(
             f"No dataset configured for stage {self.train_stage} with `use: True`."

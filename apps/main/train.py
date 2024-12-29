@@ -265,9 +265,9 @@ def every_n_steps(train_state, freq, acc_step=None, acc_freq=None):
     return test
 
 
-def save_sampler_state(train_state, logger, reason: str = ""):
-    train_state.sampler.save_state(train_state.step)
-    logger.info(f"Sampler state saved at step {train_state.step} ({reason})")
+# def save_sampler_state(train_state, logger, reason: str = ""):
+#     train_state.sampler.save_state(train_state.step)
+#     logger.info(f"Sampler state saved at step {train_state.step} ({reason})")
 
 
 def train(args: TrainArgs):
@@ -386,8 +386,8 @@ def train(args: TrainArgs):
             train_state.acc_step = train_state.acc_step % args.grad_acc_steps
 
             # NOTE: trigger 1 to save the state of the sampler
-            if train_state.step % 1000 == 0:
-                save_sampler_state(train_state, logger, reason="Periodic Save")
+            # if train_state.step % 1000 == 0:
+            #     save_sampler_state(train_state, logger, reason="Periodic Save")
 
             # get batch
             curr_lr = float(optimizer.param_groups[0]["lr"])
@@ -399,7 +399,7 @@ def train(args: TrainArgs):
                 sampler.reset()
 
                 # NOTE: trigger 2 to save the state of the sampler
-                save_sampler_state(train_state, logger, reason="Epoch Reset")
+                # save_sampler_state(train_state, logger, reason="Epoch Reset")
                 # * sampler need to keep track of the exact epoch
                 sampler.epoch += 1
                 dataloader_iterator = iter(data_loader)
@@ -579,7 +579,7 @@ def train(args: TrainArgs):
                         device_mesh=world_mesh,
                     )
                 # NOTE: trigger 3 to save the state of the sampler
-                save_sampler_state(train_state, logger, reason="Preemption")
+                # save_sampler_state(train_state, logger, reason="Preemption")
                 requeue_slurm_job()
                 sys.exit(0)
 
@@ -592,7 +592,7 @@ def train(args: TrainArgs):
             device_mesh=world_mesh,
         )
     # NOTE: trigger 4 to save the state of the sampler
-    save_sampler_state(train_state, logger, reason="Training Finished")
+    # save_sampler_state(train_state, logger, reason="Training Finished")
     gc.collect()
 
 
