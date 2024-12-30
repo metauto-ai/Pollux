@@ -1,11 +1,11 @@
-# torchrun --standalone --nnodes 1 --nproc-per-node 8 -m apps.gen_tran.train config=apps/gen_tran/configs/train.yaml
+# torchrun --standalone --nnodes 1 --nproc-per-node 4 -m apps.main.train config=apps/main/configs/train.yaml
 
 # Set up single experiment
 version: v0.7
 # From now on, start to align train, data, and model setting with train stage (just finish refactor for dara)
 train_stage: preliminary # options: preliminary, pretraining, posttraining; aligned with data setting
 # name: Pollux_v0.7_gen_transformer_preliminary # used for local dump and wandb log
-name: Pollux_v0.7_MongoDB_ImageNet-1k_HZ_C2I
+name: Pollux_v0.7_MongoDB_ImageNet-1k_Distributed_Data_Test
 output_dir: /jfs/checkpoints/dump
 dump_dir: '' # No need now
 steps: 1000000
@@ -20,7 +20,7 @@ optim:
 distributed:
     gpus: 0,1
     fsdp_type: full_shard
-    dp_shard: 2
+    dp_shard: 4
     dp_replicate: 1
     compile: false
     model_dtype: bf16 # options: `fb8` is only supported by H100

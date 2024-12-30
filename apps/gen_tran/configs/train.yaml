@@ -4,8 +4,7 @@
 version: v0.7
 # From now on, start to align train, data, and model setting with train stage (just finish refactor for dara)
 train_stage: preliminary # options: preliminary, pretraining, posttraining; aligned with data setting
-# name: Pollux_v0.7_gen_transformer_preliminary # used for local dump and wandb log
-name: Pollux_v0.7_MongoDB_ImageNet-1k_debug_mc
+name: Pollux_v0.7_gen_transformer_preliminary # used for local dump and wandb log
 output_dir: /jfs/checkpoints/dump
 dump_dir: '' # No need now
 steps: 1000000
@@ -18,7 +17,7 @@ optim:
     weight_decay: 0.01
 
 distributed:
-    gpus: 4,5,6,7
+    gpus: 0,1,2,3,4,5,6,7
     fsdp_type: full_shard
     dp_shard: 8
     dp_replicate: 1
@@ -104,12 +103,24 @@ data:
     task: class_to_image
     data_name: imagenet-1k
     source: mongodb
-    batch_size: 48 #96
+    batch_size: 96
     image_size: 256
     num_workers: 8
     split: train
+    partition_key: 'key'
     use: True
-
+  
+  - stage: preliminary
+    id: 2
+    task: text_to_image
+    data_name: cc12m
+    source: mongodb
+    batch_size: 12
+    image_size: 256
+    num_workers: 8
+    partition_key: 'key'
+    retries: 3
+    use: False
 
   - stage: preliminary
     id: 2
@@ -149,10 +160,10 @@ checkpoint:
 
 logging:
     freq: 100
-    # wandb:
-    #     project: Pollux
-    #     entity: metauto
-    #     name: ''
+    wandb:
+        project: Pollux
+        entity: metauto
+        name: ''
 
 env:
     ENABLE_INTRA_NODE_COMM: '0'  # '0' for local machine (otherwise errors happen); '1' for slurmn (need test)

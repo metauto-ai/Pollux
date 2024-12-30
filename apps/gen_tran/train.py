@@ -60,7 +60,7 @@ from lingua.profiling import ProfilerArgs, maybe_run_profiler
 
 from apps.main.data import AutoDataLoader, DataArgs
 from apps.main.modules.schedulers import SchedulerArgs
-from apps.main.modules.gen_transformer import get_num_flop_per_token
+from apps.main.utils.cal_flops import get_num_flop_per_token
 from apps.gen_tran.model import (
     Pollux,
     ModelArgs,
@@ -316,17 +316,11 @@ def train(args: TrainArgs):
             shard_id=dp_rank,
             num_shards=dp_degree,
             train_stage=args.train_stage,
-            init_signal_handler=get_local_rank() == 0,
             data_config=active_data,  # Pass the filtered data configuration
         )
         data_loader, sampler = data_loader_factory.create_dataloader()
-
-        torch.distributed.barrier()
-        if get_local_rank() == 0 and hasattr(
-            data_loader_factory.dataset, "clean_buffer"
-        ):
-            data_loader_factory.dataset.clean_buffer()
-
+        logger.info("Data loader is built !")
+        logger.info(f"Data loader size: {len(data_loader)}")
         # build optimizer after apply parallelisms to the model
         optimizer, scheduler = build_optimizer(model, args.optim, args.steps)
         train_state = TrainState(

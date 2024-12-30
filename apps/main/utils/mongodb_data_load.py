@@ -37,7 +37,6 @@ MONGODB_URI = f"mongodb+srv://{encoded_user}:{encoded_password}@{MONGODB_URI}"
 LOCAL_TEMP_DIR: Final[str] = "/dev/shm/"
 
 
-
 # TODO: Add the logic of MongoDB data loading here
 class MongoDBDataLoad(Dataset):
     """
@@ -57,8 +56,8 @@ class MongoDBDataLoad(Dataset):
         num_shards,
         shard_idx,
         collection_name: str,
-        init_signal_handler: bool,
         temporal_cache_name: str,
+        partition_key: str,
         query: dict[str, Any],
     ) -> None:
         super().__init__()
@@ -73,48 +72,50 @@ class MongoDBDataLoad(Dataset):
         )
         self.collection_name = collection_name
         self.query = query
-        self.init_signal_handler = init_signal_handler
         self.num_shards = num_shards
         self.shard_idx = shard_idx
         self.data = None
+        self.partition_key = partition_key
 
-    def set_local_cache(self):
-        if self.init_signal_handler:
-            if os.path.exists(self.finish_signal):
-                with open(f"{self.pkl_res}", "r") as f:
-                    json_data = f.read()
-                self.data = json_util.loads(json_data)
-            else:
-                client = MongoClient(MONGODB_URI)
-                db = client["world_model"]
-                collection = db[self.collection_name]
-                self.data = list(collection.find(self.query))
-                client.close()
-                with open(
-                    self.pkl_res,
-                    "w",
-                ) as temp_file:
-                    logging.info(f"Temporary file in tmpfs: {temp_file.name}")
-                    temp_file.write(json_util.dumps(self.data))
-                open(f"{self.finish_signal}", "w").close()
-        else:
-            logging.info("Waiting for data readiness signal...")
-            while not os.path.exists(self.finish_signal):
-                time.sleep(5)
-            with open(f"{self.pkl_res}", "r") as f:
-                json_data = f.read()
-            self.data = json_util.loads(json_data)
-
-    def set_sharding(self):
-        shard_size = len(self.data) // self.num_shards
-        remainder = len(self.data) % self.num_shards
-        start = self.shard_idx * shard_size + min(self.shard_idx, remainder)
-        end = start + shard_size + (1 if self.shard_idx < remainder else 0)
-        self.data = self.data[start:end]
-
-    def clean_buffer(self):
-        os.remove(f"{self.finish_signal}")
-        os.remove(f"{self.pkl_res}")
+    def set_local_partition(self):
+        """
+        we need a partition key to split the data into multiple shards.
+        Generate the partion key:
+        db["imagenet-1k"].updateMany(
+          {}, // Match all documents
+          [
+            {
+              $set: {
+                key: { $floor: { $multiply: [ { $rand: {} }, 1000000 ] } }
+              }
+            }
+          ]
+        );
+        """
+        logging.info("Data partition begins!")
+        client = MongoClient(MONGODB_URI)
+        db = client["world_model"]
+        collection = db[self.collection_name]
+        self.query.update(
+            {
+                "$expr": {
+                    "$eq": [
+                        {
+                            "$mod": [
+                                {
+                                    "$toInt": f"${self.partition_key}"
+                                },  # Extract last 6 characters
+                                self.num_shards,  # Total number of shards
+                            ]
+                        },
+                        self.shard_idx,  # Current shard index
+                    ]
+                }
+            }
+        )
+        logging.info(f"Query: {self.query}")
+        self.data = list(collection.find(self.query))
+        client.close()
 
     def __len__(self) -> int:
         return len(self.data)
@@ -129,8 +130,8 @@ class MongoDBImageNetDataLoad(MongoDBDataLoad):
         num_shards,
         shard_idx,
         collection_name,
-        init_signal_handler,
         temporal_cache_name,
+        partition_key,
         args,
     ) -> None:
         if args.split == "train":
@@ -145,7 +146,7 @@ class MongoDBImageNetDataLoad(MongoDBDataLoad):
             collection_name=collection_name,
             query=query,
             temporal_cache_name=temporal_cache_name,
-            init_signal_handler=init_signal_handler,
+            partition_key=partition_key,
         )
         self.image_processing = ImageProcessing(args)
 
@@ -169,9 +170,9 @@ class MongoDBCC12MDataLoad(MongoDBDataLoad):
         shard_idx,
         query,
         collection_name,
-        init_signal_handler,
         temporal_cache_name,
         extract_field,
+        partition_key,
         args,
     ) -> None:
         super().__init__(
@@ -180,7 +181,7 @@ class MongoDBCC12MDataLoad(MongoDBDataLoad):
             collection_name=collection_name,
             query=query,
             temporal_cache_name=temporal_cache_name,
-            init_signal_handler=init_signal_handler,
+            partition_key=partition_key,
         )
         self.image_processing = ImageProcessing(args)
         self.extract_field = extract_field
