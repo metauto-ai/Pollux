@@ -1,9 +1,10 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 
 from dataclasses import dataclass, field
-from typing import Optional, Tuple, List, Dict
+from typing import Optional, Tuple, List, Dict, Any
 import logging
 import random
+import time
 import torch
 from torch import nn
 import torch.nn.functional as F
@@ -19,7 +20,7 @@ from lingua.transformer import (
     RMSNorm,
     BaseTransformerArgs,
 )
-
+from apps.offline_inf.data import AverageMeter
 
 logger = logging.getLogger()
 
@@ -142,13 +143,24 @@ class OfflineInference(nn.Module):
         batch["cap_token"] = tokens.cuda()
         return batch
 
+
     @torch.no_grad()
-    def forward(self, batch: dict[str:any]) -> dict[str:any]:
+    def forward(self, batch: dict[str, Any], inference_meters: Dict[str, AverageMeter]) -> dict[str, Any]:
+        # Process text embedding
+        start_time = time.time()
         batch = self.cap_pos_tokenize(batch)
         batch["text_embedding"] = self.plan_transformer(batch)
+        inference_time = time.time() - start_time
+        inference_meters["text_embedding"].update(inference_time, len(batch["text_embedding"]))
+
+        # Process latent code
         image = batch["image"].cuda()
+        start_time = time.time()
         latent_code = self.compressor.encode(image)
+        inference_time = time.time() - start_time
+        inference_meters["latent_code"].update(inference_time, len(latent_code))
         batch["latent_code"] = latent_code
+
         return batch
 
     def init_weights(self, args: ModelArgs):

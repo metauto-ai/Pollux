@@ -20,14 +20,22 @@ from lingua.distributed import (
     setup_torch_distributed,
     get_local_rank,
 )
+import time
 from apps.main.data import AutoDataLoader, DataArgs
 
 from apps.offline_inf.model import OfflineInference, ModelArgs
-from apps.offline_inf.data import save_tensor, transform_dict, remove_tensors
+from apps.offline_inf.data import (
+    AverageMeter,
+    StorageMeter,
+    save_tensor,
+    transform_dict,
+    remove_tensors,
+    benchmark_loading,
+)
 from apps.main.utils.mongodb_data_load import MONGODB_URI
 
 logger = logging.getLogger()
-
+logger.setLevel(logging.INFO)
 
 @dataclass
 class InferenceArgs:
@@ -38,6 +46,9 @@ class InferenceArgs:
     source_data: List[DataArgs] = field(default_factory=list)
     prefix_mapping: Optional[dict[str, str]] = field(default_factory=dict)
     collection_name: str = ""
+    save_format: str = (
+        ".npy"  # Acceptable formats: ".pkl", ".pt", ".npy", ".safetensors"
+    )
 
 
 def launch_inference(cfg: InferenceArgs):
@@ -49,11 +60,13 @@ def launch_inference(cfg: InferenceArgs):
     torch.distributed.barrier()
     world_size = get_world_size()
     global_rank = get_global_rank()
+
     logger.info("Loading model")
     model = OfflineInference(cfg.model)
     model.init_weights(cfg.model)
     logger.info("Model loaded")
     model.cuda().eval()
+
     active_data = [d for d in cfg.source_data if d.stage == cfg.stage and d.use]
     data_loader_factory = AutoDataLoader(
         shard_id=global_rank,
@@ -63,23 +76,67 @@ def launch_inference(cfg: InferenceArgs):
         drop_last=False,
     )
     data_loader, _ = data_loader_factory.create_dataloader()
+
     client = MongoClient(MONGODB_URI)
     db = client["world_model"]
     collection = db[cfg.collection_name]
+
+    # * init our profiling meters for different type of tensors we want to save,
+    # latent_code or text_embedding
+    # Initialize profiling meters for all tensor types
+    inference_meters = {
+        tensor_type: AverageMeter() for tensor_type in cfg.prefix_mapping
+    }
+    save_meters = {tensor_type: AverageMeter() for tensor_type in cfg.prefix_mapping}
+    storage_meters = {tensor_type: StorageMeter() for tensor_type in cfg.prefix_mapping}
+
     for idx, batch in enumerate(data_loader):
-        batch = model(batch)
-        for k, v in cfg.prefix_mapping.items():
+        batch = model.forward(batch, inference_meters)
+
+        for key, prefix in cfg.prefix_mapping.items():
             save_tensor(
-                tensors=batch[k],
+                tensors=batch[key],
                 batch=batch,
                 output_dir=Path(cfg.dump_dir),
-                prefix=v,
+                prefix=prefix,
+                save_format=cfg.save_format,
+                save_meter=save_meters[key],
+                storage_meter=storage_meters[key],
             )
+
         batch = remove_tensors(batch)
         batch = transform_dict(batch)
-        collection.insert_many(batch)
+        # TODO: Jinjie: if I enable this line will have bug
+        # ** And if I enable it the speed will be very slow !
+        # collection.insert_many(batch)
+
+        # Jinjie: if we need profile, early break here
+        if idx >= 100:
+            break
+
+    # Conclude profiling
+    for name, meter in inference_meters.items():
+        meter.conclude(f"Inference ({name})")
+    for name, meter in save_meters.items():
+        meter.conclude(f"Saving ({name})")
+    for name, meter in storage_meters.items():
+        meter.conclude(f"Storage ({name})")
+
+    # TODO: same problem as above, maybe we write DB multiple times?
+    # all_tensor_paths = []  # Collect all tensor paths
+    # for k, v in cfg.prefix_mapping.items():
+    #     all_tensor_paths.extend(
+    #         [
+    #             Path(cfg.dump_dir) / v / f"{v}_{str(id)}{cfg.save_format}"
+    #             for id in batch["_id"]
+    #         ]
+    #     )
+
+    # Benchmark loading
+    benchmark_loading(cfg.dump_dir, cfg.prefix_mapping, cfg.save_format)
     del model
     client.close()
+    logger.info(f"Profiling for {cfg.save_format} finished")
 
 
 def main():
