@@ -22,7 +22,7 @@ from lingua.distributed import (
 )
 import time
 from apps.main.data import AutoDataLoader, DataArgs
-
+import pandas as pd
 from apps.offline_inf.model import OfflineInference, ModelArgs
 from apps.offline_inf.data import (
     AverageMeter,
@@ -36,6 +36,7 @@ from apps.main.utils.mongodb_data_load import MONGODB_URI
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
+
 
 @dataclass
 class InferenceArgs:
@@ -60,7 +61,7 @@ def launch_inference(cfg: InferenceArgs):
     torch.distributed.barrier()
     world_size = get_world_size()
     global_rank = get_global_rank()
-
+    csv_path = Path(cfg.dump_dir) / f"{world_size}_{global_rank}_data.csv"
     logger.info("Loading model")
     model = OfflineInference(cfg.model)
     model.init_weights(cfg.model)
@@ -77,9 +78,9 @@ def launch_inference(cfg: InferenceArgs):
     )
     data_loader, _ = data_loader_factory.create_dataloader()
 
-    client = MongoClient(MONGODB_URI)
-    db = client["world_model"]
-    collection = db[cfg.collection_name]
+    # client = MongoClient(MONGODB_URI)
+    # db = client["world_model"]
+    # collection = db[cfg.collection_name]
 
     # * init our profiling meters for different type of tensors we want to save,
     # latent_code or text_embedding
@@ -102,14 +103,21 @@ def launch_inference(cfg: InferenceArgs):
                 save_format=cfg.save_format,
                 save_meter=save_meters[key],
                 storage_meter=storage_meters[key],
+                num_workers=8,
             )
-
         batch = remove_tensors(batch)
         batch = transform_dict(batch)
         # TODO: Jinjie: if I enable this line will have bug
         # ** And if I enable it the speed will be very slow !
         # collection.insert_many(batch)
 
+        batch_df = pd.DataFrame(batch)
+
+        # Append the batch DataFrame to the CSV file
+        if csv_path.exists():
+            batch_df.to_csv(csv_path, mode="a", header=False, index=False)
+        else:
+            batch_df.to_csv(csv_path, mode="w", header=True, index=False)
         # Jinjie: if we need profile, early break here
         if idx >= 100:
             break
@@ -122,20 +130,10 @@ def launch_inference(cfg: InferenceArgs):
     for name, meter in storage_meters.items():
         meter.conclude(f"Storage ({name})")
 
-    # TODO: same problem as above, maybe we write DB multiple times?
-    # all_tensor_paths = []  # Collect all tensor paths
-    # for k, v in cfg.prefix_mapping.items():
-    #     all_tensor_paths.extend(
-    #         [
-    #             Path(cfg.dump_dir) / v / f"{v}_{str(id)}{cfg.save_format}"
-    #             for id in batch["_id"]
-    #         ]
-    #     )
-
     # Benchmark loading
-    benchmark_loading(cfg.dump_dir, cfg.prefix_mapping, cfg.save_format)
+    # benchmark_loading(cfg.dump_dir, cfg.prefix_mapping, cfg.save_format)
     del model
-    client.close()
+    # client.close()
     logger.info(f"Profiling for {cfg.save_format} finished")
 
 
