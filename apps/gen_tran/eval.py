@@ -95,14 +95,11 @@ def launch_eval(cfg: EvalArgs):
         shard_id=global_rank,
         num_shards=world_size,
         train_stage=cfg.stage,
-        init_signal_handler=get_local_rank() == 0,
         data_config=active_data,  # Pass the filtered data configuration
         drop_last=False,
     )
     data_loader, _ = data_loader_factory.create_dataloader()
-    torch.distributed.barrier()
-    if get_local_rank() == 0 and hasattr(data_loader_factory.dataset, "clean_buffer"):
-        data_loader_factory.dataset.clean_buffer()
+
     for idx, batch in enumerate(data_loader):
         generated_samples = generator(batch)
         save_images(
