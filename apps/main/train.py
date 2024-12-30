@@ -59,7 +59,7 @@ from lingua.profiling import ProfilerArgs, maybe_run_profiler
 
 from apps.main.data import AutoDataLoader, DataArgs
 from apps.main.modules.schedulers import SchedulerArgs
-from apps.main.utils.sampler import StatefulDistributedSampler 
+from apps.main.utils.sampler import StatefulDistributedSampler
 from apps.main.model import (
     Pollux,
     ModelArgs,
@@ -88,7 +88,7 @@ class TrainArgs:
     output_dir: str = "/mnt/data/dump"
     dump_dir: str = ""
     seed: int = 42
-    #shuffle: bool = False  # NOTE: detect the step = 0 to shuffle otherwise not shuffle
+    # shuffle: bool = False  # NOTE: detect the step = 0 to shuffle otherwise not shuffle
 
     # Number of gradient accumulation steps
     # Total batch size is batch_size*grad_acc_steps
@@ -124,7 +124,7 @@ class TrainState(Stateful):
 
     def state_dict(self) -> Dict[str, Any]:
         return {
-            #"epoch": self.sampler.epoch,
+            # "epoch": self.sampler.epoch,
             "step": self.step,
             "acc_step": self.acc_step,
             "sampler": self.sampler.state_dict(self.step),
@@ -340,16 +340,9 @@ def train(args: TrainArgs):
             shard_id=dp_rank,
             num_shards=dp_degree,
             train_stage=args.train_stage,
-            init_signal_handler=get_local_rank() == 0,
             data_config=active_data,  # Pass the filtered data configuration
         )
         data_loader, sampler = data_loader_factory.create_dataloader()
-
-        torch.distributed.barrier()
-        if get_local_rank() == 0 and hasattr(
-            data_loader_factory.dataset, "clean_buffer"
-        ):
-            data_loader_factory.dataset.clean_buffer()
 
         # build optimizer after apply parallelisms to the model
         optimizer, scheduler = build_optimizer(model, args.optim, args.steps)
