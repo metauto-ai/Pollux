@@ -17,7 +17,7 @@ from safetensors.torch import save_file, load_file
 import numpy as np
 import glob
 import multiprocessing
-
+import torch.utils.benchmark as benchmark
 
 logger = logging.getLogger()
 
@@ -176,6 +176,20 @@ def benchmark_loading(dump_dir, prefix_mapping, save_format):
 
     for name, meter in load_meters.items():
         meter.conclude(f"Loading ({name})")
+
+
+        
+        
+def benchmark_url_loading(data_loader):
+    iterator = iter(data_loader)
+    timer = benchmark.Timer(
+        stmt="batch = next(iterator)",
+        globals={"iterator": iterator}
+    )
+    result = timer.timeit(10)  # Number of batches
+    logger.info("Average batch fetching time: %.6f seconds", result.mean)   
+
+
 
 
 def transform_dict(input_dict):

@@ -1,20 +1,24 @@
 # torchrun --nnodes 1 --nproc-per-node 8 -m apps.offline_inf.inference config=apps/offline_inf/configs/inference.yaml
 name: "debug_evals"
-stage: preliminary # preliminary for test normal usage: inference 
+stage: inference # preliminary for test normal usage: inference 
 collection_name: "post_cc12m_llama3b_token_hunyuan_256_latent_code" # this is the colelction name
 dump_dir:  /jfs/jinjie/code/downloads/dump/test_inference # change dir
 prefix_mapping:
   "text_embedding": "LLAMA3_3B_text_embedding"
   "latent_code": "HunyuanVideo_latent_code"
+profile: True
+
+
+
 source_data:
   - stage: inference
     id: 0
     task: text_to_image
     data_name: cc12m
     source: mongodb
-    batch_size: 64
+    batch_size: 256
     image_size: 256
-    num_workers: 8
+    num_workers: 32
     use: True
     retries: 3
     partition_key: "key"
@@ -28,7 +32,7 @@ source_data:
     num_workers: 8
     split: train
     partition_key: 'key'
-    use: True
+    use: False
 
 model:
     vae:

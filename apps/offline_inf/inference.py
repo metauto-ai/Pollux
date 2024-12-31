@@ -11,6 +11,7 @@ from omegaconf import OmegaConf
 import torchvision.transforms as transforms
 import torch
 from lingua.args import dump_config
+from lingua.logger import init_logger
 from lingua.checkpoint import CONSOLIDATE_FOLDER, consolidate_checkpoints
 from lingua.distributed import (
     DistributedArgs,
@@ -31,6 +32,7 @@ from apps.offline_inf.data import (
     transform_dict,
     remove_tensors,
     benchmark_loading,
+    benchmark_url_loading
 )
 from apps.main.utils.mongodb_data_load import MONGODB_URI
 
@@ -48,8 +50,10 @@ class InferenceArgs:
     prefix_mapping: Optional[dict[str, str]] = field(default_factory=dict)
     collection_name: str = ""
     save_format: str = (
-        ".npy"  # Acceptable formats: ".pkl", ".pt", ".npy", ".safetensors"
+        ".safetensors"  # Acceptable formats: ".pkl", ".pt", ".npy", ".safetensors"
     )
+    # * whether do profiling
+    profile: Optional[bool] = False
 
 
 def launch_inference(cfg: InferenceArgs):
@@ -58,6 +62,7 @@ def launch_inference(cfg: InferenceArgs):
 
     Path(cfg.dump_dir).mkdir(parents=True, exist_ok=True)
     dump_config(cfg, Path(cfg.dump_dir) / "config.yaml", log_config=False)
+    init_logger(Path(cfg.dump_dir) / f"{cfg.stage}.log")
     torch.distributed.barrier()
     world_size = get_world_size()
     global_rank = get_global_rank()
@@ -77,6 +82,9 @@ def launch_inference(cfg: InferenceArgs):
         drop_last=False,
     )
     data_loader, _ = data_loader_factory.create_dataloader()
+    
+    # Benchmark loading from MongoDB web
+    benchmark_url_loading(data_loader)
 
     # client = MongoClient(MONGODB_URI)
     # db = client["world_model"]
@@ -90,8 +98,10 @@ def launch_inference(cfg: InferenceArgs):
     }
     save_meters = {tensor_type: AverageMeter() for tensor_type in cfg.prefix_mapping}
     storage_meters = {tensor_type: StorageMeter() for tensor_type in cfg.prefix_mapping}
-
+    
+    logger.info("Start inference now....")
     for idx, batch in enumerate(data_loader):
+        logger.info(f"Inference for batch {idx} start")
         batch = model.forward(batch, inference_meters)
 
         for key, prefix in cfg.prefix_mapping.items():
@@ -118,9 +128,12 @@ def launch_inference(cfg: InferenceArgs):
             batch_df.to_csv(csv_path, mode="a", header=False, index=False)
         else:
             batch_df.to_csv(csv_path, mode="w", header=True, index=False)
+        
+        logger.info(f"Inference for batch {idx} end")
         # Jinjie: if we need profile, early break here
-        if idx >= 100:
-            break
+        # if idx >= 10:
+        #     break
+        
 
     # Conclude profiling
     for name, meter in inference_meters.items():
@@ -130,8 +143,13 @@ def launch_inference(cfg: InferenceArgs):
     for name, meter in storage_meters.items():
         meter.conclude(f"Storage ({name})")
 
-    # Benchmark loading
+    # Benchmark loading from disk
     # benchmark_loading(cfg.dump_dir, cfg.prefix_mapping, cfg.save_format)
+    
+    
+
+    
+    
     del model
     # client.close()
     logger.info(f"Profiling for {cfg.save_format} finished")
