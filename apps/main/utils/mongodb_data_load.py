@@ -58,7 +58,7 @@ class MongoDBDataLoad(Dataset):
         collection_name: str,
         temporal_cache_name: str,
         partition_key: str,
-        query: dict[str, Any],
+        query: dict[str, Any], 
     ) -> None:
         super().__init__()
         assert shard_idx >= 0 and shard_idx < num_shards, "Invalid shard index"
@@ -104,7 +104,7 @@ class MongoDBDataLoad(Dataset):
                             "$mod": [
                                 {
                                     "$toInt": f"${self.partition_key}"
-                                },  # Extract last 6 characters
+                                },  
                                 self.num_shards,  # Total number of shards
                             ]
                         },
@@ -114,7 +114,17 @@ class MongoDBDataLoad(Dataset):
             }
         )
         logging.info(f"Query: {self.query}")
+        
+        start_time = time.time()  # Record the start time
+        # * download the sub table head for this shard gpu
         self.data = list(collection.find(self.query))
+        end_time = time.time()  # Record the end time
+        # Calculate the duration in seconds
+        elapsed_time = end_time - start_time
+        minutes, seconds = divmod(elapsed_time, 60)
+
+        logging.info(f"Data Index retrieval from MongoDB completed in {int(minutes)} minutes and {seconds:.2f} seconds.")
+                
         client.close()
 
     def __len__(self) -> int:
@@ -160,6 +170,7 @@ class MongoDBImageNetDataLoad(MongoDBDataLoad):
             "image": self.image_processing.transform(image),
             "label": self.data[idx]["label"],
             "caption": self.data[idx]["caption"],
+            "_id": str(self.data[idx]["_id"]),
         }
 
 

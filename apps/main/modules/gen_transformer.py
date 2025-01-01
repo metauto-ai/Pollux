@@ -19,9 +19,14 @@ from lingua.transformer import (
     Attention,
     InitStdFactor,
 )
-
-from apps.main.modules.ops import RotaryEmbedding1D, RotaryEmbedding2D, AdaLN, modulate
-from apps.main.modules.embedder import ImageEmbedder, TimestepEmbedder, LabelEmbedder
+from apps.main.modules.ops import (
+    RotaryEmbedding1D,
+    RotaryEmbedding2D,
+    AdaLN,
+    modulate,
+    create_causal_mask,
+)
+from apps.main.modules.embedder import ImageEmbedder, TimestepEmbedder
 
 
 logger = logging.getLogger()
@@ -40,23 +45,6 @@ class GenTransformerArgs(BaseTransformerArgs):
     gen_seqlen: int = 1000
     pre_trained_path: Optional[str] = None
     attn_type: str = "full"  # Options: 'full', 'bi_causal' and 'causal'.
-
-
-def create_causal_mask(seqlen, attn_impl, sliding_window):
-    if sliding_window is not None and attn_impl == "xformers":
-        return fmha.attn_bias.LocalAttentionFromBottomRightMask(
-            window_left=sliding_window - 1, window_right=0
-        )
-    elif attn_impl == "xformers":
-        return fmha.attn_bias.LowerTriangularMask()
-    elif attn_impl == "sdpa":
-        return "causal"
-    elif attn_impl == "flex_attention":
-        return create_block_mask(causal_mask, None, None, seqlen, seqlen)
-    else:
-        raise NotImplementedError(
-            f"Attention {attn_impl} with {sliding_window} sliding window not implemented"
-        )
 
 
 def causal_mask(b, h, q_idx, kv_idx):
@@ -151,7 +139,7 @@ class BaseDiffusionTransformer(nn.Module):
 
         if self.attn_type in ["causal", "bi_causal"]:
             seqlen = h.size(1)
-            mask = create_causal_mask(seqlen, attn_impl, None)
+            mask = create_causal_mask(seqlen, attn_impl)
 
         elif self.attn_type == "full":
             mask = None
