@@ -99,9 +99,8 @@ def launch_inference(cfg: InferenceArgs):
     logger.info("Start inference now....")
 
     for idx, batch in enumerate(data_loader):
-        logger.info(f"Inference for batch {idx} start")
         batch = model.forward(batch, inference_meters)
-        if len(save_batch) == 0 or in_parquet_num <= cfg.parque_size:
+        if len(save_batch) == 0 or in_parquet_num < cfg.parque_size:
             for key, prefix in cfg.prefix_mapping.items():
                 if isinstance(batch[key], torch.Tensor):
                     data = batch[key].detach().cpu().numpy()
@@ -117,7 +116,7 @@ def launch_inference(cfg: InferenceArgs):
                         save_batch[f"{key}_raw_shape"].extend(batch[f"{key}_raw_shape"])
             in_parquet_num += len(save_batch[prefix])
 
-        else:
+        if in_parquet_num >= cfg.parque_size:
             parquet_path = save_parquet(
                 save_batch,
                 cfg.dump_dir,
@@ -143,9 +142,8 @@ def launch_inference(cfg: InferenceArgs):
             save_batch = {}
             in_parquet_num = 0
         # Jinjie: if we need profile, early break here
-        if idx >= 1000:
+        if idx > 1000:
             break
-
     # Conclude profiling
     for name, meter in inference_meters.items():
         meter.conclude(f"Inference ({name})")
