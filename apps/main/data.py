@@ -70,6 +70,7 @@ class DataArgs:
     retries: Optional[int] = 3  # Number of retries for MongoDB connection
     use: bool = False  # Whether to use this dataset
     partition_key: str = "key"  # MongoDB partition key
+    prefetch_factor: int = 2  # Prefetch factor for dataloader
 
 
 class AutoDataLoader:
@@ -209,6 +210,7 @@ class AutoDataLoader:
                 drop_last=self.drop_last,
                 pin_memory=self.pin_memory,
                 num_workers=args.num_workers,
+                prefetch_factor=args.prefetch_factor,
             ),
             sampler,
         )

@@ -15,7 +15,7 @@ from torch.utils.data import Dataset, DataLoader
 from PIL import Image
 from pathlib import Path
 from bson import json_util, ObjectId
-
+import pandas as pd
 
 from apps.main.modules.preprocess import ImageProcessing
 import time
@@ -58,7 +58,7 @@ class MongoDBDataLoad(Dataset):
         collection_name: str,
         temporal_cache_name: str,
         partition_key: str,
-        query: dict[str, Any], 
+        query: dict[str, Any],
     ) -> None:
         super().__init__()
         assert shard_idx >= 0 and shard_idx < num_shards, "Invalid shard index"
@@ -102,9 +102,7 @@ class MongoDBDataLoad(Dataset):
                     "$eq": [
                         {
                             "$mod": [
-                                {
-                                    "$toInt": f"${self.partition_key}"
-                                },  
+                                {"$toInt": f"${self.partition_key}"},
                                 self.num_shards,  # Total number of shards
                             ]
                         },
@@ -114,21 +112,24 @@ class MongoDBDataLoad(Dataset):
             }
         )
         logging.info(f"Query: {self.query}")
-        
+
         start_time = time.time()  # Record the start time
         # * download the sub table head for this shard gpu
-        self.data = list(collection.find(self.query))
+        # self.data = list(collection.find(self.query))
+        self.data = pd.DataFrame(list(collection.find(self.query))).reset_index()
         end_time = time.time()  # Record the end time
         # Calculate the duration in seconds
         elapsed_time = end_time - start_time
         minutes, seconds = divmod(elapsed_time, 60)
 
-        logging.info(f"Data Index retrieval from MongoDB completed in {int(minutes)} minutes and {seconds:.2f} seconds.")
-                
+        logging.info(
+            f"Data Index retrieval from MongoDB completed in {int(minutes)} minutes and {seconds:.2f} seconds."
+        )
+
         client.close()
 
     def __len__(self) -> int:
-        return len(self.data)
+        return self.data.index.max()
 
     def __getitem__(self, idx: int) -> dict[str, Any]:
         return self.data[idx]
@@ -160,11 +161,8 @@ class MongoDBImageNetDataLoad(MongoDBDataLoad):
         )
         self.image_processing = ImageProcessing(args)
 
-    def __len__(self) -> int:
-        return len(self.data)
-
     def __getitem__(self, idx: int) -> dict[str, Any]:
-        image_url = self.data[idx]["image"]
+        image_url = self.data.iloc[idx]["image"]
         image = Image.open(image_url)
         return {
             "image": self.image_processing.transform(image),
@@ -199,11 +197,8 @@ class MongoDBCC12MDataLoad(MongoDBDataLoad):
         self.retries = args.retries
         self.place_holder_image = Image.new("RGB", (args.image_size, args.image_size))
 
-    def __len__(self) -> int:
-        return len(self.data)
-
     def __getitem__(self, idx: int) -> dict[str, Any]:
-        sample = self.data[idx]
+        sample = self.data.iloc[idx]
         return_sample = {}
         return_sample["_id"] = str(sample["_id"])
         return_sample["caption"] = sample["caption"]

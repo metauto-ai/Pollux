@@ -83,7 +83,7 @@ def launch_inference(cfg: InferenceArgs):
     data_loader, _ = data_loader_factory.create_dataloader()
 
     # Benchmark loading from MongoDB web
-    benchmark_url_loading(data_loader)
+    # benchmark_url_loading(data_loader)
 
     # * init our profiling meters for different type of tensors we want to save,
     # latent_code or text_embedding
