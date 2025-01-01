@@ -1,3 +1,4 @@
+import triton
 from typing import Tuple
 
 MAX_FUSED_SIZE: int = 65536
