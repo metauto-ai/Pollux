@@ -4,7 +4,7 @@ import datasets
 from apps.main.utils.mongodb_data_load import MONGODB_URI
 from apps.main.utils.imagenet_classes import IMAGENET2012_CLASSES
 from pymongo import MongoClient
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from pathlib import Path
 import uuid
 from torch.utils.data import Dataset, DataLoader
@@ -18,6 +18,9 @@ import numpy as np
 import glob
 import multiprocessing
 import torch.utils.benchmark as benchmark
+import pyarrow as pa
+import pyarrow.parquet as pq
+import pandas as pd
 
 logger = logging.getLogger()
 
@@ -178,18 +181,13 @@ def benchmark_loading(dump_dir, prefix_mapping, save_format):
         meter.conclude(f"Loading ({name})")
 
 
-        
-        
 def benchmark_url_loading(data_loader):
     iterator = iter(data_loader)
     timer = benchmark.Timer(
-        stmt="batch = next(iterator)",
-        globals={"iterator": iterator}
+        stmt="batch = next(iterator)", globals={"iterator": iterator}
     )
     result = timer.timeit(10)  # Number of batches
-    logger.info("Average batch fetching time: %.6f seconds", result.mean)   
-
-
+    logger.info("Average batch fetching time: %.6f seconds", result.mean)
 
 
 def transform_dict(input_dict):
@@ -204,3 +202,32 @@ def remove_tensors(input_dict):
         if not isinstance(values[0], torch.Tensor):
             return_dict[k] = values
     return return_dict
+
+
+def save_parquet(
+    data: Dict[str, Any],
+    output_dir: str,
+    prefix: str = "data",
+    save_meter: AverageMeter = None,
+    storage_meter: AverageMeter = None,
+):
+    os.makedirs(output_dir, exist_ok=True)
+    start_time = time.time()
+
+    # Convert the dictionary to a PyArrow Table
+    df = pd.DataFrame(data)
+
+    # Define the output file path
+    parquet_path = os.path.join(output_dir, f"{prefix}.parquet")
+
+    # Save the table as a Parquet file
+    df.to_parquet(parquet_path, engine="pyarrow", index=False)
+
+    save_time = time.time() - start_time
+    if save_meter:
+        save_meter.update(save_time, 1)
+    total_size_bytes = os.path.getsize(parquet_path)
+    if storage_meter:
+        storage_meter.update(total_size_bytes, 1)
+    logger.warning(f"Saved data to {parquet_path}")
+    return parquet_path
