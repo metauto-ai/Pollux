@@ -4,6 +4,7 @@ import requests
 import logging
 from typing import Any
 import time
+import pandas as pd
 
 import tempfile
 from urllib.parse import quote_plus
@@ -114,17 +115,24 @@ class MongoDBDataLoad(Dataset):
             }
         )
         logging.info(f"Query: {self.query}")
-        
+
         start_time = time.time()  # Record the start time
         # * download the sub table head for this shard gpu
-        self.data = list(collection.find(self.query))
+        # self.data = list(collection.find(self.query).limit(100000))
+
+        # Fetch data from MongoDB and load into a pandas DataFrame
+        # TODO: Jinjie: change pd.df
+        self.data = pd.DataFrame(list(collection.find(self.query).limit(100000)))
+
+        # The rest of your initialization
+
         end_time = time.time()  # Record the end time
         # Calculate the duration in seconds
         elapsed_time = end_time - start_time
         minutes, seconds = divmod(elapsed_time, 60)
 
         logging.info(f"Data Index retrieval from MongoDB completed in {int(minutes)} minutes and {seconds:.2f} seconds.")
-                
+
         client.close()
 
     def __len__(self) -> int:
@@ -203,7 +211,9 @@ class MongoDBCC12MDataLoad(MongoDBDataLoad):
         return len(self.data)
 
     def __getitem__(self, idx: int) -> dict[str, Any]:
-        sample = self.data[idx]
+        # sample = self.data[idx]
+        # TODO: for pd data
+        sample = self.data.iloc[idx]  # Use iloc for row access in DataFrame
         return_sample = {}
         return_sample["_id"] = str(sample["_id"])
         return_sample["caption"] = sample["caption"]

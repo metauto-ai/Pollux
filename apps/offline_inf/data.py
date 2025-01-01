@@ -182,11 +182,17 @@ def benchmark_loading(dump_dir, prefix_mapping, save_format):
 
 
 def benchmark_url_loading(data_loader):
+    start_time = time.perf_counter()  # Use time.perf_counter() for precise timing
     iterator = iter(data_loader)
+    end_time = time.perf_counter()
+    elapsed_time = end_time - start_time
+
+    logger.info(f"Time taken to create dataloader iterator: {elapsed_time:.4f} seconds")
+    
     timer = benchmark.Timer(
         stmt="batch = next(iterator)", globals={"iterator": iterator}
     )
-    result = timer.timeit(10)  # Number of batches
+    result = timer.timeit(20)  # Number of batches
     logger.info("Average batch fetching time: %.6f seconds", result.mean)
 
 
@@ -209,7 +215,7 @@ def save_parquet(
     output_dir: str,
     prefix: str = "data",
     save_meter: AverageMeter = None,
-    storage_meter: AverageMeter = None,
+    storage_meter: StorageMeter = None,
 ):
     os.makedirs(output_dir, exist_ok=True)
     start_time = time.time()

@@ -209,6 +209,10 @@ class AutoDataLoader:
                 drop_last=self.drop_last,
                 pin_memory=self.pin_memory,
                 num_workers=args.num_workers,
+                # Keep workers alive between epochs
+                # * init wokrers are very expensive ! 
+                # hard code as True here
+                persistent_workers=True,  
             ),
             sampler,
         )

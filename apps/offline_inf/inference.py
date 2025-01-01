@@ -37,6 +37,7 @@ from apps.offline_inf.data import (
 )
 import numpy as np
 from apps.main.utils.mongodb_data_load import MONGODB_URI
+import glob
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -80,10 +81,12 @@ def launch_inference(cfg: InferenceArgs):
         data_config=active_data,  # Pass the filtered data configuration
         drop_last=False,
     )
-    data_loader, _ = data_loader_factory.create_dataloader()
+    data_loader, sampler = data_loader_factory.create_dataloader()
 
-    # Benchmark loading from MongoDB web
-    benchmark_url_loading(data_loader)
+    # Benchmark loading from MongoDB web, should only used for testing
+    # * enable this profiling will make our inference state incorrect,
+    # don't enable this line during actual inference
+    # benchmark_url_loading(data_loader)
 
     # * init our profiling meters for different type of tensors we want to save,
     # latent_code or text_embedding
@@ -95,11 +98,37 @@ def launch_inference(cfg: InferenceArgs):
     storage_meters = {"parquet": StorageMeter()}
     save_batch = {}
     in_parquet_num = 0
-    count = 0
-    logger.info("Start inference now....")
 
+    # * stateful inference, support resume if dump_dir is the same
+    # NOTE: batch size must be
+    saved_parquet = list(glob.glob(
+        os.path.join(cfg.dump_dir, f"{world_size}_{global_rank}_*.parquet")
+    ))
+    saved_parquet_num=len(saved_parquet)
+    if saved_parquet_num<= 0:
+        logger.warning(f"No saved parquet found, doing fresh start now...")
+        index_to_start=0
+    else:
+        first_parquet=saved_parquet[0]
+        df = pd.read_parquet(first_parquet, engine="pyarrow")
+        previous_parquet_size=len(df)
+        assert (
+            previous_parquet_size == cfg.parque_size
+        ), f"Parquet size must be consistent, prevs {previous_parquet_size} == but now {cfg.parque_size}"
+
+        index_to_start=cfg.parque_size * saved_parquet_num
+        logger.warning(
+            f"{saved_parquet_num} saved parquet found, with parquet_size={cfg.parque_size}, resuming inference starting from {index_to_start} item."
+        )
+        # set sampler state and counter
+        sampler.load_state_dict({"start_index": index_to_start})
+
+    count=saved_parquet_num
+    logger.info("Start inference now....")
+    
     for idx, batch in enumerate(data_loader):
         batch = model.forward(batch, inference_meters)
+
         if len(save_batch) == 0 or in_parquet_num < cfg.parque_size:
             for key, prefix in cfg.prefix_mapping.items():
                 if isinstance(batch[key], torch.Tensor):
