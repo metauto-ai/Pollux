@@ -125,7 +125,7 @@ def launch_inference(cfg: InferenceArgs):
 
         index_to_start = cfg.parque_size * saved_parquet_num
         logger.warning(
-            f"{saved_parquet_num} saved parquet found, with parquet_size={cfg.parque_size}, resuming inference starting from {index_to_start} item, continue to generate {saved_parquet_num+1}-th parquet ..."
+            f"{saved_parquet_num} saved parquet found, with parquet_size={cfg.parque_size}, resuming inference starting from {index_to_start}-th item, continue to generate {saved_parquet_num+1}-th parquet ..."
         )
 
         # set sampler state and counter
@@ -185,7 +185,7 @@ def launch_inference(cfg: InferenceArgs):
             save_batch = {}
             in_parquet_num = 0
         # Jinjie: if we need profile, early break here
-        if idx > 1:
+        if idx > 10000:
             break
     # Conclude profiling
     for name, meter in inference_meters.items():
