@@ -86,18 +86,22 @@ model:
 
 data:
   - stage: preliminary
-    id: 1
+    id: 0
     task: class_to_image
     data_name: imagenet-1k
     source: mongodb
-    batch_size: 96
     image_size: 256
-    num_workers: 8
     split: train
     partition_key: 'key'
     use: True
-
-
+    dataloader:
+        prefetch_factor: 2
+        batch_size: 64
+        num_workers: 16
+        seed: 1024
+        shuffle: True
+        pin_memory: True
+        drop_last: True
 
 profiling:
     run: true

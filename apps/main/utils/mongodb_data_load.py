@@ -59,20 +59,11 @@ class MongoDBDataLoad(Dataset):
         num_shards,
         shard_idx,
         collection_name: str,
-        temporal_cache_name: str,
         partition_key: str,
         query: dict[str, Any],
     ) -> None:
         super().__init__()
         assert shard_idx >= 0 and shard_idx < num_shards, "Invalid shard index"
-        self.pkl_res = str(
-            Path(LOCAL_TEMP_DIR)
-            / f"{temporal_cache_name}_mongo_{collection_name}_{query}.json"
-        )
-        self.finish_signal = str(
-            Path(LOCAL_TEMP_DIR)
-            / f"{temporal_cache_name}_mongo_{collection_name}_{query}_ready.signal"
-        )
         self.collection_name = collection_name
         self.query = query
         self.num_shards = num_shards
@@ -144,7 +135,6 @@ class MongoDBImageNetDataLoad(MongoDBDataLoad):
         num_shards,
         shard_idx,
         collection_name,
-        temporal_cache_name,
         partition_key,
         args,
     ) -> None:
@@ -159,7 +149,6 @@ class MongoDBImageNetDataLoad(MongoDBDataLoad):
             shard_idx=shard_idx,
             collection_name=collection_name,
             query=query,
-            temporal_cache_name=temporal_cache_name,
             partition_key=partition_key,
         )
         self.image_processing = ImageProcessing(args)
@@ -183,7 +172,6 @@ class MongoDBCC12MDataLoad(MongoDBDataLoad):
         shard_idx,
         query,
         collection_name,
-        temporal_cache_name,
         extract_field,
         partition_key,
         args,
@@ -193,7 +181,6 @@ class MongoDBCC12MDataLoad(MongoDBDataLoad):
             shard_idx=shard_idx,
             collection_name=collection_name,
             query=query,
-            temporal_cache_name=temporal_cache_name,
             partition_key=partition_key,
         )
         self.image_processing = ImageProcessing(args)
@@ -240,7 +227,6 @@ class MongoDBParquetDataLoad(MongoDBDataLoad):
         shard_idx,
         query,
         collection_name,
-        temporal_cache_name,
         extract_field,
         mapping_field,
         partition_key,
@@ -250,7 +236,6 @@ class MongoDBParquetDataLoad(MongoDBDataLoad):
             shard_idx=shard_idx,
             collection_name=collection_name,
             query=query,
-            temporal_cache_name=temporal_cache_name,
             partition_key=partition_key,
         )
         self.index_boundaries = []  # Cumulative row boundaries for each file
