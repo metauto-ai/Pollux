@@ -1,6 +1,3 @@
-# Copyright (c) Meta Platforms, Inc. and affiliates.
-# This software may be used and distributed according to the terms of the Llama 2 Community License Agreement.
-
 import gc
 import logging
 import os
@@ -28,7 +25,6 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from timeit import default_timer as timer
 from typing import Any, Dict, List, Optional
-
 
 from lingua.args import dump_config, flatten_dict, dataclass_from_dict
 from lingua.checkpoint import CheckpointArgs, CheckpointManager, load_from_checkpoint
@@ -60,8 +56,7 @@ from lingua.profiling import ProfilerArgs, maybe_run_profiler
 from apps.main.data import AutoDataLoader, DataArgs
 from apps.main.modules.schedulers import SchedulerArgs
 from apps.main.utils.sampler import StatefulDistributedSampler
-from apps.main.modules.plan_transformer import get_num_flop_per_token
-from apps.main.model import (
+from Pollux.apps.plan.model_v1 import (
     Pollux,
     ModelArgs,
     build_fsdp_grouping_plan,
@@ -69,11 +64,13 @@ from apps.main.model import (
     get_no_recompute_ops,
 )
 
-from apps.main.eval import (
+from apps.plan.eval import (
     launch_eval,
     EVAL_FOLDER_NAME,
     EvalArgs,
 )
+
+from apps.main.utils.cal_flops import get_num_flop_per_token
 
 logger = logging.getLogger()
 
@@ -87,7 +84,7 @@ class TrainArgs:
     output_dir: str = "/mnt/data/dump"
     dump_dir: str = ""
     seed: int = 42
-    shuffle: bool = False  # NOTE: detect the step = 0 to shuffle otherwise not shuffle
+    # shuffle: bool = False  # NOTE: detect the step = 0 to shuffle otherwise not shuffle
 
     # Number of gradient accumulation steps
     # Total batch size is batch_size*grad_acc_steps
@@ -107,7 +104,7 @@ class TrainArgs:
     checkpoint: CheckpointArgs = field(default_factory=CheckpointArgs)
     profiling: ProfilerArgs = field(default_factory=ProfilerArgs)
     logging: LoggingArgs = field(default_factory=LoggingArgs)
-    scheduler: SchedulerArgs = field(default_factory=SchedulerArgs)
+    scheduler: SchedulerArgs = field(default_factory=SchedulerArgs) # TODO: we have double-meaning of `scheduler`; need to check
 
     # If set to None, eval is run locally otherwise it launches a new job with the given number of gpus
     async_eval_gpus: Optional[int] = None
@@ -133,26 +130,19 @@ class TrainState(Stateful):
     def load_state_dict(self, state_dict):
         self.step = state_dict["step"]
         self.acc_step = state_dict["acc_step"]
-
-        # NOTE: the first time of training the sampler will be loaded with the start_index of 0
-        if "sampler" in state_dict:
-            if self.sampler is not None:
-                self.sampler.load_state_dict(state_dict["sampler"])
-            else:
-                logger.warning(
-                    "Sampler exists in state_dict but no sampler initialized in TrainState."
-                )
-
-        elif self.sampler is not None:
-            logger.warning(
-                "Sampler does not exist in state_dict but sampler initialized in TrainState."
-            )
-            self.sampler.reset()
-
+        self.sampler.load_state_dict(state_dict["sampler"])
+        # if "sampler" in state_dict:
+        #     if self.sampler is not None:
+        #         self.sampler.load_state_dict(state_dict["sampler"])
+        #     else:
+        #         logger.warning(
+        #             "Sampler exists in state_dict but no sampler initialized in TrainState."
+        #         )
+        # elif self.sampler is not None:
+        #     self.sampler.reset()
         self.scheduler.load_state_dict(state_dict["scheduler"])
-        self.sampler.set_epoch(state_dict["epoch"])
         logger.info(
-            f"Resume training with distributed sampler state to Epoch: {self.sampler.epoch} at data item index: {self.sampler.start_index}."
+            f"Resume training with distributed sampler state to data item index: {self.sampler.start_index}."
         )
         logger.info(
             "TrainState is loading state_dict: step, acc-step, sampler, scheduler are loaded."
@@ -160,11 +150,8 @@ class TrainState(Stateful):
 
 
 def validate_train_args(args: TrainArgs):
-    # assert args.dump_dir, "Dump dir not set" # Mingchen: no need any more
 
-    # Minchen: generate the dump dir according to the config
     if not args.dump_dir:
-        # args.dump_dir = f"/mnt/data/dump/{args.name}"
         args.dump_dir = str(Path(args.output_dir) / f"{args.name}")
 
     logger.info(f"Dump dir set to {args.dump_dir}")
@@ -265,11 +252,6 @@ def every_n_steps(train_state, freq, acc_step=None, acc_freq=None):
     return test
 
 
-def save_sampler_state(train_state, logger, reason: str = ""):
-    train_state.sampler.save_state(train_state.step)
-    logger.info(f"Sampler state saved at step {train_state.step} ({reason})")
-
-
 def train(args: TrainArgs):
     with ExitStack() as context_stack:
         validate_train_args(
@@ -279,15 +261,16 @@ def train(args: TrainArgs):
             os.makedirs(args.dump_dir, exist_ok=True)
             dump_config(args, Path(args.dump_dir) / "config.yaml")
         init_logger(Path(args.dump_dir) / "train.log")
-        # For handling preemption signals.
+
+        # NOTE: For handling preemption signals.
         init_signal_handler(set_preemption_flag)
         setup_env(args.env)
         setup_torch_distributed(args.distributed)
+
         world_mesh = get_device_mesh(args.distributed)
         logger.info(f"Starting job: {args.name}")
 
-        # build dataloader
-        # need dp world size and rank
+        ###### Build DP and TP mesh ######
         dp_mesh = world_mesh["dp_replicate"]
         dp_degree = dp_mesh.size()
         dp_rank = dp_mesh.get_local_rank()
@@ -295,36 +278,31 @@ def train(args: TrainArgs):
             dp_rank = dp_rank * dp_degree + world_mesh["dp_shard"].get_local_rank()
             dp_degree *= world_mesh["dp_shard"].size()
 
-        logger.info(f"Running on dp rank : {dp_rank}")
-        logger.info(f"Running on dp size : {dp_degree}")
+        logger.info(f"Running on total dp rank : {dp_rank}...")
+        logger.info(f"Total degrees of dp : {dp_degree}...")
 
+        ###### Build model ######
         torch.manual_seed(args.seed)
-        logger.info("Building model")
-
         model = Pollux(args.model)
-        logger.info("Model is built !")
-
         model_param_count = get_num_params(model)
+        logger.info(f"Model has been built with {model_param_count} parameters...")
 
-        torch.manual_seed(args.seed)
         model.init_weights(args.model)
+        #torch.distributed.barrier()
+
         model = parallelize_model(
             model,
             world_mesh,
             args.model,
             args.distributed,
             fsdp_grouping_plan=build_fsdp_grouping_plan(
-                args.model, model.compressor.vae.config
+                args.model, model,
             ),
             tp_parallelize=tp_parallelize,
             no_recompute_ops=get_no_recompute_ops(),
         )
         model = model.to(device="cuda")
-
         check_model_value_range(model, range=10.0, std=1.0)
-
-        # log model size
-
         logger.info(f"Model size: {model_param_count:,} total parameters")
 
         gpu_memory_monitor = GPUMemoryMonitor("cuda")
@@ -334,23 +312,27 @@ def train(args: TrainArgs):
         )
         logger.info(f"GPU memory usage: {gpu_memory_monitor}")
 
+        ###### Initilize dataLoader ######
         active_data = [d for d in args.data if d.stage == args.train_stage and d.use]
+        logger.info(f"Actively using dataset: {active_data}")
+
         data_loader_factory = AutoDataLoader(
             shard_id=dp_rank,
             num_shards=dp_degree,
             train_stage=args.train_stage,
-            init_signal_handler=get_local_rank() == 0,
+            #init_signal_handler=get_local_rank() == 0,
             data_config=active_data,  # Pass the filtered data configuration
         )
+
         data_loader, sampler = data_loader_factory.create_dataloader()
-
         torch.distributed.barrier()
-        if get_local_rank() == 0 and hasattr(
-            data_loader_factory.dataset, "clean_buffer"
-        ):
-            data_loader_factory.dataset.clean_buffer()
+        # if get_local_rank() == 0 and hasattr(
+        #     data_loader_factory.dataset, "clean_buffer"
+        # ):
+        #     data_loader_factory.dataset.clean_buffer()
 
-        # build optimizer after apply parallelisms to the model
+ 
+        ###### Build optimizer after apply parallelisms to the model ######
         optimizer, scheduler = build_optimizer(model, args.optim, args.steps)
 
         train_state = TrainState(
@@ -363,7 +345,6 @@ def train(args: TrainArgs):
         checkpoint = CheckpointManager.instantiate_and_make_dir(args.checkpoint)
         checkpoint.load(model, optimizer, train_state, world_mesh)
         # Either load from latest checkpoint or start from scratch
-
         gc.disable()
 
         # train loop
@@ -380,28 +361,23 @@ def train(args: TrainArgs):
         time_last_log = timer()
         gc.collect()
 
+        ###### Training Loop ######
         while train_state.step < args.steps:
             # We constrain train_state.acc_step to be in range 0 to args.grad_acc_steps - 1
             train_state.acc_step += 1
             train_state.acc_step = train_state.acc_step % args.grad_acc_steps
 
-            # NOTE: trigger 1 to save the state of the sampler
-            if train_state.step % 1000 == 0:
-                save_sampler_state(train_state, logger, reason="Periodic Save")
-
             # get batch
             curr_lr = float(optimizer.param_groups[0]["lr"])
             data_load_start = timer()
+
             try:
                 batch = next(dataloader_iterator)
             except:
-                logger.info("New Epoch!")
                 sampler.reset()
-
-                # NOTE: trigger 2 to save the state of the sampler
-                save_sampler_state(train_state, logger, reason="Epoch Reset")
                 # * sampler need to keep track of the exact epoch
                 sampler.epoch += 1
+                logger.info(f"New Epoch: {sampler.epoch}")
                 dataloader_iterator = iter(data_loader)
                 batch = next(dataloader_iterator)
 
@@ -410,6 +386,9 @@ def train(args: TrainArgs):
                 # we do garbage collection manually otherwise different processes
                 # run the GC at different times so they slow down the whole pipeline
                 gc.collect()
+        
+            ###### Batch Data Receive ######
+
             batch["image"] = batch["image"].cuda()
             data_load_time = round(timer() - data_load_start, 4)
             nwords_since_last_log += batch["image"].numel()
@@ -436,7 +415,8 @@ def train(args: TrainArgs):
                 grad_norm.full_tensor() if isinstance(grad_norm, DTensor) else grad_norm
             ).item()
 
-            # optimizer step
+
+            ###### Batch Data Receive ######
             if train_state.acc_step == 0:
                 optimizer.step()
                 scheduler.step()
@@ -470,35 +450,30 @@ def train(args: TrainArgs):
                 total_acc_steps = (
                     args.grad_acc_steps * train_state.step + train_state.acc_step
                 )
-                # TODO: here need to rewrite in later when we have multiple source
-                tokens_per_gpu = total_acc_steps * active_data[0].batch_size
+                tokens_per_gpu = (
+                    total_acc_steps * active_data[0].batch_size
+                )
                 total_tokens = dp_degree * tokens_per_gpu
                 # This is an estimate and the correct values may change
                 # if you change the architecture
                 # Use xformer's analyze profile trace to get actual measurement
-                FLOPS = (
-                    get_num_flop_per_token(
-                        model_param_count,
-                        args.model.gen_transformer.n_layers,
-                        args.model.gen_transformer.dim,
-                        args.model.gen_transformer.max_seqlen,
-                    )
-                    * wps
-                    + get_num_flop_per_token(
-                        model_param_count,
-                        args.model.plan_transformer.n_layers,
-                        args.model.plan_transformer.dim,
-                        args.model.plan_transformer.max_seqlen,
-                    )
-                    * wps
-                )
+                # FLOPS = (
+                #     get_num_flop_per_token(
+                #         model_param_count,
+                #     )
+                #     * wps
+                #     + get_num_flop_per_token(
+                #         model_param_count,
+                #     )
+                #     * wps
+                # )
                 metrics = flatten_dict(
                     {
                         "global_step": train_state.step,
                         "acc_step": train_state.acc_step,
                         "speed": {
                             "wps": wps,
-                            "FLOPS": FLOPS,
+                            # "FLOPS": FLOPS,
                             "curr_iter_time": curr_iter_time,
                             "data_load_time": data_load_time,
                         },
@@ -527,7 +502,7 @@ def train(args: TrainArgs):
                     f"  acc: {train_state.acc_step}"
                     f"  loss: {round(loss.item(),4):>7}"
                     f"  grad: {grad_norm:.2e}"
-                    f"  flops: {FLOPS:.2e}"
+                    # f"  flops: {FLOPS:.2e}"
                     f"  wps: {wps:.2e}"
                     f"  iter: {curr_iter_time:>7}"
                     f"  data: {data_load_time:>5}"
@@ -536,10 +511,16 @@ def train(args: TrainArgs):
                     f"  pow: {gpu_mem_stats.power_draw/1000} W"
                 )
 
+
+            ###### Save Periodically ######
             saved = False
             if every_n_steps(
                 train_state, args.checkpoint.dump.every, acc_step=0
             ) or every_n_steps(train_state, args.checkpoint.eval.every, acc_step=0):
+
+                torch.distributed.barrier()
+                #if get_is_master():
+
                 saved = checkpoint.save(
                     model,
                     optimizer,
@@ -548,10 +529,13 @@ def train(args: TrainArgs):
                     device_mesh=world_mesh,
                 )
 
+            ###### Validation (TODO) ######
+
             if args.eval is not None and every_n_steps(
                 train_state, args.checkpoint.eval.every, acc_step=0
             ):
-                logger.info("Evaluation Start")
+                
+                logger.info("Evaluation Start...")
                 start_time = time.time()
                 eval_args = dataclass_from_dict(EvalArgs, args.eval)
                 eval_args.global_step = train_state.step
@@ -569,8 +553,13 @@ def train(args: TrainArgs):
                     f"Evaluation End! Take total time (sec): {end_time-start_time}"
                 )
                 # TODO: add some images to wandb for visualization
+
+            ###### END of Loop ######
             if preemption_flag["flag"]:
-                if not saved:
+                #torch.distributed.barrier()
+                #if get_is_master() and not saved:
+                #if not saved:
+                if not saved and get_is_master():
                     checkpoint.save(
                         model,
                         optimizer,
@@ -578,12 +567,13 @@ def train(args: TrainArgs):
                         args,
                         device_mesh=world_mesh,
                     )
-                # NOTE: trigger 3 to save the state of the sampler
-                save_sampler_state(train_state, logger, reason="Preemption")
                 requeue_slurm_job()
                 sys.exit(0)
 
-    if not saved:
+    #if not saved and get_is_master():
+    #if not saved and get_is_master():
+    if not saved and get_is_master():
+        #torch.distributed.barrier()
         checkpoint.save(
             model,
             optimizer,
@@ -591,8 +581,7 @@ def train(args: TrainArgs):
             args,
             device_mesh=world_mesh,
         )
-    # NOTE: trigger 4 to save the state of the sampler
-    save_sampler_state(train_state, logger, reason="Training Finished")
+
     gc.collect()
 
 
@@ -602,6 +591,7 @@ def main():
     del cli_args.config
 
     default_cfg = OmegaConf.structured(TrainArgs())
+    logger.info(default_cfg)
     cfg = OmegaConf.merge(default_cfg, file_cfg, cli_args)
     cfg = OmegaConf.to_object(cfg)
 

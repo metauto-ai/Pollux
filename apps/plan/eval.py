@@ -21,9 +21,9 @@ from lingua.distributed import (
     get_local_rank,
 )
 from apps.main.data import AutoDataLoader, DataArgs
-from apps.main.generate import LatentGenerator, GeneratorArgs, load_consolidated_model
+from apps.plan.generate import LatentGenerator, GeneratorArgs, load_consolidated_model
 
-from apps.main.model import Pollux, ModelArgs
+from Pollux.apps.plan.model_v2 import Pollux, ModelArgs
 
 EVAL_FOLDER_NAME = "{:010d}"
 
