@@ -201,7 +201,7 @@ class MongoDBCC12MDataLoad(MongoDBDataLoad):
         self.place_holder_image = Image.new("RGB", (args.image_size, args.image_size))
 
     def __getitem__(self, idx: int) -> dict[str, Any]:
-        
+
         # sample = self.data[idx]
         # for pd data
         sample = self.data.iloc[idx]  # Use iloc for row access in DataFrame
@@ -241,6 +241,7 @@ class MongoDBParquetDataLoad(MongoDBDataLoad):
         collection_name,
         temporal_cache_name,
         extract_field,
+        mapping_field,
         partition_key,
     ) -> None:
         super().__init__(
@@ -256,6 +257,7 @@ class MongoDBParquetDataLoad(MongoDBDataLoad):
         self.current_file = None
         self.num_field = extract_field["parquet_size"]
         self.path_field = extract_field["parquet_path"]
+        self.mapping_field = mapping_field
 
     def set_mapping(self):
         # Build an index mapping for global row indices
@@ -279,7 +281,7 @@ class MongoDBParquetDataLoad(MongoDBDataLoad):
         Returns:
             pd.Series: A row of data as a pandas Series.
         """
-        
+
         # Jinjie: Can we have idx % len(self) behavior and just throw a warning if out of range?
         if idx < 0 or idx >= len(self):
             raise IndexError("Index out of range")
@@ -298,13 +300,17 @@ class MongoDBParquetDataLoad(MongoDBDataLoad):
         sample = self.current_df.iloc[local_idx]
         return_sample = {}
         for k, v in sample.items():
+            if k in self.mapping_field:
+                k_ = self.mapping_field[k]
+            else:
+                k_ = k
             if isinstance(v, ObjectId):
-                return_sample[k] = str(v)
+                return_sample[k_] = str(v)
             if isinstance(v, np.ndarray) and "raw_shape" not in k:
                 raw_shape_key = f"{k}_raw_shape"
                 if raw_shape_key in sample:
-                    return_sample[k] = v.reshape(sample[raw_shape_key])
-                    return_sample[k] = torch.Tensor(np.copy(return_sample[k]))
+                    return_sample[k_] = v.reshape(sample[raw_shape_key])
+                    return_sample[k_] = torch.Tensor(np.copy(return_sample[k_]))
                 else:
-                    return_sample[k] = torch.Tensor(np.copy(v))
+                    return_sample[k_] = torch.Tensor(np.copy(v))
         return return_sample

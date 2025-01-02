@@ -189,6 +189,10 @@ class AutoDataLoader:
                     "parquet_size": "sample_num",
                     "parquet_path": "path",
                 },
+                mapping_field={
+                    "HunyuanVideo_latent_code": "latent_code",
+                    "LLAMA3_3B_text_embedding": "text_embedding",
+                },
                 partition_key=args.partition_key,
             )
         else:
@@ -226,9 +230,6 @@ class AutoDataLoader:
                 drop_last=self.drop_last,
                 pin_memory=self.pin_memory,
                 num_workers=args.num_workers,
-                # Keep workers alive between epochs
-                # * init wokrers are very expensive !
-                # hard code as True here
                 persistent_workers=True if args.num_workers > 0 else False,
                 prefetch_factor=args.prefetch_factor if args.num_workers > 0 else None,
             ),

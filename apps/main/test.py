@@ -12,6 +12,7 @@ from apps.main.modules.tokenizer import TokenizerArgs
 from apps.main.model import ModelArgs, Pollux
 from dotenv import load_dotenv
 from apps.main.data import AutoDataLoader, DataArgs
+import torch
 
 # Configure logging
 logging.basicConfig(
@@ -64,22 +65,13 @@ if __name__ == "__main__":
     data_loader, _ = data_loader_factory.create_dataloader()
     print(len(data_loader))
     print(len(data_loader_factory.dataset))
-    print(data_loader_factory.dataset[0])
-    print(
-        data_loader_factory.dataset[0]["LLAMA3_3B_text_embedding"]
-        .view(128, 3072)
-        .size()
-    )
-    print(
-        data_loader_factory.dataset[0]["HunyuanVideo_latent_code"]
-        .view(16, 32, 32)
-        .size()
-    )  # reshape here is due to haozhe's bug on inference.py, I wrote wrong index and therefore the tensor is reshaped outside.
-    # Run test
     for batch in data_loader:
-        logging.warning(batch)
-        # batch["image"] = batch["image"].cuda()
-
+        for key, value in batch.items():
+            if isinstance(value, torch.Tensor):
+                print(key, value.size())
+            else:
+                print(key, len(value))
+            # print(key, value.size())
+        break
         # Forward pass
         # model(batch)
-        break
