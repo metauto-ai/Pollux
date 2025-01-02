@@ -165,13 +165,14 @@ class MongoDBImageNetDataLoad(MongoDBDataLoad):
         self.image_processing = ImageProcessing(args)
 
     def __getitem__(self, idx: int) -> dict[str, Any]:
-        image_url = self.data.iloc[idx]["image"]
+        cur_data = self.data.iloc[idx]
+        image_url = cur_data["image"]
         image = Image.open(image_url)
         return {
             "image": self.image_processing.transform(image),
-            "label": self.data[idx]["label"],
-            "caption": self.data[idx]["caption"],
-            "_id": str(self.data[idx]["_id"]),
+            "label": cur_data["label"],
+            "caption": cur_data["caption"],
+            "_id": str(cur_data["_id"]),
         }
 
 
