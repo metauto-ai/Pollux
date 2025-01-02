@@ -2,7 +2,7 @@
 name: "debug_evals"
 stage: inference # preliminary for test normal usage: inference 
 dump_dir:  /jfs/data/tmp/cc12m_test_1m/ # change dir
-parque_size: 4096
+parque_size: 1024
 prefix_mapping:
   "text_embedding": "LLAMA3_3B_text_embedding"
   "latent_code": "HunyuanVideo_latent_code"
@@ -12,9 +12,9 @@ source_data:
     task: text_to_image
     data_name: cc12m
     source: mongodb
-    batch_size: 256
+    batch_size: 64
     image_size: 256
-    num_workers: 32
+    num_workers: 16
     use: True
     retries: 3
     partition_key: "key"

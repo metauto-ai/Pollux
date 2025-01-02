@@ -38,6 +38,7 @@ from apps.offline_inf.data import (
 import numpy as np
 from apps.main.utils.mongodb_data_load import MONGODB_URI
 import glob
+import random
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -101,31 +102,36 @@ def launch_inference(cfg: InferenceArgs):
 
     # * stateful inference, support resume if dump_dir is the same
     # NOTE: batch size must be
-    saved_parquet = list(glob.glob(
-        os.path.join(cfg.dump_dir, f"{world_size}_{global_rank}_*.parquet")
-    ))
-    saved_parquet_num=len(saved_parquet)
-    if saved_parquet_num<= 0:
+    # Haozhe: may you directly use the csv in csv_path to determine the index to start? It will be more easier as we don't need to load the parquet file.
+    saved_parquet = list(
+        glob.glob(os.path.join(cfg.dump_dir, f"{world_size}_{global_rank}_*.parquet"))
+    )
+    saved_parquet_num = len(saved_parquet)
+    if saved_parquet_num <= 0:
         logger.warning(f"No saved parquet found, doing fresh start now...")
-        index_to_start=0
+        index_to_start = 0
     else:
-        first_parquet=saved_parquet[0]
+        first_parquet = saved_parquet[0]
         df = pd.read_parquet(first_parquet, engine="pyarrow")
-        previous_parquet_size=len(df)
+        previous_parquet_size = len(df)
         assert (
             previous_parquet_size == cfg.parque_size
         ), f"Parquet size must be consistent, prevs {previous_parquet_size} == but now {cfg.parque_size}"
 
-        index_to_start=cfg.parque_size * saved_parquet_num
+        index_to_start = cfg.parque_size * saved_parquet_num
         logger.warning(
             f"{saved_parquet_num} saved parquet found, with parquet_size={cfg.parque_size}, resuming inference starting from {index_to_start} item."
         )
         # set sampler state and counter
         sampler.load_state_dict({"start_index": index_to_start})
 
-    count=saved_parquet_num
+    count = saved_parquet_num
     logger.info("Start inference now....")
-    
+    sleep_time = random.randint(1, 30)
+    time.sleep(
+        sleep_time
+    )  # Haozhe: Add a trick here, sleep for a random time to avoid all workers start at the same time,
+    # Reduce the load on the storage
     for idx, batch in enumerate(data_loader):
         batch = model.forward(batch, inference_meters)
 
@@ -137,13 +143,15 @@ def launch_inference(cfg: InferenceArgs):
                     batch[f"{key}_raw_shape"] = [d.shape for d in data]
                 if prefix not in save_batch:
                     save_batch[prefix] = batch[key]
-                    if f"{key}_raw_shape" in batch:
-                        save_batch[f"{key}_raw_shape"] = batch[f"{key}_raw_shape"]
+                    if f"{prefix}_raw_shape" in batch:
+                        save_batch[f"{prefix}_raw_shape"] = batch[f"{key}_raw_shape"]
                 else:
                     save_batch[prefix].extend(batch[key])
-                    if f"{key}_raw_shape" in batch:
-                        save_batch[f"{key}_raw_shape"].extend(batch[f"{key}_raw_shape"])
-            in_parquet_num += len(save_batch[prefix])
+                    if f"{prefix}_raw_shape" in batch:
+                        save_batch[f"{prefix}_raw_shape"].extend(
+                            batch[f"{key}_raw_shape"]
+                        )
+            in_parquet_num += len(batch[key])
 
         if in_parquet_num >= cfg.parque_size:
             parquet_path = save_parquet(

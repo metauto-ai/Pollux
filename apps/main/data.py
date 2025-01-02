@@ -24,6 +24,7 @@ from apps.main.utils.mongodb_data_load import (
     MongoDBDataLoad,
     MongoDBImageNetDataLoad,
     MongoDBCC12MDataLoad,
+    MongoDBParquetDataLoad,
 )
 from apps.main.utils.sampler import StatefulDistributedSampler
 
@@ -81,7 +82,7 @@ class AutoDataLoader:
         train_stage: str,
         data_config: List[DataArgs],
         # * following args should only be used by dataloader and sampler
-        shuffle: Optional[bool] = True,
+        shuffle: Optional[bool] = False,
         pin_memory: Optional[bool] = True,
         drop_last: Optional[bool] = True,
         seed: Optional[int] = 1024,
@@ -177,6 +178,19 @@ class AutoDataLoader:
                 partition_key=args.partition_key,
                 args=args,
             )
+        elif args.data_name == "cc12m_llama3bf128_hunyuanr256_test1m":
+            dataset = MongoDBParquetDataLoad(
+                collection_name=args.data_name,
+                query=args.query,
+                shard_idx=self.shard_id,
+                num_shards=self.num_shards,
+                temporal_cache_name=args.data_name,
+                extract_field={
+                    "parquet_size": "sample_num",
+                    "parquet_path": "path",
+                },
+                partition_key=args.partition_key,
+            )
         else:
             dataset = MongoDBDataLoad(
                 collection_name=args.data_name,
@@ -188,6 +202,8 @@ class AutoDataLoader:
             )
 
         dataset.set_local_partition()
+        if hasattr(dataset, "set_mapping"):
+            dataset.set_mapping()
         self.dataset = dataset
         return self._warp_dataloader_with_stateful_sampler(args, dataset)
 
@@ -211,10 +227,10 @@ class AutoDataLoader:
                 pin_memory=self.pin_memory,
                 num_workers=args.num_workers,
                 # Keep workers alive between epochs
-                # * init wokrers are very expensive ! 
+                # * init wokrers are very expensive !
                 # hard code as True here
-                persistent_workers=True,  
-                prefetch_factor=args.prefetch_factor,
+                persistent_workers=True if args.num_workers > 0 else False,
+                prefetch_factor=args.prefetch_factor if args.num_workers > 0 else None,
             ),
             sampler,
         )

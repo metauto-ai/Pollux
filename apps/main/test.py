@@ -21,79 +21,18 @@ logging.basicConfig(
 )
 
 if __name__ == "__main__":
-    # Define model arguments
-    vae_arg = LatentVideoVAEArgs(
-        pretrained_model_name_or_path="/jfs/checkpoints/models--tencent--HunyuanVideo/snapshots/2a15b5574ee77888e51ae6f593b2ceed8ce813e5/vae",
-    )
-    scheduler_arg = SchedulerArgs(
-        num_train_timesteps=1000,
-        base_image_seq_len=256,
-        base_shift=0.5,
-        max_image_seq_len=4096,
-        mode_scale=1.29,
-        use_dynamic_shifting=True,
-    )
-    plan_transformer_arg = PlanTransformerArgs(
-        dim=2048,
-        ffn_dim_multiplier=1.5,
-        multiple_of=256,
-        n_heads=32,
-        n_kv_heads=8,
-        n_layers=16,
-        patch_size=2,
-        in_channels=32,
-        gen_seqlen=1000,  # for video/image
-        attn_type="bi_causal",
-        text_seqlen=256,
-        vocab_size=128256,
-        pre_trained_path="/jfs/checkpoints/Llama-3.2-1B/original/consolidated.00.pth",
-    )
-    gen_transformer_arg = GenTransformerArgs(
-        dim=2048,
-        ffn_dim_multiplier=1.5,
-        multiple_of=256,
-        n_heads=32,
-        n_kv_heads=8,
-        n_layers=16,
-        ada_dim=2048,
-        patch_size=2,
-        in_channels=16,
-        out_channels=16,
-        tmb_size=256,
-        gen_seqlen=1000,
-        condition_seqlen=1000,
-        pre_trained_path="/jfs/checkpoints/Llama-3.2-1B/original/consolidated.00.pth",
-        attn_type="bi_causal",
-    )
-    tokenizer_arg = TokenizerArgs(
-        model_path="/jfs/checkpoints/Llama-3.2-1B/original/tokenizer.model"
-    )
-    model_arg = ModelArgs(
-        gen_transformer=gen_transformer_arg,
-        plan_transformer=plan_transformer_arg,
-        vae=vae_arg,
-        scheduler=scheduler_arg,
-        tokenizer=tokenizer_arg,
-        text_cfg_ratio=0.1,
-        image_cfg_ratio=0.5,
-        mask_patch=16,
-    )
-
-    # Define data arguments and DataLoaderFactory
-
     data_config_dict = {
         "data": {
             "preliminary": {
-                "cc12m": {
+                "cc12m_llama3bf128_hunyuanr256_test1m": {
                     "use": True,
-                    "data_name": "cc12m",
-                    "batch_size": 12,
-                    "image_size": 256,
-                    "num_workers": 8,
-                    "split": "train",
+                    "data_name": "cc12m_llama3bf128_hunyuanr256_test1m",
+                    "batch_size": 36,
+                    "num_workers": 0,
                     "source": "mongodb",
-                    "task": "class_to_image",
+                    "task": "text_to_image",
                     "retries": 3,
+                    "partition_key": "partition_key",
                 }
             }
         }
@@ -105,11 +44,11 @@ if __name__ == "__main__":
             use=config["use"],
             data_name=config["data_name"],
             batch_size=config["batch_size"],
-            image_size=config["image_size"],
             num_workers=config["num_workers"],
-            split=config["split"],
             source=config["source"],
             task=config["task"],
+            retries=config["retries"],
+            partition_key=config["partition_key"],
         )
         for stage, datasets in data_config_dict["data"].items()
         for dataset_name, config in datasets.items()
@@ -120,16 +59,22 @@ if __name__ == "__main__":
         dp_rank,
         dp_degree,
         train_stage="preliminary",
-        init_signal_handler=True,
         data_config=data_config,
     )
     data_loader, _ = data_loader_factory.create_dataloader()
     print(len(data_loader))
-    data_loader_factory.dataset.clean_buffer()
-    # Initialize model
-    # model = Pollux(model_arg)
-    # model.cuda()
-
+    print(len(data_loader_factory.dataset))
+    print(data_loader_factory.dataset[0])
+    print(
+        data_loader_factory.dataset[0]["LLAMA3_3B_text_embedding"]
+        .view(128, 3072)
+        .size()
+    )
+    print(
+        data_loader_factory.dataset[0]["HunyuanVideo_latent_code"]
+        .view(16, 32, 32)
+        .size()
+    )  # reshape here is due to haozhe's bug on inference.py, I wrote wrong index and therefore the tensor is reshaped outside.
     # Run test
     for batch in data_loader:
         logging.warning(batch)

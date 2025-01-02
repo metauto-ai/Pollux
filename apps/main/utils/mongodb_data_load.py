@@ -17,11 +17,13 @@ from PIL import Image
 from pathlib import Path
 from bson import json_util, ObjectId
 import pandas as pd
-
+import pyarrow.parquet as pq
+import bisect
 from apps.main.modules.preprocess import ImageProcessing
 import time
 import random
-
+import numpy as np
+import torch
 
 logging.getLogger("pymongo").setLevel(logging.WARNING)
 
@@ -226,4 +228,80 @@ class MongoDBCC12MDataLoad(MongoDBDataLoad):
                         return_sample[v] = self.image_processing.transform(image)
                         return_sample["_id"] = "-1"
                         return_sample["caption"] = ""
+        return return_sample
+
+
+class MongoDBParquetDataLoad(MongoDBDataLoad):
+    def __init__(
+        self,
+        num_shards,
+        shard_idx,
+        query,
+        collection_name,
+        temporal_cache_name,
+        extract_field,
+        partition_key,
+    ) -> None:
+        super().__init__(
+            num_shards=num_shards,
+            shard_idx=shard_idx,
+            collection_name=collection_name,
+            query=query,
+            temporal_cache_name=temporal_cache_name,
+            partition_key=partition_key,
+        )
+        self.index_boundaries = []  # Cumulative row boundaries for each file
+        self.current_df = None
+        self.current_file = None
+        self.num_field = extract_field["parquet_size"]
+        self.path_field = extract_field["parquet_path"]
+
+    def set_mapping(self):
+        # Build an index mapping for global row indices
+        cumulative_rows = 0
+        for idx in range(len(self.data)):
+            num_rows = self.data.iloc[idx][self.num_field]
+            cumulative_rows += num_rows
+            self.index_boundaries.append(cumulative_rows)
+
+    def __len__(self):
+        """Return the total number of rows in the dataset."""
+        return self.index_boundaries[-1]
+
+    def __getitem__(self, idx):
+        """
+        Get a row by its global index.
+
+        Args:
+            idx (int): Global index of the row.
+
+        Returns:
+            pd.Series: A row of data as a pandas Series.
+        """
+        if idx < 0 or idx >= len(self):
+            raise IndexError("Index out of range")
+
+        # Locate the file using binary search
+        file_idx = bisect.bisect_right(self.index_boundaries, idx)
+        start_idx = 0 if file_idx == 0 else self.index_boundaries[file_idx - 1]
+        local_idx = idx - start_idx
+        file = self.data.iloc[file_idx][self.path_field]
+
+        # Load the DataFrame only if the file is different
+        if self.current_file != file:
+            self.current_df = pd.read_parquet(file, engine="pyarrow")
+            self.current_file = file
+            logging.info(f"Loaded {file}")
+        sample = self.current_df.iloc[local_idx]
+        return_sample = {}
+        for k, v in sample.items():
+            if isinstance(v, ObjectId):
+                return_sample[k] = str(v)
+            if isinstance(v, np.ndarray) and "raw_shape" not in k:
+                raw_shape_key = f"{k}_raw_shape"
+                if raw_shape_key in sample:
+                    return_sample[k] = v.reshape(sample[raw_shape_key])
+                    return_sample[k] = torch.Tensor(np.copy(return_sample[k]))
+                else:
+                    return_sample[k] = torch.Tensor(np.copy(v))
         return return_sample
