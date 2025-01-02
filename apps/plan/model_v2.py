@@ -2,6 +2,9 @@ from dataclasses import dataclass, field
 from typing import Optional, Tuple, List
 import logging
 import random
+import numpy as np
+from PIL import Image
+
 import torch
 from einops import rearrange
 from torch import nn
@@ -75,19 +78,38 @@ class Pollux(nn.Module):
         self.vision_projecter = nn.Linear(1024, 2048, bias=True) 
         self.vision_boi_emb = nn.Parameter(torch.zeros(1, 1024))
         
+        # TODO: Now we keep HF original usage. Will specify in the future.
         self.lang_tokenizer = LlamaTokenizerFast.from_pretrained("meta-llama/Llama-3.2-3B")
+        self.llm = LlamaForCausalLM.from_pretrained("meta-llama/Llama-3.2-3B")
 
         #self.vae = LatentVideoVAE(args.vae)
         #self.scheduler = RectifiedFlow(args.scheduler)
 
-        self.llm = LlamaForCausalLM(LlamaConfig)
+    def patchify(self, images: torch.Tensor, patch_size: int) -> torch.Tensor:
 
-    def process_input(self, input_ids, input_imgs, vision_seq_mask, imgs_emb_mask, **kwargs):
+        B, C, H, W = images.shape
+        assert H % patch_size == 0 and W % patch_size == 0, "Image dimensions must be divisible by patch_size"
+        patches = images.unfold(2, patch_size, patch_size).unfold(3, patch_size, patch_size)
+        patches = patches.permute(0, 2, 3, 1, 4, 5).contiguous()  # [B, num_patches_h, num_patches_w, C, patch_size, patch_size]
+        patches = patches.view(B, -1, C * patch_size * patch_size)  # Flatten patches
+        return patches
 
-        batch_size, n = input_imgs.shapep[0:2]
-        images = rearrange(input_imgs, "b n c h w -> (b n) c h w")
-        images_embs = self.vision_tower(images)
+
+    def process_input(self, input_ids, input_imgs, mask_strategy: str = "full_mask", random_rate: float = 0.15, **kwargs):
+
+        if input_imgs.ndim == 4:  
+             # NOTE: single image should unsqueeze to [B, 1, C, H, W]
+            images = input_imgs.unsqueeze(1)
+
+
+        batch_size, n = images.shapep[:2]
+        images = rearrange(images, "b n c h w -> (b n) c h w")
+        image_patches = self.patchify(images, patch_size=16)
+
+        images_embs = self.vision_tower(image_patches)
         images_embs = self.vision_projecter(images_embs)
+        
+        # NOTE: add BOI token for each visual sequence 
         boi_emb = self.vision_boi_emb[0].detach().clone()
         images_embs = torch.cat(
             [
@@ -97,27 +119,38 @@ class Pollux(nn.Module):
             dim=1,
         )
 
-        images_embs = rearrange(images_embs, "(b n) t d -> b (n t) d", b=batch_size, n=n)
-        images_emb_mask = rearrange(imgs_emb_mask, "b n t -> b (n t)")
+        text_embs = self.llm.get_input_embeddings()(input_ids)
+        images_embs = rearrange(images_embs, "(b n) t d -> b (n t) d", b=batch_size, n=n)        
+        
+        # text_seq_len = text_embs.shape[1]
+        # visual_seq_len = images_embs.shape[1]
 
-        input_ids[input_ids < 0] = 0
-        input_embs = self.llm.get_input_embeddings()(input_ids)
+        # NOTE: for this version we only mask images. 
+        if mask_strategy == "full_mask":
+            noise_embs = torch.randn_like(images_embs)
+            images_embs = noise_embs
+        elif mask_strategy == "random_mask":
+            random_mask = torch.rand(images_embs.shape[:2], device=images_embs.device) < random_rate
+            noise_embs = torch.randn_like(images_embs)
+            images_embs[random_mask] = noise_embs[random_mask]
 
-        input_embs[vision_seq_mask] = images_embs[images_emb_mask]
-
-        return input_embs
-
+        text_embs = self.llm.get_input_embeddings()(input_ids)
+        combined_embs = torch.cat([text_embs, images_embs], dim=1)
+        return combined_embs
 
     def forward(self, batch: dict[str:any]) -> dict[str:any]:
 
-        image = batch["image"]
+        # NOTE: currently only a single image but the following func support multiple for future
+        image = batch["image"] 
         label = batch["label"]
         caption = batch["caption"]
 
         input_ids = self.tokenizer(caption)
-
-        input_embs = self.process_input(input_ids, image, vision_seq_mask, imgs_emb_mask)
+        input_embs = self.process_input(input_ids, image, mask_strategy="random_mask", random_rate=0.15)
   
+        # NOTE: develop to here. Will finish tonight
+        breakpoint()
+
         batch["prediction"] = output
         label = batch["label"]
 
@@ -129,13 +162,13 @@ class Pollux(nn.Module):
 
     def set_train(self):
         self.vision_tower.train()
-        self.vision_aligner.train()
-        self.classifier.train()
+        self.vision_projecter.train()
+        # self.classifier.train()
  
     def set_eval(self):
         self.vision_tower.eval()
-        self.vision_aligner.eval()
-        self.classifier.eval()
+        self.vision_projecter.eval()
+        # self.classifier.eval()
 
     def init_weights(self, args: ModelArgs):
         self.vision_tower.init_weights(args.vision_tower.pre_trained_path)
@@ -157,8 +190,8 @@ def build_fsdp_grouping_plan(model_args: ModelArgs, model: nn.Module):
     for idx, block in enumerate(vision_transformer.blocks):
         group_plan.append((f"vision_tower.vision_tower.blocks.{idx}", True)) 
 
-    group_plan.append(("vision_aligner", False))
-    group_plan.append(("classifier", True))
+    group_plan.append(("vision_projecter", False))
+    # group_plan.append(("classifier", True))
 
     logger.info(f"The `group_plan` for FSDP (layer-level granularity):\n{group_plan}")
     return group_plan
@@ -189,18 +222,18 @@ def tp_parallelize(model, tp_mesh, model_args: ModelArgs, distributed_args):
 
     logger.info(f"VisionTransformer blocks parallelized with TP size {distributed_args.tp_size}")
 
-    # Parallelize `vision_aligner` (Linear layer)
-    aligner_plan = {
-        "vision_aligner": RowwiseParallel(output_layouts=Shard(1)),
+    # Parallelize `vision_projecter` (Linear layer)
+    projecter_plan = {
+        "vision_projecter": RowwiseParallel(output_layouts=Shard(1)),
     }
-    parallelize_module(model, tp_mesh, aligner_plan)
-    logger.info("`vision_aligner` parallelized.")
+    parallelize_module(model, tp_mesh, projecter_plan)
+    logger.info("`vision_projecter` parallelized.")
 
     # Parallelize `classifier` (Linear layer)
-    classifier_plan = {
-        "classifier": RowwiseParallel(output_layouts=Shard(1)),
-    }
-    parallelize_module(model, tp_mesh, classifier_plan)
-    logger.info("`classifier` parallelized.")
+    # classifier_plan = {
+    #     "classifier": RowwiseParallel(output_layouts=Shard(1)),
+    # }
+    # parallelize_module(model, tp_mesh, classifier_plan)
+    # logger.info("`classifier` parallelized.")
 
     logger.info("Tensor Parallelization complete.")

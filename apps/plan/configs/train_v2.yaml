@@ -1,12 +1,12 @@
-# python -m apps.main.generate config=apps/main/configs/eval.yaml
-# torchrun --nnodes 1 --nproc-per-node 4 -m apps.main.eval config=apps/main/configs/eval.yaml
+# find /jfs/data/imagenet-1k/ -type f -name "*.lock" -exec rm -f {} \;
+# torchrun --standalone --nnodes 1 --nproc-per-node 2 -m apps.plan.train_v2 config=apps/plan/configs/train_v2.yaml
+
 # Set up single experiment
 version: v0.7
 # From now on, start to align train, data, and model setting with train stage (just finish refactor for dara)
 train_stage: preliminary # options: preliminary, pretraining, posttraining; aligned with data setting
-# name: Pollux_v0.7_gen_transformer_preliminary # used for local dump and wandb log
-name: Pollux_v0.7_MongoDB_ImageNet-1k_Distributed_Data_Test1
-output_dir: /jfs/checkpoints/dump1
+name: Pollux_v0.7_MongoDB_ImageNet-1k_multimodal
+output_dir: /jfs/checkpoints/dump
 dump_dir: '' # No need now
 steps: 1000000
 seed: 777
@@ -18,9 +18,9 @@ optim:
     weight_decay: 0.01
 
 distributed:
-    gpus: 0,1
+    gpus: 4,5 #,6,7
     fsdp_type: full_shard
-    dp_shard: 4
+    dp_shard: 2
     dp_replicate: 1
     compile: false
     model_dtype: bf16 # options: `fb8` is only supported by H100
@@ -34,57 +34,17 @@ model:
     image_cfg_ratio: 0.1
     mask_patch: 16
     num_classes: 1000
-    vae:
-        pretrained_model_name_or_path: '/jfs/checkpoints/models--tencent--HunyuanVideo/snapshots/2a15b5574ee77888e51ae6f593b2ceed8ce813e5/vae'
-        enable_tiling: false
-        enable_slicing: false
-    scheduler:
-        num_train_timesteps: 1000
-        base_image_seq_len: 256
-        base_shift: 0.5
-        max_image_seq_len: 4096
-        max_shift: 1.15
-        shift: 3.0 # need consider 3.0 or 1.0
-        weighting_scheme: 'logit_normal'
-        logit_mean: 0.0
-        logit_std: 1.0
-        mode_scale: 1.29
-        use_dynamic_shifting: true
-    gen_transformer:
-        dim: 2048
-        ffn_dim_multiplier: 1.5
-        multiple_of: 256
-        n_heads: 32
-        n_kv_heads: 8
-        n_layers: 16
-        ada_dim: 2048
-        patch_size: 2
-        in_channels: 16
-        out_channels: 16
-        tmb_size: 256
-        gen_seqlen: 256
-        condition_seqlen: 320
-        norm_eps: 1e-5
-        pre_trained_path: /jfs/checkpoints/Llama-3.2-1B/original/consolidated.00.pth
-        attn_type: 'bi_causal'
-    plan_transformer:
-        dim: 2048
-        ffn_dim_multiplier: 1.5
-        multiple_of: 256
-        n_heads: 32
-        n_kv_heads: 8
-        n_layers: 16
-        patch_size: 2
-        in_channels: 32  
-        vocab_size: 128256  
-        text_seqlen: 32 
-        gen_seqlen: 256 
-        pre_trained_path: /jfs/checkpoints/Llama-3.2-1B/original/consolidated.00.pth
-        attn_type: bi_causal
-        norm_eps: 1e-5
-        text_only: True
-    tokenizer:
-        model_path: /jfs/checkpoints/Llama-3.2-1B/original/tokenizer.model
+    vision_tower:
+        model_name: siglip_large_patch16_256
+        image_size: 256
+        pre_trained_path: /jfs/checkpoints/siglip_pretrained/siglip_large_patch16_256.pth
+        select_feature: patch
+        select_layer: -2
+        pixel_mean: null
+        pixel_std: null
+    # llm:
+
+
 
 data:
   - stage: preliminary
@@ -98,7 +58,7 @@ data:
     split: train
     root_dir: /jfs/data
     cache_dir: /jfs/data/imagenet-1k
-    use: False
+    use: True
 
   - stage: preliminary
     id: 1
@@ -109,7 +69,8 @@ data:
     image_size: 256
     num_workers: 8
     split: train
-    use: True
+    partition_key: 'key'
+    use: False
 
 
   - stage: preliminary
@@ -136,18 +97,16 @@ data:
     mongo_uri: mongodb://localhost:27017
     use: False
 
-
 profiling:
     run: true
-
+    
 checkpoint:
     dump:
-        every: 2500
+        every: 500
         keep: 0 # Don't remove the ckpt
     eval:
         every: 5000
         keep: 0 # Don't remove the ckpt
-
 logging:
     freq: 100
     # wandb:
