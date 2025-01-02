@@ -296,7 +296,6 @@ class MongoDBParquetDataLoad(MongoDBDataLoad):
         if self.current_file != file:
             self.current_df = pd.read_parquet(file, engine="pyarrow")
             self.current_file = file
-            logging.info(f"Loaded {file}")
         sample = self.current_df.iloc[local_idx]
         return_sample = {}
         for k, v in sample.items():
