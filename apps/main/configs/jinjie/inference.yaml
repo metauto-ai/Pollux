@@ -2,7 +2,7 @@
 name: "debug_evals"
 stage: inference # preliminary for test normal usage: inference 
 dump_dir:  /jfs/jinjie/code/downloads/dump/test_inference # change dir
-parque_size: 4096
+parque_size: 32
 prefix_mapping:
   "text_embedding": "LLAMA3_3B_text_embedding"
   "latent_code": "HunyuanVideo_latent_code"
@@ -12,17 +12,9 @@ source_data:
     task: text_to_image
     data_name: cc12m
     source: mongodb
-    batch_size: 256
+    batch_size: 16
     image_size: 256
     num_workers: 16
-    # For 100000 samples, 8 GPUs 1 node, 930G RAM used in the node before launch data loader:
-    # 16 worker: 130 secs and +200G RAM for init, 6.1 secs to fetch one epoch
-    # 32 workers: 260 secs and +350G RAM for init, 0.3 secs to fetch one epoch (but have many connect err)
-    # 64 workers: 560 secs and +800G RAM for init, fetch epoch failed because of leaked semaphore (have many conenct err)
-
-    # changed to pd dataframe, 5GB RAM used in the node before launch data loader:
-    # 16 worker, 105 secs and +200G RAM for init, 5.8 secs to featch one epoch
-    # 32 worker, 200 secs and +300G RAM for init, 0.6 secs to fetch one epoch (but have many connect err)
     use: True
     retries: 3
     partition_key: "key"

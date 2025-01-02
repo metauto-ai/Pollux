@@ -101,8 +101,6 @@ def launch_inference(cfg: InferenceArgs):
     in_parquet_num = 0
 
     # * stateful inference, support resume if dump_dir is the same
-    # NOTE: batch size must be
-    # Haozhe: may you directly use the csv in csv_path to determine the index to start? It will be more easier as we don't need to load the parquet file.
     saved_parquet = list(
         glob.glob(os.path.join(cfg.dump_dir, f"{world_size}_{global_rank}_*.parquet"))
     )
@@ -111,17 +109,25 @@ def launch_inference(cfg: InferenceArgs):
         logger.warning(f"No saved parquet found, doing fresh start now...")
         index_to_start = 0
     else:
-        first_parquet = saved_parquet[0]
-        df = pd.read_parquet(first_parquet, engine="pyarrow")
-        previous_parquet_size = len(df)
+        df = pd.read_csv(
+            os.path.join(cfg.dump_dir, f"{world_size}_{global_rank}_metadata.csv")
+        )
+        assert saved_parquet_num == len(
+            df
+        ), f"Parquet CSV record must be consistent with parquet files on the disk, csv record has {len(df)} == but now on the disk {saved_parquet_num}"
+
+
+        previous_parquet_size = df.iloc[0]["sample_num"]
+
         assert (
             previous_parquet_size == cfg.parque_size
         ), f"Parquet size must be consistent, prevs {previous_parquet_size} == but now {cfg.parque_size}"
 
         index_to_start = cfg.parque_size * saved_parquet_num
         logger.warning(
-            f"{saved_parquet_num} saved parquet found, with parquet_size={cfg.parque_size}, resuming inference starting from {index_to_start} item."
+            f"{saved_parquet_num} saved parquet found, with parquet_size={cfg.parque_size}, resuming inference starting from {index_to_start} item, continue to generate {saved_parquet_num+1}-th parquet ..."
         )
+
         # set sampler state and counter
         sampler.load_state_dict({"start_index": index_to_start})
 
@@ -179,7 +185,7 @@ def launch_inference(cfg: InferenceArgs):
             save_batch = {}
             in_parquet_num = 0
         # Jinjie: if we need profile, early break here
-        if idx > 1000:
+        if idx > 1:
             break
     # Conclude profiling
     for name, meter in inference_meters.items():

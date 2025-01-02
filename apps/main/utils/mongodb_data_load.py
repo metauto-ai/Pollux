@@ -201,8 +201,9 @@ class MongoDBCC12MDataLoad(MongoDBDataLoad):
         self.place_holder_image = Image.new("RGB", (args.image_size, args.image_size))
 
     def __getitem__(self, idx: int) -> dict[str, Any]:
+        
         # sample = self.data[idx]
-        # TODO: for pd data
+        # for pd data
         sample = self.data.iloc[idx]  # Use iloc for row access in DataFrame
         return_sample = {}
         return_sample["_id"] = str(sample["_id"])
@@ -278,6 +279,8 @@ class MongoDBParquetDataLoad(MongoDBDataLoad):
         Returns:
             pd.Series: A row of data as a pandas Series.
         """
+        
+        # Jinjie: Can we have idx % len(self) behavior and just throw a warning if out of range?
         if idx < 0 or idx >= len(self):
             raise IndexError("Index out of range")
 
