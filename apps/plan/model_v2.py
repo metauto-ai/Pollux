@@ -101,8 +101,7 @@ class Pollux(nn.Module):
              # NOTE: single image should unsqueeze to [B, 1, C, H, W]
             images = input_imgs.unsqueeze(1)
 
-
-        batch_size, n = images.shapep[:2]
+        batch_size, n = images.shape[:2]
         images = rearrange(images, "b n c h w -> (b n) c h w")
         image_patches = self.patchify(images, patch_size=16)
 
@@ -122,43 +121,80 @@ class Pollux(nn.Module):
         text_embs = self.llm.get_input_embeddings()(input_ids)
         images_embs = rearrange(images_embs, "(b n) t d -> b (n t) d", b=batch_size, n=n)        
         
-        # text_seq_len = text_embs.shape[1]
-        # visual_seq_len = images_embs.shape[1]
+        return text_embs, images_embs
 
-        # NOTE: for this version we only mask images. 
+    def process_mask(self, input_ids, images_embs, mask_strategy: str, random_rate: float = 0.15) -> torch.Tensor:
+ 
+        text_seq_len = input_ids.shape[1]
+        visual_seq_len = images_embs.shape[1]
+
         if mask_strategy == "full_mask":
-            noise_embs = torch.randn_like(images_embs)
-            images_embs = noise_embs
+            attention_mask = torch.cat(
+                [torch.ones((input_ids.shape[0], text_seq_len), device=input_ids.device),
+                torch.zeros((input_ids.shape[0], visual_seq_len), device=input_ids.device)],
+                dim=1,
+            )
         elif mask_strategy == "random_mask":
-            random_mask = torch.rand(images_embs.shape[:2], device=images_embs.device) < random_rate
-            noise_embs = torch.randn_like(images_embs)
-            images_embs[random_mask] = noise_embs[random_mask]
+            random_mask = torch.rand((input_ids.shape[0], visual_seq_len), device=input_ids.device) < random_rate
+            attention_mask = torch.cat(
+                [torch.ones((input_ids.shape[0], text_seq_len), device=input_ids.device),
+                (~random_mask).float()],
+                dim=1,
+            )
+        else:
+            raise ValueError(f"Invalid mask strategy: {mask_strategy}")
 
-        text_embs = self.llm.get_input_embeddings()(input_ids)
+        return attention_mask
+
+
+    def contrastive_loss(self, positive_scores: torch.Tensor, negative_scores: torch.Tensor, temperature: float = 0.07) -> torch.Tensor:
+        logits = torch.cat([positive_scores, negative_scores], dim=1) / temperature
+        labels = torch.zeros(logits.size(0), dtype=torch.long, device=logits.device)
+        loss = F.cross_entropy(logits, labels)
+        return loss
+
+
+    def forward(self, batch: dict[str, any], mask_strategy: str = "random_mask", random_rate: float = 0.3) -> Tuple[dict[str, any], torch.Tensor]:
+
+        images = batch["image"]  # Shape: [B, C, H, W]
+        captions = batch["caption"]
+
+        input_ids = self.lang_tokenizer(captions, padding=True, truncation=True, return_tensors="pt")["input_ids"]
+        input_ids = input_ids.to(self.llm.device)
+
+        text_embs, images_embs = self.process_input(input_ids, images)
         combined_embs = torch.cat([text_embs, images_embs], dim=1)
-        return combined_embs
+        attention_mask = self.process_mask(input_ids, images_embs, mask_strategy, random_rate)
 
-    def forward(self, batch: dict[str:any]) -> dict[str:any]:
+        outputs = self.llm(
+            inputs_embeds=combined_embs,
+            attention_mask=attention_mask,
+        )
+        predicted_tokens = outputs.sequences
 
-        # NOTE: currently only a single image but the following func support multiple for future
-        image = batch["image"] 
-        label = batch["label"]
-        caption = batch["caption"]
+        visual_start_idx = input_ids.shape[1] 
+        visual_attention_mask = attention_mask[:, visual_start_idx:].bool()
+        _visual_tokens = combined_embs[:, visual_start_idx:][visual_attention_mask]
 
-        input_ids = self.tokenizer(caption)
-        input_embs = self.process_input(input_ids, image, mask_strategy="random_mask", random_rate=0.15)
-  
-        # NOTE: develop to here. Will finish tonight
-        breakpoint()
+        masked_indices = ~visual_attention_mask
+        masked_embs = combined_embs[:, visual_start_idx:][masked_indices].view(-1, combined_embs.size(-1))
+        original_embs = images_embs[masked_indices]
 
-        batch["prediction"] = output
-        label = batch["label"]
+        positive_scores = F.cosine_similarity(original_embs, masked_embs, dim=-1).unsqueeze(1)
+        negative_scores = F.cosine_similarity(
+            original_embs.unsqueeze(1),  
+            masked_embs.unsqueeze(0),  
+            dim=-1
+        )
+        negative_scores = negative_scores.masked_fill(torch.eye(negative_scores.size(0), device=negative_scores.device).bool(), 0)
+        contrastive_loss = self.contrastive_loss(positive_scores, negative_scores)
 
-        # TODO: remove this
-        label = label.to(output.device)
-        loss = F.cross_entropy(output, label)
+        generation_loss = F.cross_entropy(predicted_tokens.view(-1, predicted_tokens.size(-1)), _visual_tokens.view(-1))
+        total_loss = contrastive_loss + generation_loss
 
-        return batch, loss
+        batch["prediction"] = predicted_tokens
+
+        return batch, total_loss
 
     def set_train(self):
         self.vision_tower.train()
