@@ -1,3 +1,4 @@
+# find /jfs/data/imagenet-1k/ -type f -name "*.lock" -exec rm -f {} \;
 # torchrun --standalone --nnodes 1 --nproc-per-node 2 -m apps.plan.train config=apps/plan/configs/train.yaml
 
 # Set up single experiment
@@ -41,8 +42,8 @@ model:
         select_layer: -2
         pixel_mean: null
         pixel_std: null
-    llm:
-      
+    # llm:
+
 
 
 data:
@@ -57,7 +58,7 @@ data:
     split: train
     root_dir: /jfs/data
     cache_dir: /jfs/data/imagenet-1k
-    use: False
+    use: True
 
   - stage: preliminary
     id: 1
@@ -69,7 +70,7 @@ data:
     num_workers: 8
     split: train
     partition_key: 'key'
-    use: True
+    use: False
 
 
   - stage: preliminary

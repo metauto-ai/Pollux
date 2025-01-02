@@ -23,6 +23,7 @@ from transformers import (
     PreTrainedModel,
     LlamaConfig,
     LlamaForCausalLM,
+    LlamaTokenizerFast,
 )
 from transformers.models.llama.modeling_llama import LlamaRMSNorm
 
@@ -53,7 +54,7 @@ class ModelArgs:
     # vae: LatentVideoVAEArgs = field(default_factory=LatentVideoVAEArgs)
     # llm: # TODO: Add LlamaArgs
     scheduler: SchedulerArgs = field(default_factory=SchedulerArgs)
-    tokenizer: TokenizerArgs = field(default_factory=TokenizerArgs)
+    # tokenizer: TokenizerArgs = field(default_factory=TokenizerArgs) #TODO: Add TokenizerArgs
     text_cfg_ratio: float = 0.1
     image_cfg_ratio: float = 0.1
     mask_patch: int = 16
@@ -74,12 +75,14 @@ class Pollux(nn.Module):
         self.vision_projecter = nn.Linear(1024, 2048, bias=True) 
         self.vision_boi_emb = nn.Parameter(torch.zeros(1, 1024))
         
+        self.lang_tokenizer = LlamaTokenizerFast.from_pretrained("meta-llama/Llama-3.2-3B")
+
         #self.vae = LatentVideoVAE(args.vae)
         #self.scheduler = RectifiedFlow(args.scheduler)
 
         self.llm = LlamaForCausalLM(LlamaConfig)
-      
-    def input_embeddings(self, input_ids, input_imgs, vision_seq_mask, imgs_emb_mask, **kwargs):
+
+    def process_input(self, input_ids, input_imgs, vision_seq_mask, imgs_emb_mask, **kwargs):
 
         batch_size, n = input_imgs.shapep[0:2]
         images = rearrange(input_imgs, "b n c h w -> (b n) c h w")
@@ -109,12 +112,11 @@ class Pollux(nn.Module):
 
         image = batch["image"]
         label = batch["label"]
+        caption = batch["caption"]
 
+        input_ids = self.tokenizer(caption)
 
-        tower_output = self.vision_tower(image) # [48, 256, 1024]
-        aligned_output = self.vision_aligner(tower_output) # [48, 256, 2048]
-        aligned_output = aligned_output.mean(dim=1)
-        output = self.classifier(aligned_output) # [48, 1000]
+        input_embs = self.process_input(input_ids, image, vision_seq_mask, imgs_emb_mask)
   
         batch["prediction"] = output
         label = batch["label"]

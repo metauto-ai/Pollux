@@ -6,7 +6,7 @@ from torch import nn
 from torch.nn import functional as F
 from torchvision.utils import save_image
 import numpy as np
-from Pollux.apps.plan.model_v2 import Pollux, ModelArgs
+from apps.plan.model_v1 import Pollux, ModelArgs
 from typing import List, Optional, Tuple, Union, Dict, Any
 from apps.main.modules.schedulers import retrieve_timesteps, calculate_shift
 from lingua.args import dataclass_from_dict

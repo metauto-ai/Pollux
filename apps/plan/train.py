@@ -56,7 +56,7 @@ from lingua.profiling import ProfilerArgs, maybe_run_profiler
 from apps.main.data import AutoDataLoader, DataArgs
 from apps.main.modules.schedulers import SchedulerArgs
 from apps.main.utils.sampler import StatefulDistributedSampler
-from Pollux.apps.plan.model_v1 import (
+from apps.plan.model_v1 import (
     Pollux,
     ModelArgs,
     build_fsdp_grouping_plan,
