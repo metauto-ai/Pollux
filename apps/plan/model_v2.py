@@ -75,12 +75,15 @@ class Pollux(nn.Module):
         super().__init__()
 
         self.vision_tower = VisionTower(args.vision_tower)  
-        self.vision_projecter = nn.Linear(1024, 2048, bias=True) 
-        self.vision_boi_emb = nn.Parameter(torch.zeros(1, 1024))
+        self.vision_projecter = nn.Linear(1024, 3072, bias=True) 
+        self.vision_boi_emb = nn.Parameter(torch.zeros(1, 3072))
         
         # TODO: Now we keep HF original usage. Will specify in the future.
         self.lang_tokenizer = LlamaTokenizerFast.from_pretrained("meta-llama/Llama-3.2-3B")
         self.llm = LlamaForCausalLM.from_pretrained("meta-llama/Llama-3.2-3B")
+
+        if self.lang_tokenizer.pad_token is None:
+            self.lang_tokenizer.pad_token = self.lang_tokenizer.eos_token
 
         #self.vae = LatentVideoVAE(args.vae)
         #self.scheduler = RectifiedFlow(args.scheduler)
@@ -91,36 +94,27 @@ class Pollux(nn.Module):
         assert H % patch_size == 0 and W % patch_size == 0, "Image dimensions must be divisible by patch_size"
         patches = images.unfold(2, patch_size, patch_size).unfold(3, patch_size, patch_size)
         patches = patches.permute(0, 2, 3, 1, 4, 5).contiguous()  # [B, num_patches_h, num_patches_w, C, patch_size, patch_size]
-        patches = patches.view(B, -1, C * patch_size * patch_size)  # Flatten patches
+        patches = patches.view(B, -1, C, patch_size, patch_size)
         return patches
 
 
-    def process_input(self, input_ids, input_imgs, mask_strategy: str = "full_mask", random_rate: float = 0.15, **kwargs):
+    def process_input(self, input_ids, input_imgs, **kwargs):
 
         if input_imgs.ndim == 4:  
              # NOTE: single image should unsqueeze to [B, 1, C, H, W]
-            images = input_imgs.unsqueeze(1)
+            input_imgs = input_imgs.unsqueeze(1)
 
-        batch_size, n = images.shape[:2]
-        images = rearrange(images, "b n c h w -> (b n) c h w")
-        image_patches = self.patchify(images, patch_size=16)
+        batch_size, num_images, channels, height, width = input_imgs.shape
+        images = rearrange(input_imgs, "b n c h w -> (b n) c h w")
 
-        images_embs = self.vision_tower(image_patches)
+        images_embs = self.vision_tower(images)
         images_embs = self.vision_projecter(images_embs)
-        
-        # NOTE: add BOI token for each visual sequence 
-        boi_emb = self.vision_boi_emb[0].detach().clone()
-        images_embs = torch.cat(
-            [
-                boi_emb.view(1, 1, -1).repeat(images_embs.shape[0], 1, 1),
-                images_embs,
-            ],
-            dim=1,
-        )
+        boi_embs = self.vision_boi_emb.unsqueeze(0).expand(images_embs.size(0), -1, -1) 
 
-        text_embs = self.llm.get_input_embeddings()(input_ids)
-        images_embs = rearrange(images_embs, "(b n) t d -> b (n t) d", b=batch_size, n=n)        
-        
+        images_embs = torch.cat([boi_embs, images_embs], dim=1)
+        images_embs = rearrange(images_embs, "(b n) t d -> b (n t) d", b=batch_size, n=num_images)
+        text_embs = self.llm.get_input_embeddings()(input_ids)     
+    
         return text_embs, images_embs
 
     def process_mask(self, input_ids, images_embs, mask_strategy: str, random_rate: float = 0.15) -> torch.Tensor:
@@ -161,7 +155,6 @@ class Pollux(nn.Module):
 
         input_ids = self.lang_tokenizer(captions, padding=True, truncation=True, return_tensors="pt")["input_ids"]
         input_ids = input_ids.to(self.llm.device)
-
         text_embs, images_embs = self.process_input(input_ids, images)
         combined_embs = torch.cat([text_embs, images_embs], dim=1)
         attention_mask = self.process_mask(input_ids, images_embs, mask_strategy, random_rate)
@@ -169,35 +162,28 @@ class Pollux(nn.Module):
         outputs = self.llm(
             inputs_embeds=combined_embs,
             attention_mask=attention_mask,
+            output_hidden_states=True,
+            return_dict=True, 
         )
-        predicted_tokens = outputs.sequences
 
-        visual_start_idx = input_ids.shape[1] 
+        # outputs = self.llm.generate(
+        #     inputs_embeds=combined_embs,
+        #     attention_mask=attention_mask,
+        # )
+
+        text_seq_len = input_ids.shape[1]
+        visual_start_idx = text_seq_len
         visual_attention_mask = attention_mask[:, visual_start_idx:].bool()
-        _visual_tokens = combined_embs[:, visual_start_idx:][visual_attention_mask]
-
         masked_indices = ~visual_attention_mask
-        masked_embs = combined_embs[:, visual_start_idx:][masked_indices].view(-1, combined_embs.size(-1))
+        predicted_embs = outputs.hidden_states[-1][:, visual_start_idx:][masked_indices].view(-1, images_embs.size(-1))
         original_embs = images_embs[masked_indices]
 
-        positive_scores = F.cosine_similarity(original_embs, masked_embs, dim=-1).unsqueeze(1)
-        negative_scores = F.cosine_similarity(
-            original_embs.unsqueeze(1),  
-            masked_embs.unsqueeze(0),  
-            dim=-1
-        )
-        negative_scores = negative_scores.masked_fill(torch.eye(negative_scores.size(0), device=negative_scores.device).bool(), 0)
-        contrastive_loss = self.contrastive_loss(positive_scores, negative_scores)
-
-        generation_loss = F.cross_entropy(predicted_tokens.view(-1, predicted_tokens.size(-1)), _visual_tokens.view(-1))
-        total_loss = contrastive_loss + generation_loss
-
-        batch["prediction"] = predicted_tokens
-
-        return batch, total_loss
+        mse_loss = F.mse_loss(predicted_embs, original_embs)
+        batch["prediction"] = outputs.hidden_states[-1]
+        return batch, mse_loss
 
     def set_train(self):
-        self.vision_tower.train()
+        # self.vision_tower.train()
         self.vision_projecter.train()
         # self.classifier.train()
  
@@ -208,6 +194,7 @@ class Pollux(nn.Module):
 
     def init_weights(self, args: ModelArgs):
         self.vision_tower.init_weights(args.vision_tower.pre_trained_path)
+        # self.llm.init_weights(args.llm.pre_trained_path)
 
 # Optional policy for activation checkpointing. With None, we stick to the default (defined distributed.py: default_no_recompute_ops)
 def get_no_recompute_ops():
@@ -227,7 +214,13 @@ def build_fsdp_grouping_plan(model_args: ModelArgs, model: nn.Module):
         group_plan.append((f"vision_tower.vision_tower.blocks.{idx}", True)) 
 
     group_plan.append(("vision_projecter", False))
-    # group_plan.append(("classifier", True))
+
+    llama_model = getattr(model, "llm", None)
+    if llama_model and hasattr(llama_model, "model"):
+        logger.info("LlamaForCausalLM has `model` attribute. Building group plan...")
+        for idx, block in enumerate(llama_model.model.layers):
+            group_plan.append((f"llm.model.layers.{idx}", False))
+
 
     logger.info(f"The `group_plan` for FSDP (layer-level granularity):\n{group_plan}")
     return group_plan
@@ -238,7 +231,6 @@ def tp_parallelize(model, tp_mesh, model_args: ModelArgs, distributed_args):
     # Parallelize `vision_tower` (VisionTransformer)
     vision_tower = model.vision_tower.vision_tower
 
-    # Define the parallelization plan for VisionTransformer blocks
     transformer_plan = {
         # Attention components
         "blocks.*.attn.qkv": ColwiseParallel(input_layouts=Replicate(), output_layouts=Shard(1)),
@@ -248,28 +240,39 @@ def tp_parallelize(model, tp_mesh, model_args: ModelArgs, distributed_args):
         "blocks.*.mlp.fc2": RowwiseParallel(output_layouts=Shard(1)),
     }
 
-    # Apply the parallelization plan to VisionTransformer
     parallelize_module(vision_tower, tp_mesh, transformer_plan)
 
-    # Update attributes for attention heads based on TP size
     for block in vision_tower.blocks:
         block.attn.num_heads //= distributed_args.tp_size
         block.attn.head_dim //= distributed_args.tp_size
-
     logger.info(f"VisionTransformer blocks parallelized with TP size {distributed_args.tp_size}")
 
-    # Parallelize `vision_projecter` (Linear layer)
     projecter_plan = {
         "vision_projecter": RowwiseParallel(output_layouts=Shard(1)),
     }
     parallelize_module(model, tp_mesh, projecter_plan)
     logger.info("`vision_projecter` parallelized.")
 
-    # Parallelize `classifier` (Linear layer)
-    # classifier_plan = {
-    #     "classifier": RowwiseParallel(output_layouts=Shard(1)),
-    # }
-    # parallelize_module(model, tp_mesh, classifier_plan)
-    # logger.info("`classifier` parallelized.")
+    if hasattr(model, "llm") and model.llm is not None:
+        llama_plan = {
+            # Attention components
+            "model.layers.*.self_attn.q_proj": ColwiseParallel(input_layouts=Replicate(), output_layouts=Shard(1)),
+            "model.layers.*.self_attn.k_proj": ColwiseParallel(input_layouts=Replicate(), output_layouts=Shard(1)),
+            "model.layers.*.self_attn.v_proj": ColwiseParallel(input_layouts=Replicate(), output_layouts=Shard(1)),
+            "model.layers.*.self_attn.o_proj": RowwiseParallel(output_layouts=Shard(1)),
+            # MLP components
+            "model.layers.*.mlp.gate_proj": ColwiseParallel(),
+            "model.layers.*.mlp.up_proj": ColwiseParallel(),
+            "model.layers.*.mlp.down_proj": RowwiseParallel(output_layouts=Shard(1)),
+        }
+
+        # Apply the parallelization plan to LlamaForCausalLM
+        parallelize_module(model.llm, tp_mesh, llama_plan)
+        for layer in model.llm.model.layers:
+            layer.self_attn.num_heads //= distributed_args.tp_size
+            layer.self_attn.head_dim //= distributed_args.tp_size
+
+        logger.info(f"LlamaForCausalLM layers parallelized with TP size {distributed_args.tp_size}")
 
     logger.info("Tensor Parallelization complete.")
+

@@ -52,7 +52,7 @@ data:
     task: class_to_image
     data_name: ILSVRC/imagenet-1k
     source: huggingface
-    batch_size: 48 #96
+    batch_size: 24 #96
     image_size: 256
     num_workers: 8
     split: train
