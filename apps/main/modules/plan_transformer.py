@@ -8,13 +8,11 @@ from typing import Optional, Tuple
 import torch
 from torch import nn
 
-from apps.main.modules.embedder import ImageEmbedder, TimestepEmbedder, LabelEmbedder
+from apps.main.modules.embedder import ImageEmbedder
 from apps.main.modules.ops import (
-    # create_causal_mask,
     RotaryEmbedding1D,
     RotaryEmbedding2D,
 )
-
 from lingua.transformer import (
     BaseTransformerArgs,
     TransformerBlock,
@@ -75,8 +73,18 @@ def create_multimodal_mask(
         for j in range(img2_start, img2_end):
             mask[i, j] = True
 
-    mask = mask[None, None, :, :]  # [1, 1, total_len, total_len]
-    return mask
+
+@dataclass
+class PlanTransformerArgs(BaseTransformerArgs):
+
+    seed: int = 42
+    patch_size: int = 16
+    in_channels: int = 3
+    pre_trained_path: Optional[str] = None
+    attn_type: str = "bi_causal"  # Options: 'full', 'bi_causal' and 'causal'.
+    text_seqlen: int = 256
+    gen_seqlen: int = 256
+    vocab_size: int = -1
 
 
 class BasePlanTransformer(nn.Module):
@@ -85,7 +93,6 @@ class BasePlanTransformer(nn.Module):
         self.dim = args.dim
         self.init_base_std = args.init_base_std
         self.init_std_factor = InitStdFactor(args.init_std_factor)
-        self.gen_seqlen = args.gen_seqlen
         self.attn_type = args.attn_type
         self.layers = nn.ModuleList()
         # assert not (self.attn_type == "bi_causal" and args.n_layers % 2 != 0)
@@ -180,9 +187,9 @@ class PlanTransformer(BasePlanTransformer):
             in_dim=self.patch_size * self.patch_size * args.in_channels,
             out_dim=args.dim,
         )
-
-        # NOTE: This could be shared with image_emb and image_latent
-        self.rope_image = RotaryEmbedding2D(
+        self.gen_seqlen = args.gen_seqlen
+        self.tok_embeddings = torch.nn.Embedding(args.vocab_size, args.dim)
+        self.rope_embeddings_image = RotaryEmbedding2D(
             theta=args.rope_theta,
             head_dim=args.head_dim or args.dim // args.n_heads,
             max_seqlen=args.gen_seqlen,
@@ -281,6 +288,7 @@ class PlanTransformer(BasePlanTransformer):
         # Either use fixed base std or sqrt model dim
         super().reset_parameters()
         self.rope_embeddings_image.reset_parameters()
+        self.rope_embeddings_cap.reset_parameters()
         init_std = init_std or (self.dim ** (-0.5))
         self.norm.reset_parameters()
         self.img_embedder.reset_parameters()
