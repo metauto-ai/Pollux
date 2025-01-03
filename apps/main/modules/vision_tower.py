@@ -35,15 +35,14 @@ from timm.layers import (
 )
 from timm.models._manipulate import checkpoint_seq, named_apply
 
-from apps.plan.modules.ops import _no_grad_trunc_normal_
-
+from apps.main.modules.ops import _no_grad_trunc_normal_
 
 
 @dataclass
 class VisionTowerArgs:
-    model_name: str = "siglip_large_patch16_256"  
+    model_name: str = "siglip_large_patch16_256"
     image_size: int = 256
-    select_layer: int = -1 
+    select_layer: int = -1
     select_feature: str = "patch"
     pre_trained_path: str = "/path/to/pretrained/model.pth"
     ignore_head: bool = True
@@ -706,6 +705,7 @@ class VisionTower(nn.Module):
 
         else:  # huggingface
             from transformers import CLIPVisionModel
+
             vision_tower = CLIPVisionModel.from_pretrained(**vision_tower_params)
             forward_kwargs = dict(output_hidden_states=True)
 
@@ -752,17 +752,21 @@ class VisionTower(nn.Module):
             if pre_trained_path:
                 # Attempt to load from the provided path
                 state_dict = torch.load(pre_trained_path, map_location="cpu")
-                incompatible_keys = self.vision_tower.load_state_dict(state_dict, strict=False)
+                incompatible_keys = self.vision_tower.load_state_dict(
+                    state_dict, strict=False
+                )
                 print(
                     f"SigLIP-ViT restores from {pre_trained_path},\n"
                     f"\tincompatible_keys: {incompatible_keys}."
                 )
             else:
-                raise FileNotFoundError("No pre-trained path provided, attempting to download checkpoint.")
+                raise FileNotFoundError(
+                    "No pre-trained path provided, attempting to download checkpoint."
+                )
         except (FileNotFoundError, RuntimeError):
             try:
                 # Download the model and save it
-                model_name = "siglip_large_patch16_256" #"siglip-large-patch16-384"#"google/siglip-large-patch16-384"
+                model_name = "siglip_large_patch16_256"  # "siglip-large-patch16-384"#"google/siglip-large-patch16-384"
                 model = create_siglip_vit(model_name=model_name)
                 save_path = self.pre_trained_path
                 save_dir = os.path.dirname(save_path)
@@ -772,7 +776,9 @@ class VisionTower(nn.Module):
 
                 # Reload the saved model
                 state_dict = torch.load(save_path, map_location="cpu")
-                incompatible_keys = self.vision_tower.load_state_dict(state_dict, strict=False)
+                incompatible_keys = self.vision_tower.load_state_dict(
+                    state_dict, strict=False
+                )
                 print(
                     f"SigLIP-ViT restores from downloaded checkpoint at {save_path},\n"
                     f"\tincompatible_keys: {incompatible_keys}."

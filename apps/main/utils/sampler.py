@@ -86,10 +86,12 @@ class StatefulDistributedSampler(Sampler):
                 indices = np.concatenate((indices, indices[:padding_size]))
             else:
                 repeat_count = math.ceil(padding_size / len(indices))
-                indices = np.concatenate((indices, np.tile(indices, repeat_count)[:padding_size]))
+                indices = np.concatenate(
+                    (indices, np.tile(indices, repeat_count)[:padding_size])
+                )
         else:
             # Remove tail of data to make it evenly divisible
-            indices = indices[:self.total_size]
+            indices = indices[: self.total_size]
 
         assert len(indices) == self.total_size
         assert len(indices) == self.num_samples

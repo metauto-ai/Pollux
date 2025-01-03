@@ -23,7 +23,7 @@ from lingua.distributed import (
 from apps.main.data import AutoDataLoader, DataArgs
 from apps.plan.generate import LatentGenerator, GeneratorArgs, load_consolidated_model
 
-from apps.plan.model_v1 import Pollux, ModelArgs
+from apps.plan.model import Pollux, ModelArgs
 
 EVAL_FOLDER_NAME = "{:010d}"
 

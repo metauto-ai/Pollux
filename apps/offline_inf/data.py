@@ -188,7 +188,7 @@ def benchmark_url_loading(data_loader):
     elapsed_time = end_time - start_time
 
     logger.info(f"Time taken to create dataloader iterator: {elapsed_time:.4f} seconds")
-    
+
     timer = benchmark.Timer(
         stmt="batch = next(iterator)", globals={"iterator": iterator}
     )
