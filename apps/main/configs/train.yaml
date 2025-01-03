@@ -1,12 +1,12 @@
-# python -m apps.main.generate config=apps/main/configs/eval.yaml
-# torchrun --nnodes 1 --nproc-per-node 4 -m apps.main.eval config=apps/main/configs/eval.yaml
+# torchrun --standalone --nnodes 1 --nproc-per-node 4 -m apps.main.train config=apps/main/configs/train.yaml
+
 # Set up single experiment
 version: v0.7
 # From now on, start to align train, data, and model setting with train stage (just finish refactor for dara)
 train_stage: preliminary # options: preliminary, pretraining, posttraining; aligned with data setting
 # name: Pollux_v0.7_gen_transformer_preliminary # used for local dump and wandb log
-name: Pollux_v0.7_MongoDB_ImageNet-1k_Distributed_Data_Test1
-output_dir: /jfs/checkpoints/dump1
+name: Pollux_v0.7_MongoDB_ImageNet-1k_Distributed_Data_Test
+output_dir: /jfs/checkpoints/dump
 dump_dir: '' # No need now
 steps: 1000000
 seed: 777
