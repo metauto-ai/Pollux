@@ -11,7 +11,7 @@ from apps.main.modules.gen_transformer import GenTransformerArgs
 from apps.main.modules.tokenizer import TokenizerArgs
 from apps.plan.model import ModelArgs, Pollux
 from dotenv import load_dotenv
-from apps.main.data import AutoDataLoader, DataArgs
+from apps.plan.data import AutoDataLoader, DataArgs
 
 # Configure logging
 logging.basicConfig(

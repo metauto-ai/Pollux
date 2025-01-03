@@ -1,10 +1,11 @@
 # find /jfs/data/imagenet-1k/ -type f -name "*.lock" -exec rm -f {} \;
-# torchrun --standalone --nnodes 1 --nproc-per-node 4 -m apps.plan.trai_v2 config=apps/plan/configs/train.yaml
+# torchrun --standalone --nnodes 1 --nproc-per-node 4 -m apps.plan.train config=apps/plan/configs/train.yaml
 
 # Set up single experiment
 version: v0.8
+# From now on, start to align train, data, and model setting with train stage (just finish refactor for dara)
 train_stage: preliminary # options: preliminary, pretraining, posttraining; aligned with data setting
-name: Pollux_v0.7_MongoDB_ImageNet-1k_multimodal
+name: Pollux_v0.8_MongoDB_ImageNet-1k_multimodal
 output_dir: /jfs/checkpoints/dump
 dump_dir: '' # No need now
 steps: 1000000
@@ -96,7 +97,7 @@ data:
 
 profiling:
     run: true
-    
+
 checkpoint:
     dump:
         every: 500

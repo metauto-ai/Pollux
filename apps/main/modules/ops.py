@@ -4,6 +4,8 @@ import torch
 import torch.nn.functional as F
 from typing import Optional
 import torch.nn as nn
+import math
+import warnings
 
 
 def precompute_freqs_cis(dim: int, end: int, theta: float = 10000.0):
