@@ -187,6 +187,7 @@ def validate_train_args(args: TrainArgs):
         * args.distributed.tp_size
         != get_world_size()
     ):
+        logger.info(f"World Size: {get_world_size()}")
         assert get_world_size() % args.distributed.dp_shard == 0
         args.distributed.dp_replicate = get_world_size() // args.distributed.dp_shard
 
