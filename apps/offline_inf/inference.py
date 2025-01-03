@@ -80,7 +80,6 @@ def launch_inference(cfg: InferenceArgs):
         num_shards=world_size,
         train_stage=cfg.stage,
         data_config=active_data,  # Pass the filtered data configuration
-        drop_last=False,
     )
     data_loader, sampler = data_loader_factory.create_dataloader()
 
@@ -115,7 +114,6 @@ def launch_inference(cfg: InferenceArgs):
         assert saved_parquet_num == len(
             df
         ), f"Parquet CSV record must be consistent with parquet files on the disk, csv record has {len(df)} == but now on the disk {saved_parquet_num}"
-
 
         previous_parquet_size = df.iloc[0]["sample_num"]
 
@@ -185,8 +183,8 @@ def launch_inference(cfg: InferenceArgs):
             save_batch = {}
             in_parquet_num = 0
         # Jinjie: if we need profile, early break here
-        if idx > 10000:
-            break
+        # if idx > 10000:
+        #     break
     # Conclude profiling
     for name, meter in inference_meters.items():
         meter.conclude(f"Inference ({name})")

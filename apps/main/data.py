@@ -48,30 +48,49 @@ def worker_init(workder_id, seed):
 
 
 @dataclass
-class DataArgs:
-    # * TODO: Jinjie: we should have seperate configs for data args and dataloader args
-    id: str = 0
-    data_name: str = (
-        "ILSVRC/imagenet-1k"  # Supported values: "ILSVRC/imagenet-1k", "dummy", "NucluesIMG-100M"
-    )
-    task: str = "class_to_image"
+class DataLoaderArgs:
+    prefetch_factor: int = 2  # Prefetch factor for dataloader
     batch_size: int = 12
     num_workers: int = 8
-    image_size: int = 256
+    seed: int = 1024
+    shuffle: bool = False
+    pin_memory: Optional[bool] = True
+    drop_last: Optional[bool] = True
+
+
+@dataclass
+class DataArgs:
+    id: str = 0
+    data_name: str = (
+        "ILSVRC/imagenet-1k"  # the same as the dataset name in Huggingface or the collection name in MongoDB
+    )
+    task: str = "class_to_image"
     split: str = "train"
-    root_dir: Optional[str] = None  # For local/huggingface datasets
-    cache_dir: Optional[str] = None  # Cache directory for datasets
-    mongo_uri: Optional[str] = None  # MongoDB URI for NucluesIMG-100M
-    usage: Optional[str] = None  # "class_to_image", "image_generation"
-    source: Optional[str] = None  # "huggingface", "mongodb", "local"
-    stage: Optional[str] = None  # "preliminary", "pretraining", "posttraining"
-    query: Optional[Dict[str, Any]] = field(
-        default_factory=dict
-    )  # MongoDB query  # MongoDB query
-    retries: Optional[int] = 3  # Number of retries for MongoDB connection
+    source: Optional[str] = None  # "huggingface", "mongodb"
+    stage: Optional[str] = (
+        None  # "preliminary", "pretraining", "posttraining" and so on
+    )
     use: bool = False  # Whether to use this dataset
+
+    # * Image specific args
+    image_size: int = 256
+
+    # * Huggingface specific args
+    root_dir: Optional[str] = None  # For local/huggingface datasets
+
+    # * MongoDB specific args
+    query: Optional[Dict[str, Any]] = field(default_factory=dict)  # MongoDB query
+    retries: Optional[int] = 3  # Number of retries for MongoDB connection
     partition_key: str = "key"  # MongoDB partition key
-    prefetch_factor: int = 2  # Prefetch factor for dataloader
+    extract_field: Optional[Dict[str, str]] = field(
+        default_factory=dict
+    )  # which media url field is used to extract from MongoDB it is a dataset specific field
+    mapping_field: Optional[Dict[str, str]] = field(
+        default_factory=dict
+    )  # which parquet column name field is used in parquet data. it is a dataset specific field
+
+    # * DataLoader specific args
+    dataloader: DataLoaderArgs = field(default_factory=DataLoaderArgs)
 
 
 class AutoDataLoader:
@@ -82,21 +101,12 @@ class AutoDataLoader:
         train_stage: str,
         data_config: List[DataArgs],
         # * following args should only be used by dataloader and sampler
-        shuffle: Optional[bool] = False,
-        pin_memory: Optional[bool] = True,
-        drop_last: Optional[bool] = True,
-        seed: Optional[int] = 1024,
     ):
 
         self.shard_id = shard_id
         self.num_shards = num_shards
         self.train_stage = train_stage
         self.data_config = data_config
-        # * used by dataloader and sampler
-        self.shuffle = shuffle
-        self.pin_memory = pin_memory
-        self.drop_last = drop_last
-        self.seed = seed
 
     def create_dataloader(self) -> DataLoader:
         for dataset_config in self.data_config:
@@ -106,8 +116,6 @@ class AutoDataLoader:
             try:
                 if dataset_config.source == "huggingface":
                     return self._create_imagenet_dataloader(dataset_config)
-                elif dataset_config.source == "local":
-                    return self._create_dummy_dataloader(dataset_config)
                 elif dataset_config.source == "mongodb":
                     return self._create_mongodb_dataloader(dataset_config)
                 else:
@@ -139,20 +147,6 @@ class AutoDataLoader:
         self.dataset = train_data
         return self._warp_dataloader_with_stateful_sampler(args, train_data)
 
-    def _create_dummy_dataloader(
-        self, args: DataArgs
-    ) -> Tuple[DataLoader, StatefulDistributedSampler]:
-
-        dataset = DummyDataLoad(
-            num_samples=1000,
-            num_classes=10,
-            image_size=(3, args.image_size, args.image_size),
-            word_count=32,
-        )
-
-        self.dataset = dataset
-        return self._warp_dataloader_with_stateful_sampler(args, dataset)
-
     def _create_mongodb_dataloader(
         self, args: DataArgs
     ) -> Tuple[DataLoader, StatefulDistributedSampler]:
@@ -161,7 +155,6 @@ class AutoDataLoader:
                 num_shards=self.num_shards,
                 shard_idx=self.shard_id,
                 collection_name=args.data_name,
-                temporal_cache_name=args.data_name,
                 partition_key=args.partition_key,
                 args=args,
             )
@@ -171,10 +164,7 @@ class AutoDataLoader:
                 query=args.query,
                 shard_idx=self.shard_id,
                 num_shards=self.num_shards,
-                temporal_cache_name=args.data_name,
-                extract_field={
-                    "s3url": "image",
-                },
+                extract_field=args.extract_field,  # {"s3url": "image",}
                 partition_key=args.partition_key,
                 args=args,
             )
@@ -184,26 +174,12 @@ class AutoDataLoader:
                 query=args.query,
                 shard_idx=self.shard_id,
                 num_shards=self.num_shards,
-                temporal_cache_name=args.data_name,
-                extract_field={
-                    "parquet_size": "sample_num",
-                    "parquet_path": "path",
-                },
-                mapping_field={
-                    "HunyuanVideo_latent_code": "latent_code",
-                    "LLAMA3_3B_text_embedding": "text_embedding",
-                },
+                extract_field=args.extract_field,  # {"parquet_size": "sample_num","parquet_path": "path",}
+                mapping_field=args.mapping_field,  # {"HunyuanVideo_latent_code": "latent_code","LLAMA3_3B_text_embedding": "text_embedding",},
                 partition_key=args.partition_key,
             )
         else:
-            dataset = MongoDBDataLoad(
-                collection_name=args.data_name,
-                query=args.query,
-                shard_idx=self.shard_id,
-                num_shards=self.num_shards,
-                temporal_cache_name=args.data_name,
-                partition_key=args.partition_key,
-            )
+            raise ValueError(f"Unsupported MongoDB dataset: {args.data_name}")
 
         dataset.set_local_partition()
         if hasattr(dataset, "set_mapping"):
@@ -214,24 +190,29 @@ class AutoDataLoader:
     def _warp_dataloader_with_stateful_sampler(
         self, args: DataArgs, dataset: Dataset
     ) -> Tuple[DataLoader, StatefulDistributedSampler]:
+        dataloader_args = args.dataloader
         sampler = StatefulDistributedSampler(
             dataset,
-            batch_size=args.batch_size,
+            batch_size=dataloader_args.batch_size,
             num_replicas=self.num_shards,
             rank=self.shard_id,
-            shuffle=self.shuffle,
+            shuffle=dataloader_args.shuffle,
         )
         return (
             DataLoader(
                 dataset,
-                batch_size=args.batch_size,
+                batch_size=dataloader_args.batch_size,
                 sampler=sampler,
-                worker_init_fn=partial(worker_init, seed=self.seed),
-                drop_last=self.drop_last,
-                pin_memory=self.pin_memory,
-                num_workers=args.num_workers,
-                persistent_workers=True if args.num_workers > 0 else False,
-                prefetch_factor=args.prefetch_factor if args.num_workers > 0 else None,
+                worker_init_fn=partial(worker_init, seed=dataloader_args.seed),
+                drop_last=dataloader_args.drop_last,
+                pin_memory=dataloader_args.pin_memory,
+                num_workers=dataloader_args.num_workers,
+                persistent_workers=True if dataloader_args.num_workers > 0 else False,
+                prefetch_factor=(
+                    dataloader_args.prefetch_factor
+                    if dataloader_args.num_workers > 0
+                    else None
+                ),
             ),
             sampler,
         )

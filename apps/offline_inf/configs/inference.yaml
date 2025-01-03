@@ -1,34 +1,32 @@
-# torchrun --nnodes 1 --nproc-per-node 8 -m apps.offline_inf.inference config=apps/offline_inf/configs/inference.yaml
-name: "debug_evals"
+# CUDA_VISIBLE_DEVICES=4,5,6,7 torchrun --nnodes 1 --nproc-per-node 4 --rdzv_endpoint=localhost:29400 -m apps.offline_inf.inference config=apps/offline_inf/configs/inference.yaml
+name: "inference"
 stage: inference # preliminary for test normal usage: inference 
-dump_dir:  /jfs/data/tmp/cc12m_test_1m/ # change dir
+dump_dir:  /jfs/data/cc12m_r256_l3b128/ # change dir
 parque_size: 1024
 prefix_mapping:
   "text_embedding": "LLAMA3_3B_text_embedding"
   "latent_code": "HunyuanVideo_latent_code"
+
 source_data:
   - stage: inference
-    id: 0
-    task: text_to_image
-    data_name: cc12m
-    source: mongodb
-    batch_size: 64
-    image_size: 256
-    num_workers: 16
-    use: True
-    retries: 3
-    partition_key: "key"
-  - stage: preliminary
     id: 1
-    task: class_to_image
-    data_name: imagenet-1k
+    data_name: cc12m
+    task: text_to_image
     source: mongodb
-    batch_size: 8
     image_size: 256
-    num_workers: 8
-    split: train
     partition_key: 'key'
-    use: True
+    retries: 3
+    extract_field:
+        "s3url": "image"
+    use: true
+    dataloader:
+        prefetch_factor: 2
+        batch_size: 64
+        num_workers: 16
+        seed: 1024
+        shuffle: True
+        pin_memory: True
+        drop_last: False
 
 model:
     vae:
