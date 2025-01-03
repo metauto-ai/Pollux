@@ -1,4 +1,3 @@
-import os
 import numpy as np
 
 from pprint import pformat
@@ -22,7 +21,6 @@ class StatefulDistributedSampler(Sampler):
         shuffle: bool = False,  # True,
         seed: int = 0,
         drop_last: bool = False,
-        save_dir: str = "/jfs/data/sampler",
     ) -> None:
         """
         Though we don't use torch distributed, we reframe our shrading into distribued like sampler.
@@ -67,7 +65,6 @@ class StatefulDistributedSampler(Sampler):
         self.shard_id = rank
         self.num_shard = num_replicas
         self.shuffle = shuffle
-        self.save_dir = save_dir
 
     def __iter__(self) -> Iterator:
         if self.shuffle:
@@ -101,28 +98,8 @@ class StatefulDistributedSampler(Sampler):
     def __len__(self) -> int:
         return self.num_samples - self.start_index
 
-    def reset(self, spefic_index: int = 0, shuffle: Optional[bool] = False) -> None:
-
-        # NOTE: we will have situations that we could mannually recover from a specific index
-        #       Beside, I think set `shuffle = False` as default makes more sense according to our usage.
+    def reset(self, spefic_index: int = 0) -> None:
         self.start_index = 0 if spefic_index == 0 else spefic_index
-
-        # NOTE: Previously, we set `shuffle = True`` by default, if so, it it better add the shuffle function.
-        #       Otherwise we need to set it to False by default. In our situation, we don't need to shuffle frequently.
-        if shuffle is None:
-            shuffle = self.shuffle
-        if shuffle:
-            self.shuffle_indices()
-
-    def shuffle_indices(self) -> None:
-
-        if self.shuffle:
-            generator = torch.Generator()
-            generator.manual_seed(self.seed)
-            indices = torch.randperm(len(self.dataset), generator=generator).tolist()
-            if hasattr(self.dataset, "indices"):
-                # Update dataset's internal indices if supported
-                self.dataset.indices = indices
 
     def state_dict(self, global_step) -> dict:
         local_step = (global_step * self.batch_size) % self.num_samples
@@ -137,25 +114,6 @@ class StatefulDistributedSampler(Sampler):
         self.seed = state_dict.get("seed", self.seed)
         self.shuffle = state_dict.get("shuffle", self.shuffle)
 
-    def save_state(self, global_step: int) -> None:
-
-        # NOTE: For safety, it is better we save the minimal info,
-        # e.g., start index, seed, shuffle, global step for recovery.
-        state_set_info = {
-            "start_index": self.start_index,
-            "seed": self.seed,
-            "shuffle": self.shuffle,
-            "global_step": global_step,
-        }
-        # Create a timestamped folder within the save_dir
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        timestamped_dir = os.path.join(self.save_dir, timestamp)
-        os.makedirs(timestamped_dir, exist_ok=True)
-
-        state_path = os.path.join(
-            timestamped_dir, f"sampler_state_rank_{self.shard_id}.pth"
-        )
-        torch.save(state_set_info, state_path)
 
     def set_epoch(self, epoch: int) -> None:
         r"""

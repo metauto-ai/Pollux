@@ -9,7 +9,7 @@ from apps.main.modules.schedulers import SchedulerArgs
 from apps.main.modules.plan_transformer import PlanTransformerArgs
 from apps.main.modules.gen_transformer import GenTransformerArgs
 from apps.main.modules.tokenizer import TokenizerArgs
-from apps.main.model import ModelArgs, Pollux
+from Pollux.apps.plan.model_v2 import ModelArgs, Pollux
 from dotenv import load_dotenv
 from apps.main.data import AutoDataLoader, DataArgs
 
