@@ -199,42 +199,51 @@ class Pollux(nn.Module):
     ) -> Tuple[dict[str, any], torch.Tensor]:
 
         images = batch["image"]  # Shape: [B, C, H, W]
-        captions = batch["caption"]
+        labels = batch["label"]
+        target_captions = batch["caption"]
+        labels = [str(label) for label in labels.tolist()]
 
         input_ids = self.llm_tokenizer(
-            captions, padding=True, truncation=True, return_tensors="pt"
-        )["input_ids"]
-        input_ids = input_ids.to(self.llm.device)
+            labels, padding=True, truncation=True, return_tensors="pt"
+        )["input_ids"].to(self.llm.device)
+
         text_embs, images_embs = self.process_input(input_ids, images)
         combined_embs = torch.cat([text_embs, images_embs], dim=1)
         attention_mask = self.process_mask(
             input_ids, images_embs, mask_strategy, random_rate
         )
 
-        outputs = self.llm(
-            inputs_embeds=combined_embs,
-            attention_mask=attention_mask,
-            output_hidden_states=True,
-            return_dict=True,
-        )
-
         # outputs = self.llm.generate(
         #     inputs_embeds=combined_embs,
         #     attention_mask=attention_mask,
+        #     max_new_tokens=50,
+        #     num_beams=5,
+        #     return_dict_in_generate=True,
+        #     output_scores=True,
         # )
 
-        text_seq_len = input_ids.shape[1]
-        visual_start_idx = text_seq_len
-        visual_attention_mask = attention_mask[:, visual_start_idx:].bool()
-        masked_indices = ~visual_attention_mask
-        predicted_embs = outputs.hidden_states[-1][:, visual_start_idx:][
-            masked_indices
-        ].view(-1, images_embs.size(-1))
-        original_embs = images_embs[masked_indices]
+        target_ids = self.llm_tokenizer(
+            target_captions, padding=True, truncation=True, return_tensors="pt"
+        )["input_ids"].to(self.llm.device)
 
-        mse_loss = F.mse_loss(predicted_embs, original_embs)
-        batch["prediction"] = outputs.hidden_states[-1]
-        return batch, mse_loss
+        seq_total = combined_embs.size(1)     
+        seq_target = target_ids.size(1)    
+        if seq_target < seq_total:
+            pad_len = seq_total - seq_target
+            target_ids = F.pad(target_ids, (0, pad_len), value=-100)
+        elif seq_target > seq_total:
+            target_ids = target_ids[:, :seq_total]
+
+        outputs_tf = self.llm(
+            inputs_embeds=combined_embs,
+            attention_mask=attention_mask,
+            labels=target_ids,
+            return_dict=True,
+        )
+
+        loss = outputs_tf.loss
+        return batch, loss
+
 
     def set_train(self):
         # self.vision_tower.train()
