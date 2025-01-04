@@ -79,7 +79,7 @@ logger = logging.getLogger()
 class TrainArgs:
 
     name: str = "Pollux"
-    version: str = "v0.7"
+    version: str = "v0.8"
     train_stage: str = "preliminary"  # Align with `data` configuration
     output_dir: str = "/mnt/data/dump"
     dump_dir: str = ""
@@ -104,9 +104,7 @@ class TrainArgs:
     checkpoint: CheckpointArgs = field(default_factory=CheckpointArgs)
     profiling: ProfilerArgs = field(default_factory=ProfilerArgs)
     logging: LoggingArgs = field(default_factory=LoggingArgs)
-    scheduler: SchedulerArgs = field(
-        default_factory=SchedulerArgs
-    )  # TODO: we have double-meaning of `scheduler`; need to check
+    scheduler: SchedulerArgs = field(default_factory=SchedulerArgs)
 
     # If set to None, eval is run locally otherwise it launches a new job with the given number of gpus
     async_eval_gpus: Optional[int] = None
@@ -291,7 +289,7 @@ def train(args: TrainArgs):
         logger.info(f"Model has been built with {model_param_count} parameters...")
 
         model.init_weights(args.model)
-        # torch.distributed.barrier()
+        #torch.distributed.barrier()
 
         model = parallelize_model(
             model,
@@ -299,8 +297,7 @@ def train(args: TrainArgs):
             args.model,
             args.distributed,
             fsdp_grouping_plan=build_fsdp_grouping_plan(
-                args.model,
-                model,
+                args.model, model,
             ),
             tp_parallelize=tp_parallelize,
             no_recompute_ops=get_no_recompute_ops(),
@@ -324,7 +321,7 @@ def train(args: TrainArgs):
             shard_id=dp_rank,
             num_shards=dp_degree,
             train_stage=args.train_stage,
-            # init_signal_handler=get_local_rank() == 0,
+            #init_signal_handler=get_local_rank() == 0,
             data_config=active_data,  # Pass the filtered data configuration
         )
 
@@ -335,6 +332,7 @@ def train(args: TrainArgs):
         # ):
         #     data_loader_factory.dataset.clean_buffer()
 
+ 
         ###### Build optimizer after apply parallelisms to the model ######
         optimizer, scheduler = build_optimizer(model, args.optim, args.steps)
 
@@ -389,7 +387,7 @@ def train(args: TrainArgs):
                 # we do garbage collection manually otherwise different processes
                 # run the GC at different times so they slow down the whole pipeline
                 gc.collect()
-
+        
             ###### Batch Data Receive ######
 
             batch["image"] = batch["image"].cuda()
@@ -417,6 +415,7 @@ def train(args: TrainArgs):
             grad_norm = (
                 grad_norm.full_tensor() if isinstance(grad_norm, DTensor) else grad_norm
             ).item()
+
 
             ###### Batch Data Receive ######
             if train_state.acc_step == 0:
@@ -452,7 +451,9 @@ def train(args: TrainArgs):
                 total_acc_steps = (
                     args.grad_acc_steps * train_state.step + train_state.acc_step
                 )
-                tokens_per_gpu = total_acc_steps * active_data[0].batch_size
+                tokens_per_gpu = (
+                    total_acc_steps * active_data[0].batch_size
+                )
                 total_tokens = dp_degree * tokens_per_gpu
                 # This is an estimate and the correct values may change
                 # if you change the architecture
@@ -511,6 +512,7 @@ def train(args: TrainArgs):
                     f"  pow: {gpu_mem_stats.power_draw/1000} W"
                 )
 
+
             ###### Save Periodically ######
             saved = False
             if every_n_steps(
@@ -518,7 +520,7 @@ def train(args: TrainArgs):
             ) or every_n_steps(train_state, args.checkpoint.eval.every, acc_step=0):
 
                 torch.distributed.barrier()
-                # if get_is_master():
+                #if get_is_master():
 
                 saved = checkpoint.save(
                     model,
@@ -533,7 +535,7 @@ def train(args: TrainArgs):
             if args.eval is not None and every_n_steps(
                 train_state, args.checkpoint.eval.every, acc_step=0
             ):
-
+                
                 logger.info("Evaluation Start...")
                 start_time = time.time()
                 eval_args = dataclass_from_dict(EvalArgs, args.eval)
@@ -555,9 +557,9 @@ def train(args: TrainArgs):
 
             ###### END of Loop ######
             if preemption_flag["flag"]:
-                # torch.distributed.barrier()
-                # if get_is_master() and not saved:
-                # if not saved:
+                #torch.distributed.barrier()
+                #if get_is_master() and not saved:
+                #if not saved:
                 if not saved and get_is_master():
                     checkpoint.save(
                         model,
@@ -569,10 +571,10 @@ def train(args: TrainArgs):
                 requeue_slurm_job()
                 sys.exit(0)
 
-    # if not saved and get_is_master():
-    # if not saved and get_is_master():
+    #if not saved and get_is_master():
+    #if not saved and get_is_master():
     if not saved and get_is_master():
-        # torch.distributed.barrier()
+        #torch.distributed.barrier()
         checkpoint.save(
             model,
             optimizer,

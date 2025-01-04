@@ -48,6 +48,7 @@ class VisionTowerArgs:
     ignore_head: bool = True
     pixel_mean: Optional[List[float]] = None
     pixel_std: Optional[List[float]] = None
+    project_dim: Optional[List[int]] = None
 
 
 def trunc_normal_(tensor, mean=0.0, std=1.0, a=-2.0, b=2.0):
