@@ -83,6 +83,7 @@ class Pollux(nn.Module):
 
     def __init__(self, args: ModelArgs):
         super().__init__()
+        self.args = args
 
         self.vision_tower = VisionTower(args.vision_tower)
         self.vision_projecter = nn.Linear(
@@ -102,7 +103,7 @@ class Pollux(nn.Module):
         if self.llm_tokenizer.pad_token is None:
             self.llm_tokenizer.pad_token = self.llm_tokenizer.eos_token
 
-        # self.vae = LatentVideoVAE(args.vae)
+        self.vae = LatentVideoVAE(args.vae)
         # self.scheduler = RectifiedFlow(args.scheduler)
 
     def patchify(self, images: torch.Tensor, patch_size: int) -> torch.Tensor:
@@ -220,12 +221,14 @@ class Pollux(nn.Module):
     ) -> Tuple[dict[str, any], torch.Tensor]:
 
         images = batch["image"]  # Shape: [B, C, H, W]
-        labels = batch["label"]
-        target_captions = batch["caption"]
-        labels = [str(label) for label in labels.tolist()]
+        captions = batch["caption"]
+        vae_latent = self.vae.encode(images)
+        latent_patches = self.patchify(vae_latent, patch_size=self.args.patch_size)
+        B, N, C, PH, PW = latent_patches.shape
+        latent_target = latent_patches.view(B, N, -1)
 
         input_ids = self.llm_tokenizer(
-            labels, padding=True, truncation=True, return_tensors="pt"
+            captions, padding=True, truncation=True, return_tensors="pt"
         )["input_ids"].to(self.llm.device)
 
         text_embs, images_embs = self.process_input(input_ids, images)
@@ -243,27 +246,38 @@ class Pollux(nn.Module):
         #     output_scores=True,
         # )
 
-        target_ids = self.llm_tokenizer(
-            target_captions, padding=True, truncation=True, return_tensors="pt"
-        )["input_ids"].to(self.llm.device)
+        # target_ids = self.llm_tokenizer(
+        #     target_captions, padding=True, truncation=True, return_tensors="pt"
+        # )["input_ids"].to(self.llm.device)
 
         seq_total = combined_embs.size(1)     
-        seq_target = target_ids.size(1)    
-        if seq_target < seq_total:
-            pad_len = seq_total - seq_target
-            target_ids = F.pad(target_ids, (0, pad_len), value=-100)
-        elif seq_target > seq_total:
-            target_ids = target_ids[:, :seq_total]
+        # seq_target = target_ids.size(1)    
+        # if seq_target < seq_total:
+        #     pad_len = seq_total - seq_target
+        #     target_ids = F.pad(target_ids, (0, pad_len), value=-100)
+        # elif seq_target > seq_total:
+        #     target_ids = target_ids[:, :seq_total]
 
         outputs_tf = self.llm(
             inputs_embeds=combined_embs,
             attention_mask=attention_mask,
-            labels=target_ids,
+            output_hidden_states=True,
             return_dict=True,
         )
 
-        loss = outputs_tf.loss
-        return batch, loss
+        final_hidden = outputs_tf.hidden_states[-1]
+        B_, seq_total, hidden_size = final_hidden.shape
+        text_seq_len = text_embs.shape[1] 
+        image_seq_len = images_embs.shape[1] 
+
+        pred_image_hidden = final_hidden[:, text_seq_len:, :]
+        pred_latent = self.latent_head(pred_image_hidden)
+        pred_loss = F.mse_loss(pred_latent, latent_target)
+
+        batch["latent_target"] = latent_target
+        batch["pred_latent"] = pred_latent
+
+        return batch, pred_loss
 
 
     def set_train(self):
