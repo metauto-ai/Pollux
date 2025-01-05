@@ -41,7 +41,6 @@ from lingua.distributed import (
     get_device_mesh,
     get_is_master,
     get_world_size,
-    get_local_rank,
     parallelize_model,
     setup_env,
     setup_torch_distributed,
@@ -63,8 +62,10 @@ from apps.main.modules.schedulers import SchedulerArgs
 from apps.main.utils.cal_flops import get_num_flop_per_token
 from apps.gen_tran.model import (
     Pollux,
+    LatentPollux,
     ModelArgs,
-    build_fsdp_grouping_plan,
+    build_fsdp_grouping_plan_latent_pollux,
+    build_fsdp_grouping_plan_pollux,
     tp_parallelize,
     get_no_recompute_ops,
 )
@@ -277,8 +278,16 @@ def train(args: TrainArgs):
 
         torch.manual_seed(args.seed)
         logger.info("Building model")
-
-        model = Pollux(args.model)
+        if args.model.type == "latent_pollux":
+            model = LatentPollux(args.model)
+            fsdp_plan = build_fsdp_grouping_plan_latent_pollux(args.model)
+        elif args.model.type == "pollux":
+            model = Pollux(args.model)
+            fsdp_plan = build_fsdp_grouping_plan_pollux(
+                args.model, model.compressor.vae.config
+            )
+        else:
+            raise ValueError(f"Unsupported model type: {args.model.type}")
         logger.info("Model is built !")
 
         model_param_count = get_num_params(model)
@@ -290,9 +299,7 @@ def train(args: TrainArgs):
             world_mesh,
             args.model,
             args.distributed,
-            fsdp_grouping_plan=build_fsdp_grouping_plan(
-                args.model, model.compressor.vae.config
-            ),
+            fsdp_grouping_plan=fsdp_plan,
             tp_parallelize=tp_parallelize,
             no_recompute_ops=get_no_recompute_ops(),
         )
@@ -371,10 +378,17 @@ def train(args: TrainArgs):
                 # we do garbage collection manually otherwise different processes
                 # run the GC at different times so they slow down the whole pipeline
                 gc.collect()
-            batch["image"] = batch["image"].cuda()
-            data_load_time = round(timer() - data_load_start, 4)
-            nwords_since_last_log += batch["image"].numel()
-
+            if args.model.type == "latent_pollux":
+                batch["latent_code"] = batch["latent_code"].cuda()
+                batch["text_embedding"] = batch["text_embedding"].cuda()
+                data_load_time = round(timer() - data_load_start, 4)
+                nwords_since_last_log += batch["latent_code"].numel()
+            elif args.model.type == "pollux":
+                batch["image"] = batch["image"].cuda()
+                data_load_time = round(timer() - data_load_start, 4)
+                nwords_since_last_log += batch["image"].numel()
+            else:
+                raise ValueError(f"Unsupported model type: {args.model.type}")
             # forward
             start_timer = torch.cuda.Event(enable_timing=True)
             end_timer = torch.cuda.Event(enable_timing=True)

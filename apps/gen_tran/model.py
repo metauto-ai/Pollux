@@ -58,6 +58,7 @@ logger = logging.getLogger()
 
 @dataclass
 class ModelArgs:
+    type: str = "pollux"  # "pollux" or "latent_pollux"
     gen_transformer: GenTransformerArgs = field(default_factory=GenTransformerArgs)
     plan_transformer: PlanTransformerArgs = field(default_factory=PlanTransformerArgs)
     vae: LatentVideoVAEArgs = field(default_factory=LatentVideoVAEArgs)
@@ -137,11 +138,16 @@ class GenTransformer(BaseDiffusionTransformer):
     ):
         x, img_size, freqs_cis_img = self.patchify_and_embed_image(x)
         x_l = x.size(1)
-        modulation_signal = condition + self.tmb_embed(time_steps)
+        if len(time_steps.shape) == 2:
+            modulation_signal = condition + self.tmb_embed(time_steps)
+        else:
+            modulation_signal = torch.mean(
+                condition, dim=1, keepdim=False
+            ) + self.tmb_embed(time_steps)
         condition_ = torch.cat(
             [
                 self.cos_token.repeat(len(condition), 1, 1),
-                condition.unsqueeze(1),
+                condition.unsqueeze(1) if len(condition.shape) == 2 else condition,
                 self.coe_token.repeat(len(condition), 1, 1),
             ],
             dim=1,
@@ -311,13 +317,75 @@ class Pollux(nn.Module):
         self.gen_transformer.init_weights(args.gen_transformer.pre_trained_path)
 
 
+class LatentPollux(nn.Module):
+    """
+    Latent Diffusion Transformer Model.
+    This model drops VAE for latent compression, as it is already pre-processed, a transformer for temporal and spatial token mixing,
+    and a custom scheduler for diffusion steps.
+    """
+
+    VERSION: str = "v0.7"
+    DESCRIPTION: str = (
+        "Latent Diffusion Transformer for VideoGen: (1) currently we only support class conditional image generation for debugging."
+    )
+
+    def __init__(self, args: ModelArgs):
+        super().__init__()
+        self.scheduler = RectifiedFlow(args.scheduler)
+        self.gen_transformer = GenTransformer(args.gen_transformer)
+        self.text_cfg_ratio = args.text_cfg_ratio
+        self.token_proj = nn.Linear(
+            in_features=args.plan_transformer.dim,
+            out_features=args.gen_transformer.dim,
+            bias=False,
+        )
+        init_std = self.gen_transformer.dim ** (-0.5)
+        nn.init.trunc_normal_(
+            self.token_proj.weight,
+            mean=0.0,
+            std=init_std,
+            a=-3 * init_std,
+            b=3 * init_std,
+        )
+        self.negative_token = nn.Parameter(torch.zeros(1, 1, args.plan_transformer.dim))
+
+    def forward(self, batch: dict[str:any]) -> dict[str:any]:
+        if random.random() > self.text_cfg_ratio:
+            conditional_signal = batch["text_embedding"]
+        else:
+            conditional_signal = self.negative_token.repeat(
+                batch["text_embedding"].size(0), batch["text_embedding"].size(1), 1
+            )
+        latent_code = batch["latent_code"]
+        conditional_signal = self.token_proj(conditional_signal)
+        noised_x, t, target = self.scheduler.sample_noised_input(latent_code)
+        output = self.gen_transformer(
+            x=noised_x, time_steps=t, condition=conditional_signal
+        )
+        batch["prediction"] = output
+        batch["target"] = target
+        target = target.to(output.dtype)
+        loss = F.mse_loss(output, target)
+
+        return batch, loss
+
+    def set_train(self):
+        self.gen_transformer.train()
+
+    def set_eval(self):
+        self.gen_transformer.eval()
+
+    def init_weights(self, args: ModelArgs):
+        self.gen_transformer.init_weights(args.gen_transformer.pre_trained_path)
+
+
 # Optional policy for activation checkpointing. With None, we stick to the default (defined distributed.py: default_no_recompute_ops)
 def get_no_recompute_ops():
     return None
 
 
 # Optional and only used for fully shard options (fsdp) is choose. Highly recommanded for large models
-def build_fsdp_grouping_plan(model_args: ModelArgs, vae_config: dict):
+def build_fsdp_grouping_plan_pollux(model_args: ModelArgs, vae_config: dict):
     group_plan: Tuple[int, bool] = []
 
     for i in range(len(vae_config.down_block_types)):
@@ -325,6 +393,18 @@ def build_fsdp_grouping_plan(model_args: ModelArgs, vae_config: dict):
 
     # for i in range(model_args.plan_transformer.n_layers):
     #     group_plan.append((f"plan_transformer.layers.{i}", False))
+
+    for i in range(model_args.gen_transformer.n_layers):
+        group_plan.append((f"gen_transformer.layers.{i}", False))
+
+    group_plan.append(("gen_transformer.img_output", True))
+    logger.info(f"The `group_plan` for fsdp is:\n{group_plan}")
+
+    return group_plan
+
+
+def build_fsdp_grouping_plan_latent_pollux(model_args: ModelArgs):
+    group_plan: Tuple[int, bool] = []
 
     for i in range(model_args.gen_transformer.n_layers):
         group_plan.append((f"gen_transformer.layers.{i}", False))
