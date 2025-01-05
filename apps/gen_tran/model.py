@@ -211,11 +211,11 @@ class Pollux(nn.Module):
         super().__init__()
 
         self.compressor = LatentVideoVAE(args.vae)
-            self.scheduler = RectifiedFlow(args.scheduler)
-            self.gen_transformer = GenTransformer(args.gen_transformer)
-            # self.tokenizer = Tokenizer(model_path=args.tokenizer.model_path)
+        self.scheduler = RectifiedFlow(args.scheduler)
+        self.gen_transformer = GenTransformer(args.gen_transformer)
+        # self.tokenizer = Tokenizer(model_path=args.tokenizer.model_path)
 
-            # assert args.plan_transformer.vocab_size == self.tokenizer.n_words
+        # assert args.plan_transformer.vocab_size == self.tokenizer.n_words
 
         # self.plan_transformer = PlanTransformer(args.plan_transformer)
         self.plan_transformer = LabelEmbedder(

@@ -61,14 +61,17 @@ class VisionProjecterArgs:
     input_dim: int = 1024
     output_dim: int = 3072
 
+
 @dataclass
 class ModelArgs:
 
     vision_tower: VisionTowerArgs = field(default_factory=VisionTowerArgs)
     vision_projecter: VisionProjecterArgs = field(default_factory=VisionProjecterArgs)
     llm: Optional[LLMArgs] = None
+    vae: LatentVideoVAEArgs = field(default_factory=LatentVideoVAEArgs)
     text_cfg_ratio: float = 0.1
     image_cfg_ratio: float = 0.1
+    patch_size: int = 16
     mask_patch: int = 16
     num_classes: int = 1000
     scheduler: SchedulerArgs = field(default_factory=SchedulerArgs)
@@ -105,6 +108,9 @@ class Pollux(nn.Module):
 
         self.vae = LatentVideoVAE(args.vae)
         # self.scheduler = RectifiedFlow(args.scheduler)
+
+        latent_dim = args.patch_size * args.patch_size * self.vae.vae.config.latent_channels
+        self.latent_head = nn.Linear(args.vision_projecter.output_dim, latent_dim)
 
     def patchify(self, images: torch.Tensor, patch_size: int) -> torch.Tensor:
 
@@ -272,6 +278,11 @@ class Pollux(nn.Module):
 
         pred_image_hidden = final_hidden[:, text_seq_len:, :]
         pred_latent = self.latent_head(pred_image_hidden)
+
+
+        print(f"====> pred_latent shape: {pred_latent.shape}, latent_target shape: {latent_target.shape}")
+        # ====> pred_latent shape: torch.Size([24, 257, 4096]), latent_target shape: torch.Size([24, 4, 4096])
+
         pred_loss = F.mse_loss(pred_latent, latent_target)
 
         batch["latent_target"] = latent_target
@@ -318,6 +329,9 @@ class Pollux(nn.Module):
         nn.init.xavier_uniform_(self.vision_projecter.weight)
         nn.init.zeros_(self.vision_projecter.bias)
         nn.init.normal_(self.vision_boi_emb, mean=0.0, std=0.02)
+        nn.init.xavier_uniform_(self.latent_head.weight)
+        nn.init.zeros_(self.latent_head.bias)
+
 
 # Optional policy for activation checkpointing. With None, we stick to the default (defined distributed.py: default_no_recompute_ops)
 def get_no_recompute_ops():
@@ -343,6 +357,13 @@ def build_fsdp_grouping_plan(model_args: ModelArgs, model: nn.Module):
         logger.info("LlamaForCausalLM has `model` attribute. Building group plan...")
         for idx, block in enumerate(llama_model.model.layers):
             group_plan.append((f"llm.model.layers.{idx}", False))
+
+    vae_encoder = getattr(model.vae.vae.encoder, "down_blocks", None)
+    if vae_encoder:
+        for i in range(len(vae_encoder)):
+            group_plan.append((f"vae.vae.encoder.down_blocks.{i}", False))
+    else:
+        logger.warning("VAE encoder does not have `down_blocks` attribute.")
 
     logger.info(f"The `group_plan` for FSDP (layer-level granularity):\n{group_plan}")
     return group_plan

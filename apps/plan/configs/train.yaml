@@ -32,6 +32,7 @@ distributed:
 model:
     text_cfg_ratio: 0.1
     image_cfg_ratio: 0.1
+    patch_size: 16
     mask_patch: 16
     num_classes: 1000
     vision_tower:
