@@ -13,6 +13,7 @@ from apps.main.model import ModelArgs, Pollux
 from dotenv import load_dotenv
 from apps.main.data import AutoDataLoader, DataArgs
 import torch
+from apps.main.data import DataLoaderArgs
 
 # Configure logging
 logging.basicConfig(
@@ -22,18 +23,34 @@ logging.basicConfig(
 )
 
 if __name__ == "__main__":
+    dataloader_arg = DataLoaderArgs(
+        batch_size=64,
+        num_workers=16,
+        seed=1024,
+        shuffle=False,
+        pin_memory=True,
+        drop_last=True,
+    )
+
     data_config_dict = {
         "data": {
             "preliminary": {
                 "cc12m_llama3bf128_hunyuanr256_test1m": {
                     "use": True,
                     "data_name": "cc12m_llama3bf128_hunyuanr256_test1m",
-                    "batch_size": 36,
-                    "num_workers": 0,
                     "source": "mongodb",
                     "task": "text_to_image",
                     "retries": 3,
                     "partition_key": "partition_key",
+                    "extract_field": {
+                        "parquet_size": "sample_num",
+                        "parquet_path": "path",
+                    },
+                    "mapping_field": {
+                        "HunyuanVideo_latent_code": "latent_code",
+                        "LLAMA3_3B_text_embedding": "text_embedding",
+                    },
+                    "dataloader": dataloader_arg,
                 }
             }
         }
@@ -44,12 +61,13 @@ if __name__ == "__main__":
             stage=stage,
             use=config["use"],
             data_name=config["data_name"],
-            batch_size=config["batch_size"],
-            num_workers=config["num_workers"],
             source=config["source"],
             task=config["task"],
             retries=config["retries"],
             partition_key=config["partition_key"],
+            extract_field=config["extract_field"],
+            mapping_field=config["mapping_field"],
+            dataloader=config["dataloader"],
         )
         for stage, datasets in data_config_dict["data"].items()
         for dataset_name, config in datasets.items()
@@ -71,7 +89,6 @@ if __name__ == "__main__":
                 print(key, value.size())
             else:
                 print(key, len(value))
-            # print(key, value.size())
-        break
+        # print(key, value.size())
         # Forward pass
         # model(batch)

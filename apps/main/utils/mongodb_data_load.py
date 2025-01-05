@@ -24,6 +24,7 @@ import time
 import random
 import numpy as np
 import torch
+from diskcache import Cache
 
 logging.getLogger("pymongo").setLevel(logging.WARNING)
 
@@ -37,7 +38,9 @@ MONGODB_PASSWORD: Final[str] = os.environ["MONGODB_PASSWORD"]
 encoded_user = quote_plus(MONGODB_USER)
 encoded_password = quote_plus(MONGODB_PASSWORD)
 MONGODB_URI = f"mongodb+srv://{encoded_user}:{encoded_password}@{MONGODB_URI}"
-LOCAL_TEMP_DIR: Final[str] = "/dev/shm/"
+LOCAL_TEMP_DIR: Final[str] = "/dev/shm"
+LOCAL_TEMP_PARQUET_DIR: Final[str] = f"{LOCAL_TEMP_DIR}/parquet/"
+shared_cache = Cache(LOCAL_TEMP_PARQUET_DIR, size_limit=40 * 1024**3)  # 40GB
 
 
 # TODO: Add the logic of MongoDB data loading here
@@ -268,10 +271,10 @@ class MongoDBParquetDataLoad(MongoDBDataLoad):
             pd.Series: A row of data as a pandas Series.
         """
 
-        # Jinjie: Can we have idx % len(self) behavior and just throw a warning if out of range?
-        if idx < 0 or idx >= len(self):
-            raise IndexError("Index out of range")
-
+        if idx >= len(self):
+            idx = idx % len(self)
+        worker_info = torch.utils.data.get_worker_info()
+        worker_id = worker_info.id if worker_info else 0
         # Locate the file using binary search
         file_idx = bisect.bisect_right(self.index_boundaries, idx)
         start_idx = 0 if file_idx == 0 else self.index_boundaries[file_idx - 1]
@@ -279,10 +282,11 @@ class MongoDBParquetDataLoad(MongoDBDataLoad):
         file = self.data.iloc[file_idx][self.path_field]
 
         # Load the DataFrame only if the file is different
-        if self.current_file != file:
-            self.current_df = pd.read_parquet(file, engine="pyarrow")
-            self.current_file = file
-        sample = self.current_df.iloc[local_idx]
+        if file not in shared_cache:
+            shared_cache[file] = pd.read_parquet(file, engine="pyarrow")
+            logging.info(f"Loaded parquet file: {file}")
+        current_df = shared_cache[file]
+        sample = current_df.iloc[local_idx]
         return_sample = {}
         for k, v in sample.items():
             if k in self.mapping_field:
