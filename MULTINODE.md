@@ -1,7 +1,7 @@
 ## Multi-Node Slurm Training
 We use `lingua/stool.py` to submit slurm job. Besides, we need to unpack the conda env to each compute node when submitting a job.
 
-This PR will not affect the original `torchrun --standalone` command. We can continue to use it for quick debugging.
+BTW, we can continue to use `torchrun --standalone` command in a single node for quick debugging.
 
  ## Usage
 
