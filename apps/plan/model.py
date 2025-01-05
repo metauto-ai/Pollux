@@ -4,6 +4,7 @@ import logging
 import random
 import numpy as np
 from PIL import Image
+import math
 
 import torch
 from einops import rearrange
@@ -119,6 +120,25 @@ class Pollux(nn.Module):
         patches = patches.view(B, -1, C, patch_size, patch_size)
         return patches
 
+    def compute_2d_rope(self, freq_dim: int, h: int, w: int, scale: float = 10000.0):
+
+        freq_h = 1.0 / (scale ** (torch.arange(0, freq_dim, 2).float() / freq_dim))
+        freq_w = 1.0 / (scale ** (torch.arange(0, freq_dim, 2).float() / freq_dim))
+
+        h_positions = torch.arange(h).unsqueeze(1) * freq_h.unsqueeze(0)  # (h, freq_dim/2)
+        w_positions = torch.arange(w).unsqueeze(1) * freq_w.unsqueeze(0)  # (w, freq_dim/2)
+
+        rope_h = torch.cat([torch.sin(h_positions), torch.cos(h_positions)], dim=-1)
+        rope_w = torch.cat([torch.sin(w_positions), torch.cos(w_positions)], dim=-1)
+
+        rope_2d = torch.cat(
+            [rope_h.unsqueeze(1).expand(-1, w, -1), rope_w.unsqueeze(0).expand(h, -1, -1)],
+            dim=-1,
+        )
+        return rope_2d.view(h * w, -1) 
+
+
+
     def process_input(self, input_ids, input_imgs, **kwargs):
 
         if input_imgs.ndim == 4:
@@ -136,6 +156,7 @@ class Pollux(nn.Module):
         images_embs = rearrange(
             images_embs, "(b n) t d -> b (n t) d", b=batch_size, n=num_images
         )
+
         text_embs = self.llm.get_input_embeddings()(input_ids)
 
         return text_embs, images_embs
@@ -255,10 +276,34 @@ class Pollux(nn.Module):
         self.vision_projecter.eval()
         # self.classifier.eval()
 
+    # def init_weights(self, args: ModelArgs):
+    #     self.vision_tower.init_weights(args.vision_tower.pre_trained_path)
+    #     # self.llm.init_weights(args.llm.pre_trained_path)
     def init_weights(self, args: ModelArgs):
-        self.vision_tower.init_weights(args.vision_tower.pre_trained_path)
-        # self.llm.init_weights(args.llm.pre_trained_path)
+  
+        if args.vision_tower.pre_trained_path:
+            self.vision_tower.init_weights(args.vision_tower.pre_trained_path)
+        else:
+            for module in self.vision_tower.modules():
+                if isinstance(module, nn.Linear):
+                    nn.init.xavier_uniform_(module.weight)
+                    if module.bias is not None:
+                        nn.init.zeros_(module.bias)
+                elif isinstance(module, nn.Conv2d):
+                    nn.init.kaiming_normal_(module.weight, mode="fan_out", nonlinearity="relu")
+                elif isinstance(module, nn.LayerNorm) or isinstance(module, nn.BatchNorm2d):
+                    nn.init.ones_(module.weight)
+                    nn.init.zeros_(module.bias)
 
+        if args.llm and args.llm.model_name:
+            pretrained_state_dict = LlamaForCausalLM.from_pretrained(
+                args.llm.model_name
+            ).state_dict()
+            self.llm.load_state_dict(pretrained_state_dict)
+
+        nn.init.xavier_uniform_(self.vision_projecter.weight)
+        nn.init.zeros_(self.vision_projecter.bias)
+        nn.init.normal_(self.vision_boi_emb, mean=0.0, std=0.02)
 
 # Optional policy for activation checkpointing. With None, we stick to the default (defined distributed.py: default_no_recompute_ops)
 def get_no_recompute_ops():
