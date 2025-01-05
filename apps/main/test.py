@@ -14,6 +14,7 @@ from dotenv import load_dotenv
 from apps.main.data import AutoDataLoader, DataArgs
 import torch
 from apps.main.data import DataLoaderArgs
+import time
 
 # Configure logging
 logging.basicConfig(
@@ -84,11 +85,31 @@ if __name__ == "__main__":
     logging.info(f"Length of data loader: {len(data_loader)}")
     logging.info(f"Length of dataset: {len(data_loader_factory.dataset)}")
 
+    total_time = 0
+    batch_count = 0
+
     for batch in data_loader:
+        start_time = time.time()  # Start timing
+
+        # Process the batch
         for key, value in batch.items():
             if isinstance(value, torch.Tensor):
                 logging.info(f"{key} {value.size()}")
             else:
-                logging.info(f"{key} {len(value)}")  # print(key, value.size())
-        # Forward pass
-        # model(batch)
+                logging.info(f"{key} {len(value)}")
+
+        end_time = time.time()  # End timing
+        batch_time = end_time - start_time
+
+        # Accumulate timing
+        total_time += batch_time
+        batch_count += 1
+
+        # Stop after processing `max_batches` batches
+        if batch_count >= 1000:
+            break
+
+    # Calculate average time per batch
+    average_time = total_time / batch_count if batch_count > 0 else 0
+    logging.info(f"Processed {batch_count} batches.")
+    logging.info(f"Average time per batch: {average_time:.6f} seconds")
