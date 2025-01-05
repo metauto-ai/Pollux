@@ -104,14 +104,15 @@ profiling:
 
 checkpoint:
     dump:
-        every: 500
+        every: 5000
         keep: 0 # Don't remove the ckpt
     eval:
         every: 5000
         keep: 0 # Don't remove the ckpt
 logging:
-    freq: 100
+    freq: 1000
     wandb:
+
         project: Pollux
         entity: metauto
         name: ''
