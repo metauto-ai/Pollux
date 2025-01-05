@@ -69,7 +69,7 @@ from apps.gen_tran.model import (
     tp_parallelize,
     get_no_recompute_ops,
 )
-
+from apps.main.data import DictTensorBatchIterator
 from apps.main.eval import (
     launch_eval,
     EVAL_FOLDER_NAME,
@@ -366,13 +366,19 @@ def train(args: TrainArgs):
             curr_lr = float(optimizer.param_groups[0]["lr"])
             data_load_start = timer()
             try:
-                batch = next(dataloader_iterator)
+                batch = next(parquet_iterator)
             except:
-                logger.info("New Epoch!")
-                sampler.reset()
-                dataloader_iterator = iter(data_loader)
-                batch = next(dataloader_iterator)
-
+                try:
+                    batch = next(dataloader_iterator)
+                except:
+                    logger.info("New Epoch!")
+                    sampler.reset()
+                    dataloader_iterator = iter(data_loader)
+                    batch = next(dataloader_iterator)
+                parquet_iterator = DictTensorBatchIterator(
+                    batch, active_data[0].dataloader.batch_size
+                )
+                batch = next(parquet_iterator)
             if every_n_steps(train_state, args.gc_collect_freq, acc_step=0):
                 logger.info("garbage collection")
                 # we do garbage collection manually otherwise different processes

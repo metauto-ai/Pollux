@@ -85,7 +85,7 @@ data:
     dataloader:
         prefetch_factor: 2
         batch_size: 64
-        num_workers: 16
+        num_workers: 8
         seed: 1024
         shuffle: True # this may lead more time for initial dataloader
         pin_memory: True
@@ -127,11 +127,12 @@ data:
         "LLAMA3_3B_text_embedding": "text_embedding"
     use: True
     dataloader:
+        prefetch_factor: 2
         batch_size: 64
         num_workers: 8
         seed: 1024
         shuffle: False
-        pin_memory: True
+        pin_memory: False
         drop_last: True
 
 profiling:

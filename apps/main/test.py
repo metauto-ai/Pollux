@@ -14,6 +14,7 @@ from dotenv import load_dotenv
 from apps.main.data import AutoDataLoader, DataArgs
 import torch
 from apps.main.data import DataLoaderArgs
+from apps.main.utils.mongodb_data_load import DictTensorBatchIterator
 
 # Configure logging
 logging.basicConfig(
@@ -24,7 +25,7 @@ logging.basicConfig(
 
 if __name__ == "__main__":
     dataloader_arg = DataLoaderArgs(
-        batch_size=64,
+        batch_size=1,
         num_workers=16,
         seed=1024,
         shuffle=False,
@@ -83,12 +84,24 @@ if __name__ == "__main__":
     data_loader, _ = data_loader_factory.create_dataloader()
     print(len(data_loader))
     print(len(data_loader_factory.dataset))
-    for batch in data_loader:
-        for key, value in batch.items():
-            if isinstance(value, torch.Tensor):
-                print(key, value.size())
-            else:
-                print(key, len(value))
+    count = 0
+    import time
+
+    start_times = time.time()
+    for idx, batch in enumerate(data_loader):
+        logging.info(f"step {count}")
         # print(key, value.size())
         # Forward pass
         # model(batch)
+        # for key, value in batch.items():
+        # print(key, value.size())
+        iterrator = iter(DictTensorBatchIterator(batch, 64))
+        while True:
+            try:
+                b = next(iterrator)
+                count += 1
+            except StopIteration:
+                break
+        if count > 1000:
+            break
+    logging.info(f"Time: {time.time() - start_times}")

@@ -24,7 +24,6 @@ import time
 import random
 import numpy as np
 import torch
-from diskcache import Cache
 
 logging.getLogger("pymongo").setLevel(logging.WARNING)
 
@@ -39,8 +38,6 @@ encoded_user = quote_plus(MONGODB_USER)
 encoded_password = quote_plus(MONGODB_PASSWORD)
 MONGODB_URI = f"mongodb+srv://{encoded_user}:{encoded_password}@{MONGODB_URI}"
 LOCAL_TEMP_DIR: Final[str] = "/dev/shm"
-LOCAL_TEMP_PARQUET_DIR: Final[str] = f"{LOCAL_TEMP_DIR}/parquet/"
-shared_cache = Cache(LOCAL_TEMP_PARQUET_DIR, size_limit=40 * 1024**3)  # 40GB
 
 
 # TODO: Add the logic of MongoDB data loading here
@@ -233,6 +230,8 @@ class MongoDBParquetDataLoad(MongoDBDataLoad):
         extract_field,
         mapping_field,
         partition_key,
+        parallel_parquet=4,
+        batch_size=64,
     ) -> None:
         super().__init__(
             num_shards=num_shards,
@@ -247,59 +246,100 @@ class MongoDBParquetDataLoad(MongoDBDataLoad):
         self.num_field = extract_field["parquet_size"]
         self.path_field = extract_field["parquet_path"]
         self.mapping_field = mapping_field
-
-    def set_mapping(self):
-        # Build an index mapping for global row indices
-        cumulative_rows = 0
-        for idx in range(len(self.data)):
-            num_rows = self.data.iloc[idx][self.num_field]
-            cumulative_rows += num_rows
-            self.index_boundaries.append(cumulative_rows)
+        self.parallel_parquet = parallel_parquet
+        self.batch_size = batch_size
 
     def __len__(self):
         """Return the total number of rows in the dataset."""
-        return self.index_boundaries[-1]
+        return len(self.data)
 
     def __getitem__(self, idx):
-        """
-        Get a row by its global index.
-
-        Args:
-            idx (int): Global index of the row.
-
-        Returns:
-            pd.Series: A row of data as a pandas Series.
-        """
-
         if idx >= len(self):
             idx = idx % len(self)
-        worker_info = torch.utils.data.get_worker_info()
-        worker_id = worker_info.id if worker_info else 0
-        # Locate the file using binary search
-        file_idx = bisect.bisect_right(self.index_boundaries, idx)
-        start_idx = 0 if file_idx == 0 else self.index_boundaries[file_idx - 1]
-        local_idx = idx - start_idx
-        file = self.data.iloc[file_idx][self.path_field]
-
-        # Load the DataFrame only if the file is different
-        if file not in shared_cache:
-            shared_cache[file] = pd.read_parquet(file, engine="pyarrow")
-            logging.info(f"Loaded parquet file: {file}")
-        current_df = shared_cache[file]
-        sample = current_df.iloc[local_idx]
-        return_sample = {}
-        for k, v in sample.items():
-            if k in self.mapping_field:
-                k_ = self.mapping_field[k]
-            else:
-                k_ = k
-            if isinstance(v, ObjectId):
-                return_sample[k_] = str(v)
-            if isinstance(v, np.ndarray) and "raw_shape" not in k:
-                raw_shape_key = f"{k}_raw_shape"
-                if raw_shape_key in sample:
-                    return_sample[k_] = v.reshape(sample[raw_shape_key])
-                    return_sample[k_] = torch.Tensor(np.copy(return_sample[k_]))
+        file = self.data.iloc[idx][self.path_field]
+        cur_df = pd.read_parquet(file, engine="pyarrow")
+        return_parquet = {}
+        for i, sample in cur_df.iterrows():
+            sample = sample.to_dict()
+            return_sample = {}
+            for k, v in sample.items():
+                if k in self.mapping_field:
+                    k_ = self.mapping_field[k]
                 else:
-                    return_sample[k_] = torch.Tensor(np.copy(v))
-        return return_sample
+                    k_ = k
+                if isinstance(v, ObjectId):
+                    return_sample[k_] = [str(v)]
+                if isinstance(v, np.ndarray) and "raw_shape" not in k:
+                    raw_shape_key = f"{k}_raw_shape"
+                    if raw_shape_key in sample:
+                        return_sample[k_] = v.reshape(sample[raw_shape_key])
+                        return_sample[k_] = [torch.Tensor(np.copy(return_sample[k_]))]
+                    else:
+                        return_sample[k_] = [torch.Tensor(np.copy(v))]
+            if i == 0:
+                return_parquet = return_sample
+            else:
+                for k, v in return_sample.items():
+                    return_parquet[k].extend(v)
+        for k, v in return_parquet.items():
+            if isinstance(v[0], torch.Tensor):
+                return_parquet[k] = torch.stack(v, dim=0)
+        return return_parquet
+
+
+class DictTensorBatchIterator:
+    def __init__(self, data_dict, batch_size):
+        """
+        Initialize the iterator for batching a dictionary containing tensors and strings.
+
+        Args:
+            data_dict (dict): Dictionary where keys map to strings or tensors.
+            batch_size (int): Desired batch size for the tensors.
+        """
+        self.data_dict = data_dict
+        self.batch_size = batch_size
+
+        # Validate and prepare tensors
+        self.tensor_keys = [
+            key for key, value in data_dict.items() if isinstance(value, torch.Tensor)
+        ]
+
+        self.total_batches = None
+        self.current_batch = 0
+
+        # Remove singleton dimensions (first dimension = 1)
+        for key in self.tensor_keys:
+            tensor = data_dict[key]
+            if tensor.shape[0] == 1:
+                self.data_dict[key] = tensor.squeeze(0)  # Remove singleton dimension
+
+        # Calculate the total number of batches (using the first tensor's shape)
+        if self.tensor_keys:
+            self.total_batches = (
+                self.data_dict[self.tensor_keys[0]].shape[0] // batch_size
+            )
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        """
+        Return the next batch of the dictionary.
+
+        Returns:
+            dict: A dictionary with batched tensors and unchanged strings.
+
+        Raises:
+            StopIteration: If all batches are processed.
+        """
+        if self.tensor_keys and self.current_batch >= self.total_batches:
+            raise StopIteration
+
+        batch = {}
+        for key, value in self.data_dict.items():
+            start_idx = self.current_batch * self.batch_size
+            end_idx = start_idx + self.batch_size
+            batch[key] = value[start_idx:end_idx]
+
+        self.current_batch += 1
+        return batch
