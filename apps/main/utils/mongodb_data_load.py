@@ -26,7 +26,7 @@ import numpy as np
 import torch
 from diskcache import Cache
 
-logging.getLogger("pymongo").setLevel(logging.WARNING)
+logging.getLogger("pymongo").setLevel(logging.INFO)
 
 
 load_dotenv()
@@ -284,7 +284,15 @@ class MongoDBParquetDataLoad(MongoDBDataLoad):
         # Load the DataFrame only if the file is different
         if file not in shared_cache:
             shared_cache[file] = pd.read_parquet(file, engine="pyarrow")
-            logging.info(f"Loaded parquet file: {file}")
+            logging.info(
+                f"Worker {worker_id} Loaded parquet file: {file}"
+                f"because worker is required to fetch item: {idx}"
+                )
+        else:
+            pass
+            # logging.info(
+            #     f"Worker {worker_id} cached item {idx} successfully !"
+            # )
         current_df = shared_cache[file]
         sample = current_df.iloc[local_idx]
         return_sample = {}

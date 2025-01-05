@@ -26,7 +26,7 @@ from apps.main.utils.mongodb_data_load import (
     MongoDBCC12MDataLoad,
     MongoDBParquetDataLoad,
 )
-from apps.main.utils.sampler import StatefulDistributedSampler
+from apps.main.utils.sampler import StatefulDistributedSampler, StatefulChunkSampler
 
 logger = logging.getLogger()
 
@@ -178,6 +178,12 @@ class AutoDataLoader:
                 mapping_field=args.mapping_field,  # {"HunyuanVideo_latent_code": "latent_code","LLAMA3_3B_text_embedding": "text_embedding",},
                 partition_key=args.partition_key,
             )
+            dataset.set_local_partition()
+            if hasattr(dataset, "set_mapping"):
+                dataset.set_mapping()
+            self.dataset = dataset
+            return self._warp_dataloader_with_stateful_chunk_sampler(args, dataset)
+
         else:
             raise ValueError(f"Unsupported MongoDB dataset: {args.data_name}")
 
@@ -193,6 +199,39 @@ class AutoDataLoader:
         dataloader_args = args.dataloader
         sampler = StatefulDistributedSampler(
             dataset,
+            batch_size=dataloader_args.batch_size,
+            num_replicas=self.num_shards,
+            rank=self.shard_id,
+            shuffle=dataloader_args.shuffle,
+        )
+        return (
+            DataLoader(
+                dataset,
+                batch_size=dataloader_args.batch_size,
+                sampler=sampler,
+                worker_init_fn=partial(worker_init, seed=dataloader_args.seed),
+                drop_last=dataloader_args.drop_last,
+                pin_memory=dataloader_args.pin_memory,
+                num_workers=dataloader_args.num_workers,
+                persistent_workers=True if dataloader_args.num_workers > 0 else False,
+                prefetch_factor=(
+                    dataloader_args.prefetch_factor
+                    if dataloader_args.num_workers > 0
+                    else None
+                ),
+            ),
+            sampler,
+        )
+
+    def _warp_dataloader_with_stateful_chunk_sampler(
+        self, args: DataArgs, dataset: Dataset
+    ) -> Tuple[DataLoader, StatefulChunkSampler]:
+        dataloader_args = args.dataloader
+        sampler = StatefulChunkSampler(
+            dataset,
+            num_chunks=496,
+            chunk_len=1024,
+            num_workers=dataloader_args.num_workers,
             batch_size=dataloader_args.batch_size,
             num_replicas=self.num_shards,
             rank=self.shard_id,

@@ -81,14 +81,14 @@ if __name__ == "__main__":
         data_config=data_config,
     )
     data_loader, _ = data_loader_factory.create_dataloader()
-    print(len(data_loader))
-    print(len(data_loader_factory.dataset))
+    logging.info(f"Length of data loader: {len(data_loader)}")
+    logging.info(f"Length of dataset: {len(data_loader_factory.dataset)}")
+
     for batch in data_loader:
         for key, value in batch.items():
             if isinstance(value, torch.Tensor):
-                print(key, value.size())
+                logging.info(f"{key} {value.size()}")
             else:
-                print(key, len(value))
-        # print(key, value.size())
+                logging.info(f"{key} {len(value)}")  # print(key, value.size())
         # Forward pass
         # model(batch)
