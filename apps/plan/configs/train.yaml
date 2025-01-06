@@ -35,6 +35,7 @@ model:
     patch_size: 16
     mask_patch: 16
     num_classes: 1000
+    use_vision_boi: true
     vision_tower:
         model_name: siglip_large_patch16_256
         image_size: 256
@@ -44,7 +45,7 @@ model:
         pixel_mean: null
         pixel_std: null
     vision_projecter:
-        input_dim: 1024
+        latent_dim: 16
         output_dim: 3072
     llm:
         model_name: "meta-llama/Llama-3.2-3B"
@@ -59,7 +60,7 @@ data:
     task: class_to_image
     data_name: ILSVRC/imagenet-1k
     source: huggingface
-    batch_size: 24 #96
+    batch_size: 12 # 96
     image_size: 256
     num_workers: 8
     split: train
@@ -116,11 +117,11 @@ checkpoint:
         keep: 0 # Don't remove the ckpt
 logging:
     freq: 1000
-    wandb:
+    # wandb:
 
-        project: Pollux
-        entity: metauto
-        name: ''
+    #     project: Pollux
+    #     entity: metauto
+    #     name: ''
 
 env:
     ENABLE_INTRA_NODE_COMM: '0'  # '0' for local machine (otherwise errors happen); '1' for slurmn (need test)

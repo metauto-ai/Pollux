@@ -56,9 +56,10 @@ def nll_loss_bf16(log_probs, target):
 class LLMArgs:
     model_name: str
 
+
 @dataclass
 class VisionProjecterArgs:
-    input_dim: int = 1024
+    latent_dim: int = 1024
     output_dim: int = 3072
 
 
@@ -69,6 +70,7 @@ class ModelArgs:
     vision_projecter: VisionProjecterArgs = field(default_factory=VisionProjecterArgs)
     llm: Optional[LLMArgs] = None
     vae: LatentVideoVAEArgs = field(default_factory=LatentVideoVAEArgs)
+    use_vision_boi: bool = True
     text_cfg_ratio: float = 0.1
     image_cfg_ratio: float = 0.1
     patch_size: int = 16
@@ -88,85 +90,118 @@ class Pollux(nn.Module):
         super().__init__()
         self.args = args
 
-        self.vision_tower = VisionTower(args.vision_tower)
+        # vision encoder
+        self.vae = LatentVideoVAE(args.vae)
         self.vision_projecter = nn.Linear(
-            args.vision_projecter.input_dim, 
-            args.vision_projecter.output_dim, 
-            bias=True
-        )
-        self.vision_boi_emb = nn.Parameter(
-            torch.zeros(1, args.vision_projecter.output_dim)
+            args.vision_projecter.latent_dim,
+            args.vision_projecter.output_dim,
+            bias=False,
         )
 
-        self.llm_tokenizer = LlamaTokenizerFast.from_pretrained(
-            args.llm.model_name
-        )
+        # vision boi embedding
+        if args.use_vision_boi:
+            self.vision_boi_emb = nn.Parameter(
+                torch.zeros(1, args.vision_projecter.output_dim)
+            )
+
+        # llm
+        self.llm_tokenizer = LlamaTokenizerFast.from_pretrained(args.llm.model_name)
         self.llm = LlamaForCausalLM.from_pretrained(args.llm.model_name)
-
         if self.llm_tokenizer.pad_token is None:
             self.llm_tokenizer.pad_token = self.llm_tokenizer.eos_token
 
-        self.vae = LatentVideoVAE(args.vae)
+        # head
+        # latent_dim = (
+        #     args.patch_size * args.patch_size * self.vae.vae.config.latent_channels
+        # )
+        self.latent_head = nn.Linear(
+            args.vision_projecter.output_dim, args.vision_projecter.latent_dim
+        )
+
+        # backup
+        # self.vision_tower = VisionTower(args.vision_tower)
         # self.scheduler = RectifiedFlow(args.scheduler)
 
-        latent_dim = args.patch_size * args.patch_size * self.vae.vae.config.latent_channels
-        self.latent_head = nn.Linear(args.vision_projecter.output_dim, latent_dim)
+    # def patchify(self, images: torch.Tensor, patch_size: int) -> torch.Tensor:
 
-    def patchify(self, images: torch.Tensor, patch_size: int) -> torch.Tensor:
+    #     B, C, H, W = images.shape
+    #     assert (
+    #         H % patch_size == 0 and W % patch_size == 0
+    #     ), "Image dimensions must be divisible by patch_size"
+    #     patches = images.unfold(2, patch_size, patch_size).unfold(
+    #         3, patch_size, patch_size
+    #     )
+    #     patches = patches.permute(
+    #         0, 2, 3, 1, 4, 5
+    #     ).contiguous()  # [B, num_patches_h, num_patches_w, C, patch_size, patch_size]
+    #     patches = patches.view(B, -1, C, patch_size, patch_size)
+    #     return patches
 
-        B, C, H, W = images.shape
-        assert (
-            H % patch_size == 0 and W % patch_size == 0
-        ), "Image dimensions must be divisible by patch_size"
-        patches = images.unfold(2, patch_size, patch_size).unfold(
-            3, patch_size, patch_size
+    def patchify_and_embed_image(
+        self, x: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor, Tuple[int, int], torch.Tensor]:
+        self.rope_embeddings_image.freqs_cis = self.rope_embeddings_image.freqs_cis.to(
+            x[0].device
         )
-        patches = patches.permute(
-            0, 2, 3, 1, 4, 5
-        ).contiguous()  # [B, num_patches_h, num_patches_w, C, patch_size, patch_size]
-        patches = patches.view(B, -1, C, patch_size, patch_size)
-        return patches
-
-    def compute_2d_rope(self, freq_dim: int, h: int, w: int, scale: float = 10000.0):
-
-        freq_h = 1.0 / (scale ** (torch.arange(0, freq_dim, 2).float() / freq_dim))
-        freq_w = 1.0 / (scale ** (torch.arange(0, freq_dim, 2).float() / freq_dim))
-
-        h_positions = torch.arange(h).unsqueeze(1) * freq_h.unsqueeze(0)  # (h, freq_dim/2)
-        w_positions = torch.arange(w).unsqueeze(1) * freq_w.unsqueeze(0)  # (w, freq_dim/2)
-
-        rope_h = torch.cat([torch.sin(h_positions), torch.cos(h_positions)], dim=-1)
-        rope_w = torch.cat([torch.sin(w_positions), torch.cos(w_positions)], dim=-1)
-
-        rope_2d = torch.cat(
-            [rope_h.unsqueeze(1).expand(-1, w, -1), rope_w.unsqueeze(0).expand(h, -1, -1)],
-            dim=-1,
+        pH = pW = self.patch_size
+        B, C, H, W = x.size()
+        x = x.view(B, C, H // pH, pH, W // pW, pW).permute(0, 2, 4, 1, 3, 5).flatten(3)
+        x = self.img_embed(x)
+        x = x.flatten(1, 2)
+        freqs_cis = self.rope_embeddings_image.freqs_cis[: H // pH, : W // pW].flatten(
+            0, 1
         )
-        return rope_2d.view(h * w, -1) 
-
-
-
-    def process_input(self, input_ids, input_imgs, **kwargs):
-
-        if input_imgs.ndim == 4:
-            # NOTE: single image should unsqueeze to [B, 1, C, H, W]
-            input_imgs = input_imgs.unsqueeze(1)
-
-        batch_size, num_images, channels, height, width = input_imgs.shape
-        images = rearrange(input_imgs, "b n c h w -> (b n) c h w")
-
-        images_embs = self.vision_tower(images)
-        images_embs = self.vision_projecter(images_embs)
-        boi_embs = self.vision_boi_emb.unsqueeze(0).expand(images_embs.size(0), -1, -1)
-
-        images_embs = torch.cat([boi_embs, images_embs], dim=1)
-        images_embs = rearrange(
-            images_embs, "(b n) t d -> b (n t) d", b=batch_size, n=num_images
+        return (
+            x,
+            (H, W),
+            freqs_cis,
         )
 
-        text_embs = self.llm.get_input_embeddings()(input_ids)
+    # def compute_2d_rope(self, freq_dim: int, h: int, w: int, scale: float = 10000.0):
 
-        return text_embs, images_embs
+    #     freq_h = 1.0 / (scale ** (torch.arange(0, freq_dim, 2).float() / freq_dim))
+    #     freq_w = 1.0 / (scale ** (torch.arange(0, freq_dim, 2).float() / freq_dim))
+
+    #     h_positions = torch.arange(h).unsqueeze(1) * freq_h.unsqueeze(
+    #         0
+    #     )  # (h, freq_dim/2)
+    #     w_positions = torch.arange(w).unsqueeze(1) * freq_w.unsqueeze(
+    #         0
+    #     )  # (w, freq_dim/2)
+
+    #     rope_h = torch.cat([torch.sin(h_positions), torch.cos(h_positions)], dim=-1)
+    #     rope_w = torch.cat([torch.sin(w_positions), torch.cos(w_positions)], dim=-1)
+
+    #     rope_2d = torch.cat(
+    #         [
+    #             rope_h.unsqueeze(1).expand(-1, w, -1),
+    #             rope_w.unsqueeze(0).expand(h, -1, -1),
+    #         ],
+    #         dim=-1,
+    #     )
+    #     return rope_2d.view(h * w, -1)
+
+    # def process_input(self, input_ids, input_imgs, **kwargs):
+
+    #     if input_imgs.ndim == 4:
+    #         # NOTE: single image should unsqueeze to [B, 1, C, H, W]
+    #         input_imgs = input_imgs.unsqueeze(1)
+
+    #     batch_size, num_images, channels, height, width = input_imgs.shape
+    #     images = rearrange(input_imgs, "b n c h w -> (b n) c h w")
+
+    #     # images_embs = self.vision_tower(images)
+    #     images_embs = self.vision_projecter(images_embs)
+    #     boi_embs = self.vision_boi_emb.unsqueeze(0).expand(images_embs.size(0), -1, -1)
+
+    #     images_embs = torch.cat([boi_embs, images_embs], dim=1)
+    #     images_embs = rearrange(
+    #         images_embs, "(b n) t d -> b (n t) d", b=batch_size, n=num_images
+    #     )
+
+    #     text_embs = self.llm.get_input_embeddings()(input_ids)
+
+    #     return text_embs, images_embs
 
     def process_mask(
         self, input_ids, images_embs, mask_strategy: str, random_rate: float = 0.15
@@ -208,17 +243,6 @@ class Pollux(nn.Module):
 
         return attention_mask
 
-    def contrastive_loss(
-        self,
-        positive_scores: torch.Tensor,
-        negative_scores: torch.Tensor,
-        temperature: float = 0.07,
-    ) -> torch.Tensor:
-        logits = torch.cat([positive_scores, negative_scores], dim=1) / temperature
-        labels = torch.zeros(logits.size(0), dtype=torch.long, device=logits.device)
-        loss = F.cross_entropy(logits, labels)
-        return loss
-
     def forward(
         self,
         batch: dict[str, any],
@@ -228,20 +252,76 @@ class Pollux(nn.Module):
 
         images = batch["image"]  # Shape: [B, C, H, W]
         captions = batch["caption"]
-        vae_latent = self.vae.encode(images)
-        latent_patches = self.patchify(vae_latent, patch_size=self.args.patch_size)
-        B, N, C, PH, PW = latent_patches.shape
-        latent_target = latent_patches.view(B, N, -1)
 
+        # vision vae
+        print("before_vae", torch.cuda.max_memory_allocated() / 1024 / 1024)
+        vae_latent = self.vae.encode(images)  # [B,16,H/8,W/8]
+        vae_latent = vae_latent.flatten(2, 3).permute(0, 2, 1)  # [B,H/8*W/8,16]
+        print("after_vae", torch.cuda.max_memory_allocated() / 1024 / 1024)
+        vae_embed = self.vision_projecter(vae_latent)  # [B,H/8*W/8,D]
+        print("after_projector", torch.cuda.max_memory_allocated() / 1024 / 1024)
+
+        # text embed
         input_ids = self.llm_tokenizer(
             captions, padding=True, truncation=True, return_tensors="pt"
         )["input_ids"].to(self.llm.device)
+        text_embs = self.llm.get_input_embeddings()(input_ids)  # [B,T,D]
+        print("after_llm", torch.cuda.max_memory_allocated() / 1024 / 1024)
 
-        text_embs, images_embs = self.process_input(input_ids, images)
-        combined_embs = torch.cat([text_embs, images_embs], dim=1)
-        attention_mask = self.process_mask(
-            input_ids, images_embs, mask_strategy, random_rate
+        # concate embeddings
+        boi_embs = self.vision_boi_emb.unsqueeze(0).expand(vae_embed.size(0), -1, -1)
+        mm_embs = torch.cat(
+            [text_embs, boi_embs, vae_embed], dim=1
+        )  # multi-modal embeddings
+        vae_start_idx, vae_end_idx = text_embs.size(1) + 1, text_embs.size(
+            1
+        ) + 1 + vae_embed.size(1)
+
+        print(f"====> text_embs shape: {text_embs.shape}")
+        print(f"====> vae_embed shape: {vae_embed.shape}")
+        print(f"====> mm_embs shape: {mm_embs.shape}")
+
+        # llm forward
+        output = self.llm(
+            inputs_embeds=mm_embs,
+            # attention_mask=attention_mask,
+            output_hidden_states=True,
+            return_dict=True,
         )
+
+        final_hidden = output.hidden_states[-1]
+        print(f"====> final_hidden shape: {final_hidden.shape}")
+
+        pred_latent = self.latent_head(final_hidden[:, vae_start_idx:, :])  # [B,M,D]
+
+        print(
+            f"====> pred_latent shape: {pred_latent.shape}, vae_latent shape: {vae_latent.shape}"
+        )
+
+        # compute loss
+        pred_loss = F.mse_loss(pred_latent, vae_latent)
+        a = input()
+
+        # batch["latent_target"] = latent_target
+        # batch["pred_latent"] = pred_latent
+
+        return batch, pred_loss
+
+        # B_, seq_total, hidden_size = final_hidden.shape
+        # text_seq_len = text_embs.shape[1]
+        # image_seq_len = images_embs.shape[1]
+
+        #
+
+        # latent_patches = self.patchify(vae_latent, patch_size=self.args.patch_size)
+        # B, N, C, PH, PW = latent_patches.shape
+        # latent_target = latent_patches.view(B, N, -1)
+
+        # text_embs, images_embs = self.process_input(input_ids, images)
+        # combined_embs = torch.cat([text_embs, images_embs], dim=1)
+        # attention_mask = self.process_mask(
+        #     input_ids, images_embs, mask_strategy, random_rate
+        # )
 
         # outputs = self.llm.generate(
         #     inputs_embeds=combined_embs,
@@ -256,40 +336,33 @@ class Pollux(nn.Module):
         #     target_captions, padding=True, truncation=True, return_tensors="pt"
         # )["input_ids"].to(self.llm.device)
 
-        seq_total = combined_embs.size(1)     
-        # seq_target = target_ids.size(1)    
+        # seq_total = combined_embs.size(1)
+        # seq_target = target_ids.size(1)
         # if seq_target < seq_total:
         #     pad_len = seq_total - seq_target
         #     target_ids = F.pad(target_ids, (0, pad_len), value=-100)
         # elif seq_target > seq_total:
         #     target_ids = target_ids[:, :seq_total]
 
-        outputs_tf = self.llm(
-            inputs_embeds=combined_embs,
-            attention_mask=attention_mask,
-            output_hidden_states=True,
-            return_dict=True,
-        )
+        # final_hidden = outputs_tf.hidden_states[-1]
+        # B_, seq_total, hidden_size = final_hidden.shape
+        # text_seq_len = text_embs.shape[1]
+        # image_seq_len = images_embs.shape[1]
 
-        final_hidden = outputs_tf.hidden_states[-1]
-        B_, seq_total, hidden_size = final_hidden.shape
-        text_seq_len = text_embs.shape[1] 
-        image_seq_len = images_embs.shape[1] 
+        # pred_image_hidden = final_hidden[:, text_seq_len:, :]
+        # pred_latent = self.latent_head(pred_image_hidden)
 
-        pred_image_hidden = final_hidden[:, text_seq_len:, :]
-        pred_latent = self.latent_head(pred_image_hidden)
+        # print(
+        #     f"====> pred_latent shape: {pred_latent.shape}, latent_target shape: {latent_target.shape}"
+        # )
+        # # ====> pred_latent shape: torch.Size([24, 257, 4096]), latent_target shape: torch.Size([24, 4, 4096])
 
+        # pred_loss = F.mse_loss(pred_latent, latent_target)
 
-        print(f"====> pred_latent shape: {pred_latent.shape}, latent_target shape: {latent_target.shape}")
-        # ====> pred_latent shape: torch.Size([24, 257, 4096]), latent_target shape: torch.Size([24, 4, 4096])
-
-        pred_loss = F.mse_loss(pred_latent, latent_target)
-
-        batch["latent_target"] = latent_target
-        batch["pred_latent"] = pred_latent
+        # batch["latent_target"] = latent_target
+        # batch["pred_latent"] = pred_latent
 
         return batch, pred_loss
-
 
     def set_train(self):
         # self.vision_tower.train()
@@ -297,7 +370,7 @@ class Pollux(nn.Module):
         # self.classifier.train()
 
     def set_eval(self):
-        self.vision_tower.eval()
+        # self.vision_tower.eval()
         self.vision_projecter.eval()
         # self.classifier.eval()
 
@@ -305,20 +378,24 @@ class Pollux(nn.Module):
     #     self.vision_tower.init_weights(args.vision_tower.pre_trained_path)
     #     # self.llm.init_weights(args.llm.pre_trained_path)
     def init_weights(self, args: ModelArgs):
-  
-        if args.vision_tower.pre_trained_path:
-            self.vision_tower.init_weights(args.vision_tower.pre_trained_path)
-        else:
-            for module in self.vision_tower.modules():
-                if isinstance(module, nn.Linear):
-                    nn.init.xavier_uniform_(module.weight)
-                    if module.bias is not None:
-                        nn.init.zeros_(module.bias)
-                elif isinstance(module, nn.Conv2d):
-                    nn.init.kaiming_normal_(module.weight, mode="fan_out", nonlinearity="relu")
-                elif isinstance(module, nn.LayerNorm) or isinstance(module, nn.BatchNorm2d):
-                    nn.init.ones_(module.weight)
-                    nn.init.zeros_(module.bias)
+
+        # if args.vision_tower.pre_trained_path:
+        #     self.vision_tower.init_weights(args.vision_tower.pre_trained_path)
+        # else:
+        #     for module in self.vision_tower.modules():
+        #         if isinstance(module, nn.Linear):
+        #             nn.init.xavier_uniform_(module.weight)
+        #             if module.bias is not None:
+        #                 nn.init.zeros_(module.bias)
+        #         elif isinstance(module, nn.Conv2d):
+        #             nn.init.kaiming_normal_(
+        #                 module.weight, mode="fan_out", nonlinearity="relu"
+        #             )
+        #         elif isinstance(module, nn.LayerNorm) or isinstance(
+        #             module, nn.BatchNorm2d
+        #         ):
+        #             nn.init.ones_(module.weight)
+        #             nn.init.zeros_(module.bias)
 
         if args.llm and args.llm.model_name:
             pretrained_state_dict = LlamaForCausalLM.from_pretrained(
@@ -327,7 +404,7 @@ class Pollux(nn.Module):
             self.llm.load_state_dict(pretrained_state_dict)
 
         nn.init.xavier_uniform_(self.vision_projecter.weight)
-        nn.init.zeros_(self.vision_projecter.bias)
+        # nn.init.zeros_(self.vision_projecter.bias)
         nn.init.normal_(self.vision_boi_emb, mean=0.0, std=0.02)
         nn.init.xavier_uniform_(self.latent_head.weight)
         nn.init.zeros_(self.latent_head.bias)
@@ -344,11 +421,11 @@ def build_fsdp_grouping_plan(model_args: ModelArgs, model: nn.Module):
     for name, module in model.named_modules():
         logger.info(f"- {name}: {module.__class__.__name__}")
 
-    vision_transformer = getattr(model.vision_tower, "vision_tower", None)
+    # vision_transformer = getattr(model.vision_tower, "vision_tower", None)
 
-    logger.info("VisionTransformer has `blocks` attribute. Building group plan...")
-    for idx, block in enumerate(vision_transformer.blocks):
-        group_plan.append((f"vision_tower.vision_tower.blocks.{idx}", True))
+    # logger.info("VisionTransformer has `blocks` attribute. Building group plan...")
+    # for idx, block in enumerate(vision_transformer.blocks):
+    #     group_plan.append((f"vision_tower.vision_tower.blocks.{idx}", True))
 
     group_plan.append(("vision_projecter", False))
 
@@ -372,24 +449,24 @@ def build_fsdp_grouping_plan(model_args: ModelArgs, model: nn.Module):
 def tp_parallelize(model, tp_mesh, model_args: ModelArgs, distributed_args):
 
     # Parallelize `vision_tower` (VisionTransformer)
-    vision_tower = model.vision_tower.vision_tower
+    # vision_tower = model.vision_tower.vision_tower
 
-    transformer_plan = {
-        # Attention components
-        "blocks.*.attn.qkv": ColwiseParallel(
-            input_layouts=Replicate(), output_layouts=Shard(1)
-        ),
-        "blocks.*.attn.proj": RowwiseParallel(output_layouts=Shard(1)),
-        # MLP components
-        "blocks.*.mlp.fc1": ColwiseParallel(),
-        "blocks.*.mlp.fc2": RowwiseParallel(output_layouts=Shard(1)),
-    }
+    # transformer_plan = {
+    #     # Attention components
+    #     "blocks.*.attn.qkv": ColwiseParallel(
+    #         input_layouts=Replicate(), output_layouts=Shard(1)
+    #     ),
+    #     "blocks.*.attn.proj": RowwiseParallel(output_layouts=Shard(1)),
+    #     # MLP components
+    #     "blocks.*.mlp.fc1": ColwiseParallel(),
+    #     "blocks.*.mlp.fc2": RowwiseParallel(output_layouts=Shard(1)),
+    # }
 
-    parallelize_module(vision_tower, tp_mesh, transformer_plan)
+    # parallelize_module(vision_tower, tp_mesh, transformer_plan)
 
-    for block in vision_tower.blocks:
-        block.attn.num_heads //= distributed_args.tp_size
-        block.attn.head_dim //= distributed_args.tp_size
+    # for block in vision_tower.blocks:
+    #     block.attn.num_heads //= distributed_args.tp_size
+    #     block.attn.head_dim //= distributed_args.tp_size
     logger.info(
         f"VisionTransformer blocks parallelized with TP size {distributed_args.tp_size}"
     )
