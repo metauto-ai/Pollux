@@ -36,9 +36,9 @@ if __name__ == "__main__":
     data_config_dict = {
         "data": {
             "preliminary": {
-                "cc12m_llama3bf128_hunyuanr256_test1m": {
+                "cc12m_l3bf128_hr256": {
                     "use": True,
-                    "data_name": "cc12m_llama3bf128_hunyuanr256_test1m",
+                    "data_name": "cc12m_l3bf128_hr256",
                     "source": "mongodb",
                     "task": "text_to_image",
                     "retries": 3,
@@ -99,8 +99,11 @@ if __name__ == "__main__":
         while True:
             try:
                 b = next(iterrator)
+                for key, value in b.items():
+                    print(key, value.size())
                 count += 1
-            except StopIteration:
+            except Exception as e:
+                logging.info(f"Error: {e}")
                 break
         if count > 1000:
             break

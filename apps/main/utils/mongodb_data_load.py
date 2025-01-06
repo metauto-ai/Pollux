@@ -248,6 +248,7 @@ class MongoDBParquetDataLoad(MongoDBDataLoad):
         self.mapping_field = mapping_field
         self.parallel_parquet = parallel_parquet
         self.batch_size = batch_size
+        self.place_holder_parquet = None
 
     def __len__(self):
         """Return the total number of rows in the dataset."""
@@ -257,7 +258,15 @@ class MongoDBParquetDataLoad(MongoDBDataLoad):
         if idx >= len(self):
             idx = idx % len(self)
         file = self.data.iloc[idx][self.path_field]
-        cur_df = pd.read_parquet(file, engine="pyarrow")
+        try:
+            cur_df = pd.read_parquet(file, engine="pyarrow")
+            self.place_holder_parquet = file
+        except Exception as e:
+            logging.warning(f"Error reading parquet file: {file}")
+            if self.place_holder_parquet is not None:
+                cur_df = pd.read_parquet(self.place_holder_parquet, engine="pyarrow")
+            else:
+                return self.__getitem__(random.choice(range(len(self))))
         return_parquet = {}
         for i, sample in cur_df.iterrows():
             sample = sample.to_dict()
@@ -273,6 +282,11 @@ class MongoDBParquetDataLoad(MongoDBDataLoad):
                     raw_shape_key = f"{k}_raw_shape"
                     if raw_shape_key in sample:
                         return_sample[k_] = v.reshape(sample[raw_shape_key])
+                        return_sample[k_] = [torch.Tensor(np.copy(return_sample[k_]))]
+                    elif raw_shape_key in self.data.iloc[idx]:
+                        return_sample[k_] = v.reshape(
+                            self.data.iloc[idx][raw_shape_key]
+                        )
                         return_sample[k_] = [torch.Tensor(np.copy(return_sample[k_]))]
                     else:
                         return_sample[k_] = [torch.Tensor(np.copy(v))]

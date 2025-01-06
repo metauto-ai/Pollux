@@ -170,7 +170,7 @@ class AutoDataLoader:
                 partition_key=args.partition_key,
                 args=args,
             )
-        elif args.data_name == "cc12m_llama3bf128_hunyuanr256_test1m":
+        elif args.data_name == "cc12m_l3bf128_hr256":
             dataset = MongoDBParquetDataLoad(
                 collection_name=args.data_name,
                 query=args.query,

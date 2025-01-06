@@ -138,7 +138,7 @@ class GenTransformer(BaseDiffusionTransformer):
     ):
         x, img_size, freqs_cis_img = self.patchify_and_embed_image(x)
         x_l = x.size(1)
-        if len(time_steps.shape) == 2:
+        if len(condition.shape) == 2:
             modulation_signal = condition + self.tmb_embed(time_steps)
         else:
             modulation_signal = torch.mean(
