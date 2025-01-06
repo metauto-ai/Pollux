@@ -92,7 +92,7 @@ class TrainArgs:
     # Number of gradient accumulation steps
     # Total batch size is batch_size*grad_acc_steps
     grad_acc_steps: int = 1
-    gc_collect_freq: int = 1000
+    # gc_collect_freq: int = 1000
     probe_freq: Optional[int] = None
 
     # Nb optimizer steps to take
@@ -379,11 +379,11 @@ def train(args: TrainArgs):
                     batch, active_data[0].dataloader.batch_size
                 )
                 batch = next(parquet_iterator)
-            if every_n_steps(train_state, args.gc_collect_freq, acc_step=0):
-                logger.info("garbage collection")
-                # we do garbage collection manually otherwise different processes
-                # run the GC at different times so they slow down the whole pipeline
-                gc.collect()
+            # if every_n_steps(train_state, args.gc_collect_freq, acc_step=0):
+            #     logger.info("garbage collection")
+            #     # we do garbage collection manually otherwise different processes
+            #     # run the GC at different times so they slow down the whole pipeline
+            #     gc.collect()
             if args.model.type == "latent_pollux":
                 batch["latent_code"] = batch["latent_code"].cuda()
                 batch["text_embedding"] = batch["text_embedding"].cuda()
