@@ -20,10 +20,10 @@ from lingua.distributed import (
     setup_torch_distributed,
     get_local_rank,
 )
-from apps.main.data import AutoDataLoader, DataArgs
+from apps.plan.data import AutoDataLoader, DataArgs
 from apps.plan.generate import LatentGenerator, GeneratorArgs, load_consolidated_model
 
-from apps.plan.model_v1 import Pollux, ModelArgs
+from apps.plan.model import Pollux, ModelArgs
 
 EVAL_FOLDER_NAME = "{:010d}"
 

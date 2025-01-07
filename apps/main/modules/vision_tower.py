@@ -35,20 +35,20 @@ from timm.layers import (
 )
 from timm.models._manipulate import checkpoint_seq, named_apply
 
-from apps.plan.modules.ops import _no_grad_trunc_normal_
-
+from apps.main.modules.ops import _no_grad_trunc_normal_
 
 
 @dataclass
 class VisionTowerArgs:
-    model_name: str = "siglip_large_patch16_256"  
+    model_name: str = "siglip_large_patch16_256"
     image_size: int = 256
-    select_layer: int = -1 
+    select_layer: int = -1
     select_feature: str = "patch"
     pre_trained_path: str = "/path/to/pretrained/model.pth"
     ignore_head: bool = True
     pixel_mean: Optional[List[float]] = None
     pixel_std: Optional[List[float]] = None
+    project_dim: Optional[List[int]] = None
 
 
 def trunc_normal_(tensor, mean=0.0, std=1.0, a=-2.0, b=2.0):
@@ -435,36 +435,70 @@ class VisionTransformer(nn.Module):
             nn.Linear(self.embed_dim, num_classes) if num_classes > 0 else nn.Identity()
         )
 
-    def _pos_embed(self, x: torch.Tensor) -> torch.Tensor:
-        if self.dynamic_img_size:
+    def apply_2d_rope(self, x: torch.Tensor, freqs_cis: torch.Tensor, H: int, W: int) -> torch.Tensor:
+
+        freqs_cis_h = freqs_cis[:H, :].unsqueeze(1).repeat(1, W, 1)  # (H, W, embed_dim//2)
+        freqs_cis_w = freqs_cis[:, :W].unsqueeze(0).repeat(H, 1, 1)  # (H, W, embed_dim//2)
+
+        # Split input tensor for rotary encoding
+        q_real, q_imag = x[..., :x.shape[-1] // 2], x[..., x.shape[-1] // 2:]
+        rope_emb_real = torch.cos(freqs_cis_h) * q_real + torch.sin(freqs_cis_h) * q_imag
+        rope_emb_imag = torch.cos(freqs_cis_w) * q_real - torch.sin(freqs_cis_w) * q_imag
+
+        # Combine back into a single tensor
+        return torch.cat([rope_emb_real, rope_emb_imag], dim=-1)
+
+    def precompute_freqs_cis(self, dim: int, H: int, W: int, base: float = 10000.0) -> torch.Tensor:
+
+        # Compute the frequencies
+        freqs = 1.0 / (base ** (torch.arange(0, dim, 2).float() / dim))
+
+        # Create position indices
+        pos_h = torch.arange(0, H).unsqueeze(1)  # (H, 1)
+        pos_w = torch.arange(0, W).unsqueeze(1)  # (W, 1)
+
+        # Compute the cosine and sine embeddings for both height and width
+        freqs_cis_h = torch.cat([torch.cos(pos_h * freqs), torch.sin(pos_h * freqs)], dim=1)  # (H, dim)
+        freqs_cis_w = torch.cat([torch.cos(pos_w * freqs), torch.sin(pos_w * freqs)], dim=1)  # (W, dim)
+
+        return freqs_cis_h, freqs_cis_w
+
+    def _pos_embed(self, x: torch.Tensor, use_2d_rope: bool = False, freqs_cis: Optional[torch.Tensor] = None) -> torch.Tensor:
+        if use_2d_rope and freqs_cis is not None:
+            # Apply 2D RoPE
             B, H, W, C = x.shape
-            pos_embed = resample_abs_pos_embed(
-                self.pos_embed,
-                (H, W),
-                num_prefix_tokens=0 if self.no_embed_class else self.num_prefix_tokens,
-            )
-            x = x.view(B, -1, C)
+            x = x.view(B, H * W, C)  # Flatten to (B, num_patches, embed_dim) for consistency
+            x = self.apply_2d_rope(x, freqs_cis, H, W)
         else:
-            pos_embed = self.pos_embed
+            if self.dynamic_img_size:
+                B, H, W, C = x.shape
+                pos_embed = resample_abs_pos_embed(
+                    self.pos_embed,
+                    (H, W),
+                    num_prefix_tokens=0 if self.no_embed_class else self.num_prefix_tokens,
+                )
+                x = x.view(B, -1, C)
+            else:
+                pos_embed = self.pos_embed
 
-        to_cat = []
-        if self.cls_token is not None:
-            to_cat.append(self.cls_token.expand(x.shape[0], -1, -1))
-        if self.reg_token is not None:
-            to_cat.append(self.reg_token.expand(x.shape[0], -1, -1))
+            to_cat = []
+            if self.cls_token is not None:
+                to_cat.append(self.cls_token.expand(x.shape[0], -1, -1))
+            if self.reg_token is not None:
+                to_cat.append(self.reg_token.expand(x.shape[0], -1, -1))
 
-        if self.no_embed_class:
-            # deit-3, updated JAX (big vision)
-            # position embedding does not overlap with class token, add then concat
-            x = x + pos_embed
-            if to_cat:
-                x = torch.cat(to_cat + [x], dim=1)
-        else:
-            # original timm, JAX, and deit vit impl
-            # pos_embed has entry for class token, concat then add
-            if to_cat:
-                x = torch.cat(to_cat + [x], dim=1)
-            x = x + pos_embed
+            if self.no_embed_class:
+                # deit-3, updated JAX (big vision)
+                # position embedding does not overlap with class token, add then concat
+                x = x + pos_embed
+                if to_cat:
+                    x = torch.cat(to_cat + [x], dim=1)
+            else:
+                # original timm, JAX, and deit vit impl
+                # pos_embed has entry for class token, concat then add
+                if to_cat:
+                    x = torch.cat(to_cat + [x], dim=1)
+                x = x + pos_embed
 
         return self.pos_drop(x)
 
@@ -480,7 +514,14 @@ class VisionTransformer(nn.Module):
 
         # forward pass
         x = self.patch_embed(x)
-        x = self._pos_embed(x)
+
+        # NOTE: add 2D ROPE
+        B, num_patches, C = x.shape
+        grid_size = int(math.sqrt(num_patches))
+        height, width = grid_size, grid_size
+        freqs_cis = self.precompute_freqs_cis(dim=self.embed_dim // 2, H=height, W=width)
+        x = self._pos_embed(x, use_2d_rope=True, freqs_cis=freqs_cis)
+
         x = self.patch_drop(x)
         x = self.norm_pre(x)
         for i, blk in enumerate(self.blocks):
@@ -706,6 +747,7 @@ class VisionTower(nn.Module):
 
         else:  # huggingface
             from transformers import CLIPVisionModel
+
             vision_tower = CLIPVisionModel.from_pretrained(**vision_tower_params)
             forward_kwargs = dict(output_hidden_states=True)
 
@@ -752,17 +794,21 @@ class VisionTower(nn.Module):
             if pre_trained_path:
                 # Attempt to load from the provided path
                 state_dict = torch.load(pre_trained_path, map_location="cpu")
-                incompatible_keys = self.vision_tower.load_state_dict(state_dict, strict=False)
+                incompatible_keys = self.vision_tower.load_state_dict(
+                    state_dict, strict=False
+                )
                 print(
                     f"SigLIP-ViT restores from {pre_trained_path},\n"
                     f"\tincompatible_keys: {incompatible_keys}."
                 )
             else:
-                raise FileNotFoundError("No pre-trained path provided, attempting to download checkpoint.")
+                raise FileNotFoundError(
+                    "No pre-trained path provided, attempting to download checkpoint."
+                )
         except (FileNotFoundError, RuntimeError):
             try:
                 # Download the model and save it
-                model_name = "siglip_large_patch16_256" #"siglip-large-patch16-384"#"google/siglip-large-patch16-384"
+                model_name = "siglip_large_patch16_256"  # "siglip-large-patch16-384"#"google/siglip-large-patch16-384"
                 model = create_siglip_vit(model_name=model_name)
                 save_path = self.pre_trained_path
                 save_dir = os.path.dirname(save_path)
@@ -772,7 +818,9 @@ class VisionTower(nn.Module):
 
                 # Reload the saved model
                 state_dict = torch.load(save_path, map_location="cpu")
-                incompatible_keys = self.vision_tower.load_state_dict(state_dict, strict=False)
+                incompatible_keys = self.vision_tower.load_state_dict(
+                    state_dict, strict=False
+                )
                 print(
                     f"SigLIP-ViT restores from downloaded checkpoint at {save_path},\n"
                     f"\tincompatible_keys: {incompatible_keys}."
