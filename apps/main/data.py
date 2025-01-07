@@ -27,6 +27,7 @@ from apps.main.utils.mongodb_data_load import (
     MongoDBParquetDataLoad,
 )
 from apps.main.utils.sampler import StatefulDistributedSampler
+from apps.main.utils.mongodb_data_load import DictTensorBatchIterator
 
 logger = logging.getLogger()
 
@@ -150,6 +151,7 @@ class AutoDataLoader:
     def _create_mongodb_dataloader(
         self, args: DataArgs
     ) -> Tuple[DataLoader, StatefulDistributedSampler]:
+        record_batch_size = args.dataloader.batch_size
         if args.data_name == "imagenet-1k":
             dataset = MongoDBImageNetDataLoad(
                 num_shards=self.num_shards,
@@ -168,7 +170,7 @@ class AutoDataLoader:
                 partition_key=args.partition_key,
                 args=args,
             )
-        elif args.data_name == "cc12m_llama3bf128_hunyuanr256_test1m":
+        elif args.data_name == "cc12m_l3bf128_hr256":
             dataset = MongoDBParquetDataLoad(
                 collection_name=args.data_name,
                 query=args.query,
@@ -178,14 +180,18 @@ class AutoDataLoader:
                 mapping_field=args.mapping_field,  # {"HunyuanVideo_latent_code": "latent_code","LLAMA3_3B_text_embedding": "text_embedding",},
                 partition_key=args.partition_key,
             )
+            record_batch_size = args.dataloader.batch_size
+            args.dataloader.batch_size = 1
         else:
             raise ValueError(f"Unsupported MongoDB dataset: {args.data_name}")
 
         dataset.set_local_partition()
-        if hasattr(dataset, "set_mapping"):
-            dataset.set_mapping()
         self.dataset = dataset
-        return self._warp_dataloader_with_stateful_sampler(args, dataset)
+        data_loader, sampler = self._warp_dataloader_with_stateful_sampler(
+            args, dataset
+        )
+        args.dataloader.batch_size = record_batch_size
+        return data_loader, sampler
 
     def _warp_dataloader_with_stateful_sampler(
         self, args: DataArgs, dataset: Dataset

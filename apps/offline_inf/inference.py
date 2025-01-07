@@ -147,7 +147,7 @@ def launch_inference(cfg: InferenceArgs):
                     batch[f"{key}_raw_shape"] = [d.shape for d in data]
                 if prefix not in save_batch:
                     save_batch[prefix] = batch[key]
-                    if f"{prefix}_raw_shape" in batch:
+                    if f"{prefix}_raw_shape" not in batch:
                         save_batch[f"{prefix}_raw_shape"] = batch[f"{key}_raw_shape"]
                 else:
                     save_batch[prefix].extend(batch[key])
