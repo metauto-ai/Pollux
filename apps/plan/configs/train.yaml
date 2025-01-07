@@ -18,9 +18,9 @@ optim:
     weight_decay: 0.01
 
 distributed:
-    gpus: 0,1,2,3
+    gpus: 0,1,2,3,4,5,6,7
     fsdp_type: full_shard
-    dp_shard: 4
+    dp_shard: 8
     dp_replicate: 1
     compile: false
     model_dtype: bf16 # options: `fb8` is only supported by H100
@@ -32,27 +32,18 @@ distributed:
 model:
     text_cfg_ratio: 0.1
     image_cfg_ratio: 0.1
-    patch_size: 16
-    mask_patch: 16
-    num_classes: 1000
-    use_vision_boi: true
-    vision_tower:
-        model_name: siglip_large_patch16_256
-        image_size: 256
-        pre_trained_path: /jfs/checkpoints/siglip_pretrained/siglip_large_patch16_256.pth
-        select_feature: patch
-        select_layer: -2
-        pixel_mean: null
-        pixel_std: null
-    vision_projecter:
-        latent_dim: 16
-        output_dim: 3072
-    llm:
-        model_name: "meta-llama/Llama-3.2-3B"
     vae:
         pretrained_model_name_or_path: '/jfs/checkpoints/models--tencent--HunyuanVideo/snapshots/2a15b5574ee77888e51ae6f593b2ceed8ce813e5/vae'
         enable_tiling: false
         enable_slicing: false
+    latent_projector:
+        latent_dim: 16
+        patch_size: 2
+        output_dim: 3072
+    use_vision_boi: true
+    llm:
+        model_name: "meta-llama/Llama-3.2-3B"
+
 
 data:
   - stage: preliminary
@@ -60,7 +51,7 @@ data:
     task: class_to_image
     data_name: ILSVRC/imagenet-1k
     source: huggingface
-    batch_size: 12 # 96
+    batch_size: 32 # 96
     image_size: 256
     num_workers: 8
     split: train
