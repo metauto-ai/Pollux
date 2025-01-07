@@ -257,9 +257,10 @@ class Pollux(nn.Module):
         print("before_vae", torch.cuda.max_memory_allocated() / 1024 / 1024)
         vae_latent = self.vae.encode(images)  # [B,16,H/8,W/8]
         vae_latent = vae_latent.flatten(2, 3).permute(0, 2, 1)  # [B,H/8*W/8,16]
+   
         print("after_vae", torch.cuda.max_memory_allocated() / 1024 / 1024)
         vae_embed = self.vision_projecter(vae_latent)  # [B,H/8*W/8,D]
-        print("after_projector", torch.cuda.max_memory_allocated() / 1024 / 1024)
+        # print("after_projector", torch.cuda.max_memory_allocated() / 1024 / 1024)
 
         # text embed
         input_ids = self.llm_tokenizer(
@@ -277,9 +278,9 @@ class Pollux(nn.Module):
             1
         ) + 1 + vae_embed.size(1)
 
-        print(f"====> text_embs shape: {text_embs.shape}")
-        print(f"====> vae_embed shape: {vae_embed.shape}")
-        print(f"====> mm_embs shape: {mm_embs.shape}")
+        # ====> text_embs shape: torch.Size([12, 10, 3072])
+        # ====> vae_embed shape: torch.Size([12, 1024, 3072])
+        # ====> mm_embs shape: torch.Size([12, 1035, 3072])
 
         # llm forward
         output = self.llm(
@@ -290,16 +291,17 @@ class Pollux(nn.Module):
         )
 
         final_hidden = output.hidden_states[-1]
-        print(f"====> final_hidden shape: {final_hidden.shape}")
+        # ====> final_hidden shape: torch.Size([12, 1049, 3072])
 
         pred_latent = self.latent_head(final_hidden[:, vae_start_idx:, :])  # [B,M,D]
-
-        print(
-            f"====> pred_latent shape: {pred_latent.shape}, vae_latent shape: {vae_latent.shape}"
-        )
+        # ====> pred_latent shape: torch.Size([12, 1024, 16]), vae_latent shape: torch.Size([12, 1024, 16])
 
         # compute loss
+        print("vae shape ", vae_latent.shape)
+        vae_latent = torch.rand([12, 1,16]).to(vae_latent.device)
+        pred_latent = torch.zeros_like(vae_latent, requires_grad=True)
         pred_loss = F.mse_loss(pred_latent, vae_latent)
+        # pred_loss = torch.zeros(images.shape[0], device=images.device)
         a = input()
 
         # batch["latent_target"] = latent_target
@@ -307,62 +309,6 @@ class Pollux(nn.Module):
 
         return batch, pred_loss
 
-        # B_, seq_total, hidden_size = final_hidden.shape
-        # text_seq_len = text_embs.shape[1]
-        # image_seq_len = images_embs.shape[1]
-
-        #
-
-        # latent_patches = self.patchify(vae_latent, patch_size=self.args.patch_size)
-        # B, N, C, PH, PW = latent_patches.shape
-        # latent_target = latent_patches.view(B, N, -1)
-
-        # text_embs, images_embs = self.process_input(input_ids, images)
-        # combined_embs = torch.cat([text_embs, images_embs], dim=1)
-        # attention_mask = self.process_mask(
-        #     input_ids, images_embs, mask_strategy, random_rate
-        # )
-
-        # outputs = self.llm.generate(
-        #     inputs_embeds=combined_embs,
-        #     attention_mask=attention_mask,
-        #     max_new_tokens=50,
-        #     num_beams=5,
-        #     return_dict_in_generate=True,
-        #     output_scores=True,
-        # )
-
-        # target_ids = self.llm_tokenizer(
-        #     target_captions, padding=True, truncation=True, return_tensors="pt"
-        # )["input_ids"].to(self.llm.device)
-
-        # seq_total = combined_embs.size(1)
-        # seq_target = target_ids.size(1)
-        # if seq_target < seq_total:
-        #     pad_len = seq_total - seq_target
-        #     target_ids = F.pad(target_ids, (0, pad_len), value=-100)
-        # elif seq_target > seq_total:
-        #     target_ids = target_ids[:, :seq_total]
-
-        # final_hidden = outputs_tf.hidden_states[-1]
-        # B_, seq_total, hidden_size = final_hidden.shape
-        # text_seq_len = text_embs.shape[1]
-        # image_seq_len = images_embs.shape[1]
-
-        # pred_image_hidden = final_hidden[:, text_seq_len:, :]
-        # pred_latent = self.latent_head(pred_image_hidden)
-
-        # print(
-        #     f"====> pred_latent shape: {pred_latent.shape}, latent_target shape: {latent_target.shape}"
-        # )
-        # # ====> pred_latent shape: torch.Size([24, 257, 4096]), latent_target shape: torch.Size([24, 4, 4096])
-
-        # pred_loss = F.mse_loss(pred_latent, latent_target)
-
-        # batch["latent_target"] = latent_target
-        # batch["pred_latent"] = pred_latent
-
-        return batch, pred_loss
 
     def set_train(self):
         # self.vision_tower.train()
