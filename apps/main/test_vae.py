@@ -34,7 +34,7 @@ hunyuan_config = LatentVideoVAEArgs(
 )
 hunyuan_vae = LatentVideoVAE(hunyuan_config).cuda()
 input_tensor = torch.randn(64, 3, 256, 256).cuda()
-print("Testing Hunyuan VAE")
+print("Testing Hunyuan VAE", hunyuan_config.pretrained_model_name_or_path)
 print("Input Shape:", input_tensor.shape)
 hunyuan_encoded = hunyuan_vae.encode(input_tensor)
 print("Latent Shape:", hunyuan_encoded.shape)
@@ -50,7 +50,7 @@ cosmos_dv_config = LatentVideoVAEArgs(
     pretrained_model_name_or_path="/jfs/checkpoints/cosmos/Cosmos-Tokenizer-DV8x16x16",
 )
 cosmos_dv_vae = LatentVideoVAE(cosmos_dv_config).cuda()
-print("Testing COSMOS-DV VAE")
+print("Testing COSMOS-DV VAE", cosmos_dv_config.pretrained_model_name_or_path)
 print("Input Shape:", input_tensor.shape)
 cosmos_dv_encoded_indices, cosmos_dv_encoded_codes = cosmos_dv_vae.encode(input_tensor)
 print("Indices Shape:", cosmos_dv_encoded_indices.shape)
@@ -67,7 +67,7 @@ cosmos_cv_config = LatentVideoVAEArgs(
     pretrained_model_name_or_path="/jfs/checkpoints/cosmos/Cosmos-Tokenizer-CV8x16x16",
 )
 cosmos_cv_vae = LatentVideoVAE(cosmos_cv_config).cuda()
-print("Testing COSMOS-CV VAE")
+print("Testing COSMOS-CV VAE", cosmos_cv_config.pretrained_model_name_or_path)
 print("Input Shape:", input_tensor.shape)
 cosmos_cv_encoded = cosmos_cv_vae.encode(input_tensor)
 print("Latent Shape:", cosmos_cv_encoded.shape)

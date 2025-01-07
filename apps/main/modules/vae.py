@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import Optional, Literal, Type, Dict, List, Tuple
+from typing import Optional, Literal, Type, Dict, List, Tuple, TypeVar, Generic
 import logging
 import torch
 from torch import nn
@@ -272,12 +272,14 @@ class COSMOSContinuousVAE(BaseCOSMOSVAE):
         return self.decode(x)
 
 
+T = TypeVar("T", bound=BaseLatentVideoVAE)
+
 # LatentVideoVAE class with registry and instantiation
-class LatentVideoVAE:
-    _registry: Dict[str, Type[BaseLatentVideoVAE]] = {}
+class LatentVideoVAE(Generic[T]):
+    _registry: Dict[str, Type[T]] = {}
 
     @classmethod
-    def register_vae(cls, name: str, vae_class: Type[BaseLatentVideoVAE]):
+    def register_vae(cls, name: str, vae_class: Type[T]):
         cls._registry[name] = vae_class
 
     def __init__(self, args: LatentVideoVAEArgs, **kwargs):
@@ -286,9 +288,7 @@ class LatentVideoVAE:
             raise ValueError(
                 f"VAE '{name}' is not registered. Available options: {list(self._registry.keys())}"
             )
-        self._vae = self._registry[name](
-            args, **kwargs
-        )  # Instantiate the selected VAE class
+        self._vae: T = self._registry[name](args, **kwargs)  # Instantiate the VAE class
 
     def __getattr__(self, attr):
         """
