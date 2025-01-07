@@ -30,7 +30,7 @@ class LatentVideoVAEArgs:
 class BaseLatentVideoVAE(nn.Module):
     def __init__(self, args: LatentVideoVAEArgs):
         super().__init__()
-        self.cfg=args
+        self.cfg = args
 
     @torch.no_grad()
     def encode(self, x: torch.Tensor) -> torch.Tensor:
@@ -41,25 +41,33 @@ class BaseLatentVideoVAE(nn.Module):
         raise NotImplementedError
 
     def enable_vae_slicing(self):
-        logger.warning(f"Useless func call, {self.cfg.model_name} TVAE model doesn't support slicing !")
+        logger.warning(
+            f"Useless func call, {self.cfg.model_name} TVAE model doesn't support slicing !"
+        )
         pass
 
     def disable_vae_slicing(self):
-        logger.warning(f"Useless func call, {self.cfg.model_name} TVAE model doesn't support slicing !")
+        logger.warning(
+            f"Useless func call, {self.cfg.model_name} TVAE model doesn't support slicing !"
+        )
         pass
 
     def enable_vae_tiling(self):
-        logger.warning(f"Useless func call, {self.cfg.model_name} TVAE model doesn't support tiling !")
+        logger.warning(
+            f"Useless func call, {self.cfg.model_name} TVAE model doesn't support tiling !"
+        )
         pass
 
     def disable_vae_tiling(self):
-        logger.warning(f"Useless func call, {self.cfg.model_name} TVAE model doesn't support tiling !")
+        logger.warning(
+            f"Useless func call, {self.cfg.model_name} TVAE model doesn't support tiling !"
+        )
         pass
 
 
 class HunyuanVideoVAE(BaseLatentVideoVAE):
     def __init__(self, args: LatentVideoVAEArgs):
-        super().__init__()
+        super().__init__(args)
         vae = AutoencoderKLHunyuanVideo.from_pretrained(
             args.pretrained_model_name_or_path,
             revision=args.revision,
@@ -139,35 +147,35 @@ class HunyuanVideoVAE(BaseLatentVideoVAE):
 
 
 class BaseCOSMOSVAE(BaseLatentVideoVAE):
-    def __init__(self, config: LatentVideoVAEArgs):
-        self.config = config
-        self.dtype = self.config.model_dtype
+    def __init__(self, args: LatentVideoVAEArgs):
+        super().__init__(args)
 
         match = re.search(
             r"Cosmos-Tokenizer-(DV|CV)",
-            self.config.pretrained_model_name_or_path,
+            self.cfg.pretrained_model_name_or_path,
             re.IGNORECASE,
         )
         if match:
             self.model_type = match.group(1)
         else:
-            raise ValueError("The string does not contain 'Cosmos-Tokenizer-DV' or 'Cosmos-Tokenizer-CV'.")
+            raise ValueError(
+                "The string does not contain 'Cosmos-Tokenizer-DV' or 'Cosmos-Tokenizer-CV'."
+            )
 
         # Initialize encoder and decoder
         self.encoder = CausalVideoTokenizer(
-            checkpoint_enc=f"{self.config.pretrained_model_name_or_path}/encoder.jit"
+            checkpoint_enc=f"{self.cfg.pretrained_model_name_or_path}/encoder.jit"
         ).cuda()
         self.decoder = CausalVideoTokenizer(
-            checkpoint_dec=f"{self.config.pretrained_model_name_or_path}/decoder.jit"
+            checkpoint_dec=f"{self.cfg.pretrained_model_name_or_path}/decoder.jit"
         ).cuda()
 
         # Validate model type matches the expected type
-        self._assert_model_type(self.config.pretrained_model_name_or_path, self.model_type)
+        self._assert_model_type(self.cfg.pretrained_model_name_or_path, self.model_type)
 
         logger.info(
-            f"{self.__class__.__name__} loaded successfully from {self.config.pretrained_model_name_or_path}. Model type: {self.model_type}"
+            f"{self.__class__.__name__} loaded successfully from {self.cfg.pretrained_model_name_or_path}. Model type: {self.model_type}"
         )
-
 
     @staticmethod
     def _assert_model_type(model_path: str, expected_type: Literal["DV", "CV"]):
@@ -189,14 +197,14 @@ class BaseCOSMOSVAE(BaseLatentVideoVAE):
 
 
 class COSMOSDiscreteVAE(BaseCOSMOSVAE):
-    def __init__(self, config: LatentVideoVAEArgs):
-        super().__init__(config)
+    def __init__(self, args: LatentVideoVAEArgs):
+        super().__init__(args)
 
     @torch.no_grad()
     def encode(self, frames_tensor: torch.Tensor) -> torch.Tensor:
         """
         Encodes the input frames into discrete indices.
-        
+
         return indices with 4d shape, BTHW;
         """
         if (
@@ -228,14 +236,20 @@ class COSMOSDiscreteVAE(BaseCOSMOSVAE):
 
 
 class COSMOSContinuousVAE(BaseCOSMOSVAE):
-    def __init__(self, config: LatentVideoVAEArgs):
-        super().__init__(config, model_type="CV")
+    def __init__(self, args: LatentVideoVAEArgs):
+        super().__init__(args)
 
     @torch.no_grad()
     def encode(self, frames_tensor: torch.Tensor) -> torch.Tensor:
         """
         Encodes the input frames into latent representations.
         """
+        if (
+            frames_tensor.ndim == 4
+        ):  # Check if the input tensor is 4D, BCHW, image tensor
+            frames_tensor = frames_tensor.unsqueeze(
+                2
+            )  # Add a temporal dimension (T=1) for video vae
         (latent,) = self.encoder.encode(frames_tensor)
         return latent
 
@@ -267,10 +281,14 @@ class LatentVideoVAE:
         cls._registry[name] = vae_class
 
     def __init__(self, args: LatentVideoVAEArgs, **kwargs):
-        name=args.model_name
+        name = args.model_name
         if name not in self._registry:
-            raise ValueError(f"VAE '{name}' is not registered. Available options: {list(self._registry.keys())}")
-        self.vae = self._registry[name](**kwargs)  # Instantiate the selected VAE class
+            raise ValueError(
+                f"VAE '{name}' is not registered. Available options: {list(self._registry.keys())}"
+            )
+        self._vae = self._registry[name](
+            args, **kwargs
+        )  # Instantiate the selected VAE class
 
     def __getattr__(self, attr):
         """
@@ -278,11 +296,13 @@ class LatentVideoVAE:
         """
         if hasattr(self._vae, attr):
             return getattr(self._vae, attr)
-        raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{attr}'")
+        raise AttributeError(
+            f"'{self.__class__.__name__}' object has no attribute '{attr}'"
+        )
 
 
 # Register VAE classes
-LatentVideoVAE.register_vae("Hunyuan",  HunyuanVideoVAE)
+LatentVideoVAE.register_vae("Hunyuan", HunyuanVideoVAE)
 LatentVideoVAE.register_vae("COSMOS-DV", COSMOSDiscreteVAE)
 LatentVideoVAE.register_vae("COSMOS-CV", COSMOSContinuousVAE)
 
