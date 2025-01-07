@@ -9,7 +9,7 @@ import re
 import numpy as np
 from torchvision import transforms
 from cosmos_tokenizer.video_lib import CausalVideoTokenizer
-
+import types
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
@@ -69,22 +69,22 @@ class HunyuanVideoVAE(BaseLatentVideoVAE):
     def __init__(self, args: LatentVideoVAEArgs):
         super().__init__(args)
         vae = AutoencoderKLHunyuanVideo.from_pretrained(
-            args.pretrained_model_name_or_path,
-            revision=args.revision,
-            variant=args.variant,
-        )
-        self.vae = vae
-        self.vae = self.vae.requires_grad_(False)
+            self.cfg.pretrained_model_name_or_path,
+            revision=self.cfg.revision,
+            variant=self.cfg.variant,
+        ).requires_grad_(False)
 
-        if args.enable_slicing:
-            self.vae.enable_slicing()
+        # Configure tiling and slicing
+        if self.cfg.enable_slicing:
+            vae.enable_slicing()
         else:
-            self.vae.disable_slicing()
+            vae.disable_slicing()
 
-        if args.enable_tiling:
-            self.vae.enable_tiling()
+        if self.cfg.enable_tiling:
+            vae.enable_tiling()
         else:
-            self.vae.disable_tiling()
+            vae.disable_tiling()
+        self.vae=vae
 
     # TODO: jinjie: we are using video vae for BCHW image generation, so below code is tricky
     # we need to refactor our dataloader once video gen training begins
@@ -146,59 +146,50 @@ class HunyuanVideoVAE(BaseLatentVideoVAE):
         self.vae.disable_tiling()
 
 
-class BaseCOSMOSVAE(BaseLatentVideoVAE):
-    def __init__(self, args: LatentVideoVAEArgs):
-        super().__init__(args)
-
-        match = re.search(
-            r"Cosmos-Tokenizer-(DV|CV)",
-            self.cfg.pretrained_model_name_or_path,
-            re.IGNORECASE,
-        )
-        if match:
-            self.model_type = match.group(1)
-        else:
-            raise ValueError(
-                "The string does not contain 'Cosmos-Tokenizer-DV' or 'Cosmos-Tokenizer-CV'."
-            )
-
-        # Initialize encoder and decoder
-        self.encoder = CausalVideoTokenizer(
-            checkpoint_enc=f"{self.cfg.pretrained_model_name_or_path}/encoder.jit"
-        ).cuda()
-        self.decoder = CausalVideoTokenizer(
-            checkpoint_dec=f"{self.cfg.pretrained_model_name_or_path}/decoder.jit"
-        ).cuda()
-
-        # Validate model type matches the expected type
-        self._assert_model_type(self.cfg.pretrained_model_name_or_path, self.model_type)
-
-        logger.info(
-            f"{self.__class__.__name__} loaded successfully from {self.cfg.pretrained_model_name_or_path}. Model type: {self.model_type}"
+def _assert_cosmos_model_type(
+    model_path: str, expected_type: Literal["DV", "CV"]
+) -> str:
+    """
+    Asserts that the provided model_path matches the expected model type.
+    """
+    match = re.search(r"Cosmos-Tokenizer-(DV|CV)", model_path, re.IGNORECASE)
+    if not match:
+        raise ValueError(
+            f"No valid model type found in model_path: {model_path}. Expected 'Cosmos-Tokenizer-DV' or 'Cosmos-Tokenizer-CV'."
         )
 
-    @staticmethod
-    def _assert_model_type(model_path: str, expected_type: Literal["DV", "CV"]):
-        """
-        Asserts that the provided model_path matches the expected model type.
-        """
-        if expected_type == "DV" and not re.search(
-            r"Cosmos-Tokenizer-DV", model_path, re.IGNORECASE
-        ):
-            raise ValueError(
-                f"Expected a Discrete (DV) model but got a mismatch in model_path: {model_path}"
-            )
-        if expected_type == "CV" and not re.search(
-            r"Cosmos-Tokenizer-CV", model_path, re.IGNORECASE
-        ):
-            raise ValueError(
-                f"Expected a Continuous (CV) model but got a mismatch in model_path: {model_path}"
-            )
+    model_type = match.group(1)  # Extract the matched type (DV or CV)
+    if model_type.upper() != expected_type.upper():
+        raise ValueError(
+            f"Model type mismatch: Expected '{expected_type.upper()}' but found '{model_type.upper()}' in model_path: {model_path}."
+        )
+    return model_type
 
+# * For COSMOS, create have a dummy
+class COSMOSDiscreteVAE(BaseLatentVideoVAE):
 
-class COSMOSDiscreteVAE(BaseCOSMOSVAE):
     def __init__(self, args: LatentVideoVAEArgs):
+        """
+        Initialize the encoder and decoder for discrete VAE.
+        Checks model type and returns the initialized VAE instance.
+        """
         super().__init__(args)
+        cfg=self.cfg
+        model_type = _assert_cosmos_model_type(cfg.pretrained_model_name_or_path, "DV")
+        logger.info(f"COSMOSDiscreteVAE initialized with type: {model_type}")
+
+        # vae = CausalVideoTokenizer(
+        #     checkpoint=f"{cfg.pretrained_model_name_or_path}/autoencoder.jit"
+        # )
+        # return vae
+        # Create a "vae" object to hold the encoder and decoder
+        self.vae = types.SimpleNamespace()
+        self.vae.encoder = CausalVideoTokenizer(
+            checkpoint_enc=f"{cfg.pretrained_model_name_or_path}/encoder.jit"
+        )
+        self.vae.decoder = CausalVideoTokenizer(
+            checkpoint_dec=f"{cfg.pretrained_model_name_or_path}/decoder.jit"
+        )
 
     @torch.no_grad()
     def encode(self, frames_tensor: torch.Tensor) -> torch.Tensor:
@@ -213,7 +204,7 @@ class COSMOSDiscreteVAE(BaseCOSMOSVAE):
             frames_tensor = frames_tensor.unsqueeze(
                 2
             )  # Add a temporal dimension (T=1) for video vae
-        indices, codes = self.encoder.encode(frames_tensor)
+        indices, codes = self.vae.encoder.encode(frames_tensor)
         return indices, codes
 
     @torch.no_grad()
@@ -221,7 +212,7 @@ class COSMOSDiscreteVAE(BaseCOSMOSVAE):
         """
         Decodes the discrete indices back into reconstructed frames.
         """
-        x = self.decoder.decode(indices)
+        x = self.vae.decoder.decode(indices)
         if x.ndim == 5 and x.shape[2] == 1:  # Check if T=1
             x = x.squeeze(2)  # Remove the temporal dimension at index 2
         return x
@@ -235,9 +226,24 @@ class COSMOSDiscreteVAE(BaseCOSMOSVAE):
         return self.decode(indices)
 
 
-class COSMOSContinuousVAE(BaseCOSMOSVAE):
+class COSMOSContinuousVAE(BaseLatentVideoVAE):
     def __init__(self, args: LatentVideoVAEArgs):
         super().__init__(args)
+        """
+        Initialize the encoder and decoder for Continuous VAE.
+        Checks model type and returns the initialized VAE instance.
+        """
+        cfg = self.cfg
+        model_type = _assert_cosmos_model_type(cfg.pretrained_model_name_or_path, "CV")
+        logger.info(f"COSMOSContinuousVAE initialized with type: {model_type}")
+
+        self.vae = types.SimpleNamespace()
+        self.vae.encoder = CausalVideoTokenizer(
+            checkpoint_enc=f"{cfg.pretrained_model_name_or_path}/encoder.jit"
+        )
+        self.vae.decoder = CausalVideoTokenizer(
+            checkpoint_dec=f"{cfg.pretrained_model_name_or_path}/decoder.jit"
+        )
 
     @torch.no_grad()
     def encode(self, frames_tensor: torch.Tensor) -> torch.Tensor:
@@ -250,7 +256,7 @@ class COSMOSContinuousVAE(BaseCOSMOSVAE):
             frames_tensor = frames_tensor.unsqueeze(
                 2
             )  # Add a temporal dimension (T=1) for video vae
-        (latent,) = self.encoder.encode(frames_tensor)
+        (latent,) = self.vae.encoder.encode(frames_tensor)
         return latent
 
     @torch.no_grad()
@@ -258,7 +264,7 @@ class COSMOSContinuousVAE(BaseCOSMOSVAE):
         """
         Decodes the latent representations back into reconstructed frames.
         """
-        x = self.decoder.decode(encoded_tensor)
+        x = self.vae.decoder.decode(encoded_tensor)
         if x.ndim == 5 and x.shape[2] == 1:  # Check if T=1
             x = x.squeeze(2)  # Remove the temporal dimension at index 2
         return x
@@ -288,14 +294,14 @@ class LatentVideoVAE(Generic[T]):
             raise ValueError(
                 f"VAE '{name}' is not registered. Available options: {list(self._registry.keys())}"
             )
-        self._vae: T = self._registry[name](args, **kwargs)  # Instantiate the VAE class
+        self.vae: T = self._registry[name](args, **kwargs)  # Instantiate the VAE class
 
     def __getattr__(self, attr):
         """
         Delegate attribute and method access to the actual internal VAE instance.
         """
-        if hasattr(self._vae, attr):
-            return getattr(self._vae, attr)
+        if hasattr(self.vae, attr):
+            return getattr(self.vae, attr)
         raise AttributeError(
             f"'{self.__class__.__name__}' object has no attribute '{attr}'"
         )
