@@ -10,15 +10,14 @@ import numpy as np
 from torchvision import transforms
 from cosmos_tokenizer.video_lib import CausalVideoTokenizer
 import types
+
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 
 @dataclass
 class LatentVideoVAEArgs:
-    model_name: Literal["Hunyuan", "COSMOS-DV", "COSMOS-CV"] = (
-        "Hunyuan"  # Default value is "Hunyuan"
-    )
+    model_name: str = "COSMOS-DV"  # ["Hunyuan", "COSMOS-DV", "COSMOS-CV"]
     pretrained_model_name_or_path: str = "tencent/HunyuanVideo"
     revision: Optional[str] = None
     variant: Optional[str] = None
@@ -84,7 +83,7 @@ class HunyuanVideoVAE(BaseLatentVideoVAE):
             vae.enable_tiling()
         else:
             vae.disable_tiling()
-        self.vae=vae
+        self.vae = vae
 
     # TODO: jinjie: we are using video vae for BCHW image generation, so below code is tricky
     # we need to refactor our dataloader once video gen training begins
@@ -165,6 +164,7 @@ def _assert_cosmos_model_type(
         )
     return model_type
 
+
 # * For COSMOS, create have a dummy
 class COSMOSDiscreteVAE(BaseLatentVideoVAE):
 
@@ -174,7 +174,7 @@ class COSMOSDiscreteVAE(BaseLatentVideoVAE):
         Checks model type and returns the initialized VAE instance.
         """
         super().__init__(args)
-        cfg=self.cfg
+        cfg = self.cfg
         model_type = _assert_cosmos_model_type(cfg.pretrained_model_name_or_path, "DV")
         logger.info(f"COSMOSDiscreteVAE initialized with type: {model_type}")
 
@@ -279,6 +279,7 @@ class COSMOSContinuousVAE(BaseLatentVideoVAE):
 
 
 T = TypeVar("T", bound=BaseLatentVideoVAE)
+
 
 # LatentVideoVAE class with registry and instantiation
 class LatentVideoVAE(Generic[T]):

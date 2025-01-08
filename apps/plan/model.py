@@ -174,8 +174,13 @@ class Pollux(nn.Module):
         captions = batch["caption"]
 
         # vision vae
-        vae_latent = self.vae.encode(images)  # [B,16,H/8,W/8]
+        vae_indices, vae_latent = self.vae.encode(images)  # [B,16,H/8,W/8]
         vae_embed, H_, W_ = self.patchify_and_embed(vae_latent)  # [B,H/16*W/16,D]
+
+        # Input Shape: torch.Size([64, 3, 256, 256])
+        # Indices Shape: torch.Size([64, 1, 16, 16])
+        # Codes Shape: torch.Size([64, 6, 1, 16, 16])
+        # Reconstructed Shape: torch.Size([64, 3, 256, 256])
 
         # text embed
         input_ids = self.llm_tokenizer(
@@ -242,29 +247,66 @@ def build_fsdp_grouping_plan(model_args: ModelArgs, model: nn.Module):
     for name, module in model.named_modules():
         logger.info(f"- {name}: {module.__class__.__name__}")
 
-    # vision_transformer = getattr(model.vision_tower, "vision_tower", None)
-
-    # logger.info("VisionTransformer has `blocks` attribute. Building group plan...")
-    # for idx, block in enumerate(vision_transformer.blocks):
-    #     group_plan.append((f"vision_tower.vision_tower.blocks.{idx}", True))
-
-    # group_plan.append(("latent_projector", False))
-
     llama_model = getattr(model, "llm", None)
     if llama_model and hasattr(llama_model, "model"):
         logger.info("LlamaForCausalLM has `model` attribute. Building group plan...")
         for idx, block in enumerate(llama_model.model.layers):
             group_plan.append((f"llm.model.layers.{idx}", False))
 
-    vae_encoder = getattr(model.vae.vae.encoder, "down_blocks", None)
-    if vae_encoder:
-        for i in range(len(vae_encoder)):
-            group_plan.append((f"vae.vae.encoder.down_blocks.{i}", False))
-    else:
-        logger.warning("VAE encoder does not have `down_blocks` attribute.")
+    # NOTE: Hunyuan
+    # vae_encoder = getattr(model.vae.vae.encoder, "down_blocks", None)
+    # if vae_encoder:
+    #     for i in range(len(vae_encoder)):
+    #         group_plan.append((f"vae.vae.encoder.down_blocks.{i}", False))
+    # else:
+    #     logger.warning("VAE encoder does not have `down_blocks` attribute.")
+
+    # NOTE: COSMOS
+    # TODO: We need to add the FSDP, but currently I failed to find the correct module name.
+    # Maybe this is because the torch.jit or RecurrentScriptModule is used.
+
+    # print("==================================")
+    # for name, module in model.vae.named_modules():
+    #     print(name, module)
+    # print("==================================")
+
+    # vae_encoder = getattr(model.vae._enc_model, "encoder", None)
+    # if vae_encoder and hasattr(vae_encoder, "down"):
+    #     for i in range(len(vae_encoder.down)):
+    #         group_plan.append((f"vae._enc_model.encoder.down.{i}", False))
+    # else:
+    #     logger.warning("COSMOS-DV encoder does not have `down` attribute.")
+
+    modules = recursive_list_modules(model.vae)
+    print("Modules found:\n", "\n".join(modules))
+
+    for module_path in modules:
+        if "encoder.down" in module_path:
+            group_plan.append((module_path, False))
+        elif "encoder.mid" in module_path:
+            group_plan.append((module_path, False))
 
     logger.info(f"The `group_plan` for FSDP (layer-level granularity):\n{group_plan}")
     return group_plan
+
+
+def recursive_list_modules(module, prefix=""):
+    modules = []
+    if isinstance(module, (torch.nn.Module, torch.jit.RecursiveScriptModule)):
+        modules.append(prefix.strip("."))
+        for name in dir(module):
+            if not name.startswith("_"):
+                try:
+                    child = getattr(module, name)
+                    if isinstance(
+                        child, (torch.nn.Module, torch.jit.RecursiveScriptModule)
+                    ):
+                        modules.extend(
+                            recursive_list_modules(child, prefix=f"{prefix}.{name}")
+                        )
+                except AttributeError:
+                    pass
+    return modules
 
 
 def tp_parallelize(model, tp_mesh, model_args: ModelArgs, distributed_args):

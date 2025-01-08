@@ -43,15 +43,6 @@ python test_vae.py
 ```
 
 
-* For ImageBind
-
-```bash
-pip install ftfy iopath timm einops torchaudio
-pip install pytorchvideo@git+https://github.com/facebookresearch/pytorchvideo.git@28fe037d212663c6a24f373b94cc5d478c8c1a1d
-```
-
-* Move `.env.sample` to `.env` and fill in the necessary information.
-
 
 ## Preliminary Usages
 

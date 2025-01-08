@@ -26,25 +26,26 @@ class LatentVideoVAEArgs:
 
 import torch
 from modules.vae import LatentVideoVAE, LatentVideoVAEArgs
+
 # Test Hunyuan VAE
 
-hunyuan_config = LatentVideoVAEArgs(
-    model_name="Hunyuan",
-    pretrained_model_name_or_path="/jfs/checkpoints/models--tencent--HunyuanVideo/snapshots/2a15b5574ee77888e51ae6f593b2ceed8ce813e5/vae",
-)
-hunyuan_vae = LatentVideoVAE(hunyuan_config).cuda()
+# hunyuan_config = LatentVideoVAEArgs(
+#     model_name="Hunyuan",
+#     pretrained_model_name_or_path="/jfs/checkpoints/models--tencent--HunyuanVideo/snapshots/2a15b5574ee77888e51ae6f593b2ceed8ce813e5/vae",
+# )
+# hunyuan_vae = LatentVideoVAE(hunyuan_config).cuda()
 input_tensor = torch.randn(64, 3, 256, 256).cuda()
-print("Testing Hunyuan VAE", hunyuan_config.pretrained_model_name_or_path)
-print("Input Shape:", input_tensor.shape)
-hunyuan_encoded = hunyuan_vae.encode(input_tensor)
-print("Latent Shape:", hunyuan_encoded.shape)
-hunyuan_reconstructed = hunyuan_vae.decode(hunyuan_encoded)
-print("Reconstructed Shape:", hunyuan_reconstructed.shape)
-hunyuan_output = hunyuan_vae.forward(input_tensor)
-print("Output Shape (Forward Method):", hunyuan_output.shape)
-print("Encoder structure (Hunyuan):\n", hunyuan_vae.vae.encoder)
-print("Decoder structure (Hunyuan):\n", hunyuan_vae.vae.decoder)
-print("==============================\n\n\n")
+# print("Testing Hunyuan VAE", hunyuan_config.pretrained_model_name_or_path)
+# print("Input Shape:", input_tensor.shape)
+# hunyuan_encoded = hunyuan_vae.encode(input_tensor)
+# print("Latent Shape:", hunyuan_encoded.shape)
+# hunyuan_reconstructed = hunyuan_vae.decode(hunyuan_encoded)
+# print("Reconstructed Shape:", hunyuan_reconstructed.shape)
+# hunyuan_output = hunyuan_vae.forward(input_tensor)
+# print("Output Shape (Forward Method):", hunyuan_output.shape)
+# print("Encoder structure (Hunyuan):\n", hunyuan_vae.vae.encoder)
+# print("Decoder structure (Hunyuan):\n", hunyuan_vae.vae.decoder)
+# print("==============================\n\n\n")
 
 # Test COSMOS-DV VAE
 cosmos_dv_config = LatentVideoVAEArgs(
@@ -63,23 +64,23 @@ cosmos_dv_output = cosmos_dv_vae.forward(input_tensor)
 print("Output Shape (Forward Method):", cosmos_dv_output.shape)
 
 print("Encoder structure (COSMOS-DV):\n", cosmos_dv_vae.vae.encoder)
-print("Decoder structure (COSMOS-DV):\n", cosmos_dv_vae.vae.decoder)
+# print("Decoder structure (COSMOS-DV):\n", cosmos_dv_vae.vae.decoder)
 print("==============================\n\n\n")
 
 # Test COSMOS-CV VAE
-cosmos_cv_config = LatentVideoVAEArgs(
-    model_name="COSMOS-CV",
-    pretrained_model_name_or_path="/jfs/checkpoints/cosmos/Cosmos-Tokenizer-CV8x16x16",
-)
-cosmos_cv_vae = LatentVideoVAE(cosmos_cv_config).cuda()
-print("Testing COSMOS-CV VAE", cosmos_cv_config.pretrained_model_name_or_path)
-print("Input Shape:", input_tensor.shape)
-cosmos_cv_encoded = cosmos_cv_vae.encode(input_tensor)
-print("Latent Shape:", cosmos_cv_encoded.shape)
-cosmos_cv_reconstructed = cosmos_cv_vae.decode(cosmos_cv_encoded)
-print("Reconstructed Shape:", cosmos_cv_reconstructed.shape)
-cosmos_cv_output = cosmos_cv_vae.forward(input_tensor)
-print("Output Shape (Forward Method):", cosmos_cv_output.shape)
-print("Encoder structure (COSMOS-CV):\n", cosmos_cv_vae.vae.encoder)
-print("Decoder structure (COSMOS-CV):\n", cosmos_cv_vae.vae.decoder)
-print("==============================")
+# cosmos_cv_config = LatentVideoVAEArgs(
+#     model_name="COSMOS-CV",
+#     pretrained_model_name_or_path="/jfs/checkpoints/cosmos/Cosmos-Tokenizer-CV8x16x16",
+# )
+# cosmos_cv_vae = LatentVideoVAE(cosmos_cv_config).cuda()
+# print("Testing COSMOS-CV VAE", cosmos_cv_config.pretrained_model_name_or_path)
+# print("Input Shape:", input_tensor.shape)
+# cosmos_cv_encoded = cosmos_cv_vae.encode(input_tensor)
+# print("Latent Shape:", cosmos_cv_encoded.shape)
+# cosmos_cv_reconstructed = cosmos_cv_vae.decode(cosmos_cv_encoded)
+# print("Reconstructed Shape:", cosmos_cv_reconstructed.shape)
+# cosmos_cv_output = cosmos_cv_vae.forward(input_tensor)
+# print("Output Shape (Forward Method):", cosmos_cv_output.shape)
+# print("Encoder structure (COSMOS-CV):\n", cosmos_cv_vae.vae.encoder)
+# print("Decoder structure (COSMOS-CV):\n", cosmos_cv_vae.vae.decoder)
+# print("==============================")

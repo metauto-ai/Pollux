@@ -79,7 +79,7 @@ logger = logging.getLogger()
 class TrainArgs:
 
     name: str = "Pollux"
-    version: str = "v0.8"
+    version: str = "v0.8.2"
     train_stage: str = "preliminary"  # Align with `data` configuration
     output_dir: str = "/mnt/data/dump"
     dump_dir: str = ""
@@ -287,8 +287,8 @@ def train(args: TrainArgs):
         model = Pollux(args.model)
         model_param_count = get_num_params(model)
         logger.info(f"Model has been built with {model_param_count} parameters...")
-
         model.init_weights(args.model)
+
         # torch.distributed.barrier()
 
         model = parallelize_model(

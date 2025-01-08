@@ -33,7 +33,10 @@ model:
     text_cfg_ratio: 0.1
     image_cfg_ratio: 0.1
     vae:
-        pretrained_model_name_or_path: '/jfs/checkpoints/models--tencent--HunyuanVideo/snapshots/2a15b5574ee77888e51ae6f593b2ceed8ce813e5/vae'
+        model_name: "COSMOS-DV"
+        pretrained_model_name_or_path: '/jfs/checkpoints/cosmos/Cosmos-Tokenizer-DV8x16x16'
+        # model_name: "Hunyuan"
+        # pretrained_model_name_or_path: '/jfs/checkpoints/models--tencent--HunyuanVideo/snapshots/2a15b5574ee77888e51ae6f593b2ceed8ce813e5/vae'
         enable_tiling: false
         enable_slicing: false
     latent_projector:
@@ -108,10 +111,10 @@ checkpoint:
         keep: 0 # Don't remove the ckpt
 logging:
     freq: 1000
-    wandb:
-        project: Pollux
-        entity: metauto
-        name: ''
+    # wandb:
+    #     project: Pollux
+    #     entity: metauto
+    #     name: ''
 
 env:
     ENABLE_INTRA_NODE_COMM: '0'  # '0' for local machine (otherwise errors happen); '1' for slurmn (need test)
