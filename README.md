@@ -80,7 +80,7 @@ python -m apps.main.test
 ```
 
 ## Pollux Pipeline
-![pollux_0 6](https://github.com/user-attachments/assets/f1731dd1-3cf3-435b-9640-7fe7110d8fe7)
+![pipeline](https://github.com/user-attachments/assets/2289daf0-2639-4bf9-aaaa-e708721fe9e4)
 
 
 ### TODO 
