@@ -84,6 +84,7 @@ def copy_dir(input_dir: str, output_dir: str) -> None:
         f"rsync -arm --copy-links "
         f"--include '**/' "
         f"--include '*.py' "
+        f"--include '.env' "
         f"--exclude='*' "
         f"{input_dir}/ {output_dir}"
     )
@@ -143,7 +144,7 @@ def validate_args(args) -> None:
             )
         else:
             args.anaconda = f"{args.anaconda}/bin/python"
-        assert os.path.isfile(args.anaconda)
+        # assert os.path.isfile(args.anaconda)
 
     args.mem = args.mem or "0"
 
