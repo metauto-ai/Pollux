@@ -30,6 +30,19 @@ pip install pymongo
 pip install python-dotenv
 ```
 
+* Installation of COSMOS TVAE
+```
+cd apps/main/modules/Cosmos-Tokenizer
+pip3 install -e .
+```
+
+* Test the installation of COSMOS VAE
+```
+cd apps/main
+python test_vae.py
+```
+
+
 * For ImageBind
 
 ```bash
