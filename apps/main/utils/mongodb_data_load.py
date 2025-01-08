@@ -6,7 +6,7 @@ from typing import Any
 import time
 import pandas as pd
 
-import tempfile
+import certifi 
 from urllib.parse import quote_plus
 from dotenv import load_dotenv
 from pymongo import MongoClient
@@ -87,7 +87,7 @@ class MongoDBDataLoad(Dataset):
         );
         """
         logging.info("Data partition begins!")
-        client = MongoClient(MONGODB_URI)
+        client = MongoClient(MONGODB_URI, tlsCAFile=certifi.where())
         db = client["world_model"]
         collection = db[self.collection_name]
         self.query.update(

@@ -28,6 +28,7 @@ class StoolArgs:
     mem: str = ""  # The amount of memory to allocate.
     anaconda: str = "default"  # The path to the anaconda environment.
     constraint: str = ""  # The constraint on the nodes.
+    anaconda_zip: str = ""  # The path to the anaconda zip in shared file system.
     exclude: str = ""  # The nodes to exclude.
     time: int = -1  # The time limit of the job (in minutes).
     account: str = ""
@@ -57,9 +58,14 @@ SBATCH_COMMAND = """#!/bin/bash
 #SBATCH --signal=USR2@120
 #SBATCH --distribution=block
 
-# Mimic the effect of "conda init", which doesn't work for scripts
-eval "$({conda_exe} shell.bash hook)"
-source activate {conda_env_path}
+echo "Copying conda env from {conda_zip_path} to {conda_env_path}"
+start_time=$(date +%s)
+rm -rf {conda_env_path} && mkdir -p {conda_env_path} && tar -xzf {conda_zip_path} -C {conda_env_path}
+end_time=$(date +%s)
+elapsed_time=$((end_time - start_time))
+echo "Command execution time: $elapsed_time seconds"
+
+source {conda_exe}
 
 {go_to_code_dir}
 
@@ -78,6 +84,7 @@ def copy_dir(input_dir: str, output_dir: str) -> None:
         f"rsync -arm --copy-links "
         f"--include '**/' "
         f"--include '*.py' "
+        f"--include '.env' "
         f"--exclude='*' "
         f"{input_dir}/ {output_dir}"
     )
@@ -137,7 +144,7 @@ def validate_args(args) -> None:
             )
         else:
             args.anaconda = f"{args.anaconda}/bin/python"
-        assert os.path.isfile(args.anaconda)
+        # assert os.path.isfile(args.anaconda)
 
     args.mem = args.mem or "0"
 
@@ -175,8 +182,8 @@ def launch_job(args: StoolArgs):
     with open(f"{dump_dir}/base_config.yaml", "w") as cfg:
         cfg.write(OmegaConf.to_yaml(args.config))
 
-    conda_exe = os.environ.get("CONDA_EXE", "conda")
     conda_env_path = os.path.dirname(os.path.dirname(args.anaconda))
+    conda_exe = os.path.join(conda_env_path, "bin/activate")
     log_output = (
         "-o $DUMP_DIR/logs/%j/%j_%t.out -e $DUMP_DIR/logs/%j/%j_%t.err"
         if not args.stdout
@@ -200,6 +207,7 @@ def launch_job(args: StoolArgs):
         partition=args.partition,
         conda_exe=conda_exe,
         conda_env_path=conda_env_path,
+        conda_zip_path=args.anaconda_zip,
         log_output=log_output,
         go_to_code_dir=f"cd {dump_dir}/code/" if args.copy_code else "",
     )
