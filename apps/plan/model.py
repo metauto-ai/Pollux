@@ -1,12 +1,16 @@
-# Copyright (c) Meta Platforms, Inc. and affiliates.
-
 from dataclasses import dataclass, field
 from typing import Optional, Tuple, List
 import logging
 import random
+import numpy as np
+from PIL import Image
+import math
+
 import torch
+from einops import rearrange
 from torch import nn
 import torch.nn.functional as F
+from torch.nn.functional import log_softmax
 from torch.distributed._tensor import Replicate, Shard
 from torch.distributed.tensor.parallel import (
     ColwiseParallel,
@@ -15,159 +19,216 @@ from torch.distributed.tensor.parallel import (
     PrepareModuleInput,
     parallelize_module,
 )
+
+from transformers.configuration_utils import PretrainedConfig
+from transformers import (
+    AutoConfig,
+    AutoModelForCausalLM,
+    PreTrainedModel,
+    LlamaConfig,
+    LlamaForCausalLM,
+    LlamaTokenizerFast,
+)
+from transformers.models.llama.modeling_llama import LlamaRMSNorm
+
+
 from apps.main.modules.tokenizer import Tokenizer, TokenizerArgs
 from apps.main.modules.schedulers import RectifiedFlow, SchedulerArgs
-from apps.main.modules.gen_transformer import (
-    GenTransformer,
-    GenTransformerArgs,
-)
-from apps.main.modules.plan_transformer import (
-    PlanTransformer,
-    PlanTransformerArgs,
-)
+from apps.main.modules.vision_tower import VisionTower, VisionTowerArgs
 from apps.main.modules.vae import LatentVideoVAE, LatentVideoVAEArgs
-from apps.main.modules.preprocessing import random_mask_images
+from apps.main.modules.preprocess import random_mask_images
+from apps.main.modules.embedder import LabelEmbedder
+
 
 logger = logging.getLogger()
 
 
 @dataclass
+class LLMArgs:
+    model_name: str
+
+
+@dataclass
+class LatentProjecterArgs:
+    latent_dim: int = 16
+    output_dim: int = 3072
+    patch_size: int = 2
+
+
+@dataclass
 class ModelArgs:
-    gen_transformer: GenTransformerArgs = field(default_factory=GenTransformerArgs)
-    plan_transformer: PlanTransformerArgs = field(default_factory=PlanTransformerArgs)
+
+    vision_tower: VisionTowerArgs = field(default_factory=VisionTowerArgs)
+    latent_projector: LatentProjecterArgs = field(default_factory=LatentProjecterArgs)
+    llm: Optional[LLMArgs] = None
     vae: LatentVideoVAEArgs = field(default_factory=LatentVideoVAEArgs)
-    scheduler: SchedulerArgs = field(default_factory=SchedulerArgs)
-    tokenizer: TokenizerArgs = field(default_factory=TokenizerArgs)
+    use_vision_boi: bool = True
     text_cfg_ratio: float = 0.1
     image_cfg_ratio: float = 0.1
-    mask_patch: int = 16
+    scheduler: SchedulerArgs = field(default_factory=SchedulerArgs)
 
 
 class Pollux(nn.Module):
-    """
-    Latent Diffusion Transformer Model.
-    This model integrates a VAE for latent compression, a transformer for temporal and spatial token mixing,
-    and a custom scheduler for diffusion steps.
-    """
 
-    VERSION: str = "v0.7"
+    VERSION: str = "v0.8.1"
     DESCRIPTION: str = (
-        "Latent Diffusion Transformer for VideoGen: (1) currently we only support class conditional image generation for debugging."
+        "The planning model, basically an MLLM for predicting the long visual latent codes."
     )
 
     def __init__(self, args: ModelArgs):
         super().__init__()
+        self.args = args
 
-        self.compressor = LatentVideoVAE(args.vae)
-        self.scheduler = RectifiedFlow(args.scheduler)
-        self.gen_transformer = GenTransformer(args.gen_transformer)
-        self.tokenizer = Tokenizer(model_path=args.tokenizer.model_path)
+        # vision encoder
+        self.vae = LatentVideoVAE(args.vae)
 
-        assert args.plan_transformer.vocab_size == self.tokenizer.n_words
-
-        self.plan_transformer = PlanTransformer(args.plan_transformer)
-        self.text_seqlen = self.plan_transformer.text_seqlen
-        self.text_cfg_ratio = args.text_cfg_ratio
-        self.image_cfg_ratio = args.image_cfg_ratio
-        self.mask_patch = args.mask_patch
-        self.token_proj = nn.Linear(
-            in_features=args.plan_transformer.dim,
-            out_features=args.gen_transformer.dim,
+        # latent projector
+        self.patch_size = args.latent_projector.patch_size
+        self.latent_projector = nn.Linear(
+            self.patch_size**2 * args.latent_projector.latent_dim,
+            args.latent_projector.output_dim,
             bias=False,
         )
-        init_std = self.plan_transformer.dim ** (-0.5)
-        nn.init.trunc_normal_(
-            self.token_proj.weight,
-            mean=0.0,
-            std=init_std,
-            a=-3 * init_std,
-            b=3 * init_std,
+
+        # vision boi embedding
+        if args.use_vision_boi:
+            self.vision_boi_emb = nn.Parameter(
+                torch.zeros(1, args.latent_projector.output_dim)
+            )
+
+        # llm
+        self.llm_tokenizer = LlamaTokenizerFast.from_pretrained(args.llm.model_name)
+        self.llm = LlamaForCausalLM.from_pretrained(args.llm.model_name)
+        if self.llm_tokenizer.pad_token is None:
+            self.llm_tokenizer.pad_token = self.llm_tokenizer.eos_token
+
+        # head
+        self.latent_head = nn.Linear(
+            args.latent_projector.output_dim,
+            self.patch_size**2 * args.latent_projector.latent_dim,
         )
 
-    def cap_pos_tokenize(self, batch: dict[str:any]) -> dict[str:any]:
-        batch["cap_token"] = [
-            self.tokenizer.encode(x, bos=True, eos=False) for x in batch["caption"]
-        ]
-        pad_id = self.tokenizer.pad_id
-        bsz = len(batch["cap_token"])
-        tokens = torch.full(
-            (bsz, self.plan_transformer.text_seqlen),
-            pad_id,
-            dtype=torch.long,
-        ).cuda()
-        for k, t in enumerate(batch["cap_token"]):
-            if len(t) < tokens.size(1):
-                tokens[k, : len(t)] = torch.tensor(
-                    t[:], dtype=torch.long, device="cuda"
-                )
-            else:
-                tokens[k, :] = torch.tensor(
-                    t[: tokens.size(1)], dtype=torch.long, device="cuda"
-                )
-        batch["cap_token"] = tokens
-        return batch
+    def patchify_and_embed(self, x: torch.Tensor):
+        pH = pW = self.patch_size
+        B, C, H, W = x.size()
+        x = x.view(B, C, H // pH, pH, W // pW, pW).permute(0, 2, 4, 1, 3, 5).flatten(3)
+        x = self.latent_projector(x)
+        x = x.flatten(1, 2)  # [B, H/16*W/16, D]
+        return x, H, W
 
-    def cap_neg_tokenize(self, batch: dict[str:any]) -> dict[str:any]:
-        bsz = len(batch["caption"])
-        pad_id = self.tokenizer.pad_id
-        tokens = torch.full(
-            (bsz, self.plan_transformer.text_seqlen),
-            pad_id,
-            dtype=torch.long,
-        ).cuda()
-        batch["cap_token"] = tokens
-        return batch
+    def unpatchify_image(self, x: torch.Tensor, H: int, W: int) -> torch.Tensor:
+        B = x.size(0)
+        pH = pW = self.patch_size
+        x = x.view(B, H // pH, W // pW, pH, pW, -1)
+        x = x.permute(0, 5, 1, 3, 2, 4).flatten(4, 5).flatten(2, 3)  # [B,16,H/8,W/8]
+        return x
 
-    def cap_tokenize(self, batch: dict[str:any]) -> torch.Tensor:
-        if random.random() > self.text_cfg_ratio:
-            return self.cap_pos_tokenize(batch)
+    def process_mask(
+        self, input_ids, images_embs, mask_strategy: str, random_rate: float = 0.15
+    ) -> torch.Tensor:
+
+        text_seq_len = input_ids.shape[1]
+        visual_seq_len = images_embs.shape[1]
+
+        if mask_strategy == "full_mask":
+            attention_mask = torch.cat(
+                [
+                    torch.ones(
+                        (input_ids.shape[0], text_seq_len), device=input_ids.device
+                    ),
+                    torch.zeros(
+                        (input_ids.shape[0], visual_seq_len), device=input_ids.device
+                    ),
+                ],
+                dim=1,
+            )
+        elif mask_strategy == "random_mask":
+            random_mask = (
+                torch.rand(
+                    (input_ids.shape[0], visual_seq_len), device=input_ids.device
+                )
+                < random_rate
+            )
+            attention_mask = torch.cat(
+                [
+                    torch.ones(
+                        (input_ids.shape[0], text_seq_len), device=input_ids.device
+                    ),
+                    (~random_mask).float(),
+                ],
+                dim=1,
+            )
         else:
-            return self.cap_neg_tokenize(batch)
+            raise ValueError(f"Invalid mask strategy: {mask_strategy}")
 
-    def forward(self, batch: dict[str:any]) -> dict[str:any]:
+        return attention_mask
 
-        image = batch["image"]
-        batch = self.cap_tokenize(batch)
+    def forward(
+        self,
+        batch: dict[str, any],
+        mask_strategy: str = "random_mask",
+        random_rate: float = 0.3,
+    ) -> Tuple[dict[str, any], torch.Tensor]:
 
-        mask, masked_image = random_mask_images(
-            image,
-            mask_ratio=random.random(),
-            mask_patch=self.mask_patch,
-            mask_all=random.random() < self.image_cfg_ratio,
+        images = batch["image"]  # Shape: [B, C, H, W]
+        captions = batch["caption"]
+
+        # vision vae
+        vae_latent = self.vae.encode(images)  # [B,16,H/8,W/8]
+        vae_embed, H_, W_ = self.patchify_and_embed(vae_latent)  # [B,H/16*W/16,D]
+
+        # text embed
+        input_ids = self.llm_tokenizer(
+            captions, padding=True, truncation=True, return_tensors="pt"
+        )["input_ids"].to(self.llm.device)
+        text_embs = self.llm.get_input_embeddings()(input_ids)  # [B,T,D]
+
+        # concate embeddings
+        boi_embs = self.vision_boi_emb.unsqueeze(0).expand(vae_embed.size(0), -1, -1)
+        mm_embs = torch.cat(
+            [text_embs, boi_embs, vae_embed], dim=1
+        )  # multi-modal embeddings
+        vae_start_idx = text_embs.size(1) + 1
+
+        # llm forward
+        output = self.llm(
+            inputs_embeds=mm_embs,
+            # attention_mask=attention_mask,
+            output_hidden_states=True,
+            # labels=input_ids,
+            return_dict=True,
         )
 
-        latent_masked_code = self.compressor.encode(masked_image)
+        # latent head
+        latent_hidden = output.hidden_states[-1][:, vae_start_idx:, :]  # [B,M,D]
+        pred_latent = self.latent_head(latent_hidden)
+        pred_latent = self.unpatchify_image(pred_latent, H_, W_)  # [B,16,H/8,W/8]
 
-        _, c, h, w = latent_masked_code.size()
-        resized_mask = F.interpolate(mask, size=(h, w), mode="nearest")
-        resized_mask = torch.cat([resized_mask] * c, dim=1)
-        batch["masked_latent"] = torch.cat([latent_masked_code, resized_mask], dim=1)
-        conditional_signal, layout = self.plan_transformer(batch)
+        # compute loss
+        pred_loss = F.mse_loss(pred_latent, vae_latent)
 
-        latent_code = self.compressor.encode(image)
-        conditional_signal = self.token_proj(conditional_signal)
-        noised_x, t, target = self.scheduler.sample_noised_input(latent_code)
-        output = self.gen_transformer(
-            x=noised_x, time_steps=t, condition=conditional_signal, layout=layout
-        )
-        batch["prediction"] = output
-        batch["target"] = target
-        target = target.to(output.dtype)
-        loss = F.mse_loss(output, target)
-
-        return batch, loss
+        # batch["latent_target"] = latent_target
+        # batch["pred_latent"] = pred_latent
+        return batch, pred_loss
 
     def set_train(self):
-        self.plan_transformer.train()
-        self.gen_transformer.train()
+        self.latent_projector.train()
 
     def set_eval(self):
-        self.plan_transformer.eval()
-        self.gen_transformer.eval()
+        self.latent_projector.eval()
 
     def init_weights(self, args: ModelArgs):
-        self.gen_transformer.init_weights(args.gen_transformer.pre_trained_path)
-        self.plan_transformer.init_weights(args.plan_transformer.pre_trained_path)
+
+        if args.llm and args.llm.model_name:
+            pretrained_state_dict = LlamaForCausalLM.from_pretrained(
+                args.llm.model_name
+            ).state_dict()
+            self.llm.load_state_dict(pretrained_state_dict)
+
+        nn.init.xavier_uniform_(self.latent_projector.weight)
+        nn.init.normal_(self.vision_boi_emb, mean=0.0, std=0.02)
+        nn.init.xavier_uniform_(self.latent_head.weight)
+        nn.init.zeros_(self.latent_head.bias)
 
 
 # Optional policy for activation checkpointing. With None, we stick to the default (defined distributed.py: default_no_recompute_ops)
@@ -175,83 +236,71 @@ def get_no_recompute_ops():
     return None
 
 
-# Optional and only used for fully shard options (fsdp) is choose. Highly recommanded for large models
-def build_fsdp_grouping_plan(model_args: ModelArgs, vae_config: dict):
-    group_plan: Tuple[int, bool] = []
+def build_fsdp_grouping_plan(model_args: ModelArgs, model: nn.Module):
+    group_plan = []
+    logger.info("\nModel structure:")
+    for name, module in model.named_modules():
+        logger.info(f"- {name}: {module.__class__.__name__}")
 
-    for i in range(len(vae_config.down_block_types)):
-        group_plan.append((f"compressor.vae.encoder.down_blocks.{i}", False))
+    # vision_transformer = getattr(model.vision_tower, "vision_tower", None)
 
-    for i in range(model_args.plan_transformer.n_layers):
-        group_plan.append((f"plan_transformer.layers.{i}", False))
+    # logger.info("VisionTransformer has `blocks` attribute. Building group plan...")
+    # for idx, block in enumerate(vision_transformer.blocks):
+    #     group_plan.append((f"vision_tower.vision_tower.blocks.{idx}", True))
 
-    for i in range(model_args.gen_transformer.n_layers):
-        group_plan.append((f"gen_transformer.layers.{i}", False))
+    # group_plan.append(("latent_projector", False))
 
-    group_plan.append(("gen_transformer.img_output", True))
-    logger.info(f"The `group_plan` for fsdp is:\n{group_plan}")
+    llama_model = getattr(model, "llm", None)
+    if llama_model and hasattr(llama_model, "model"):
+        logger.info("LlamaForCausalLM has `model` attribute. Building group plan...")
+        for idx, block in enumerate(llama_model.model.layers):
+            group_plan.append((f"llm.model.layers.{idx}", False))
 
+    vae_encoder = getattr(model.vae.vae.encoder, "down_blocks", None)
+    if vae_encoder:
+        for i in range(len(vae_encoder)):
+            group_plan.append((f"vae.vae.encoder.down_blocks.{i}", False))
+    else:
+        logger.warning("VAE encoder does not have `down_blocks` attribute.")
+
+    logger.info(f"The `group_plan` for FSDP (layer-level granularity):\n{group_plan}")
     return group_plan
 
 
 def tp_parallelize(model, tp_mesh, model_args: ModelArgs, distributed_args):
+    projecter_plan = {
+        "latent_projector": RowwiseParallel(output_layouts=Shard(1)),
+    }
+    parallelize_module(model, tp_mesh, projecter_plan)
+    logger.info("`latent_projector` parallelized.")
 
-    assert model_args.plan_transformer.dim % distributed_args.tp_size == 0
-    assert model_args.plan_transformer.vocab_size % distributed_args.tp_size == 0
-    assert model_args.plan_transformer.n_heads % distributed_args.tp_size == 0
-    assert (model_args.plan_transformer.n_kv_heads or 0) % distributed_args.tp_size == 0
-    assert model_args.plan_transformer.n_heads % (model_args.n_kv_heads or 1) == 0
+    if hasattr(model, "llm") and model.llm is not None:
+        llama_plan = {
+            # Attention components
+            "model.layers.*.self_attn.q_proj": ColwiseParallel(
+                input_layouts=Replicate(), output_layouts=Shard(1)
+            ),
+            "model.layers.*.self_attn.k_proj": ColwiseParallel(
+                input_layouts=Replicate(), output_layouts=Shard(1)
+            ),
+            "model.layers.*.self_attn.v_proj": ColwiseParallel(
+                input_layouts=Replicate(), output_layouts=Shard(1)
+            ),
+            "model.layers.*.self_attn.o_proj": RowwiseParallel(output_layouts=Shard(1)),
+            # MLP components
+            "model.layers.*.mlp.gate_proj": ColwiseParallel(),
+            "model.layers.*.mlp.up_proj": ColwiseParallel(),
+            "model.layers.*.mlp.down_proj": RowwiseParallel(output_layouts=Shard(1)),
+        }
 
-    assert model_args.gen_transformer.dim % distributed_args.tp_size == 0
-    assert model_args.gen_transformer.vocab_size % distributed_args.tp_size == 0
-    assert model_args.gen_transformer.n_heads % distributed_args.tp_size == 0
-    assert (model_args.gen_transformer.n_kv_heads or 0) % distributed_args.tp_size == 0
-    assert model_args.gen_transformer.n_heads % (model_args.n_kv_heads or 1) == 0
+        # Apply the parallelization plan to LlamaForCausalLM
+        parallelize_module(model.llm, tp_mesh, llama_plan)
+        for layer in model.llm.model.layers:
+            layer.self_attn.num_heads //= distributed_args.tp_size
+            layer.self_attn.head_dim //= distributed_args.tp_size
 
-    main_plan = {}
-    main_plan["norm"] = SequenceParallel()
-    main_plan["img_output"] = ColwiseParallel(
-        input_layouts=Shard(1), output_layouts=Replicate()
-    )
-
-    parallelize_module(
-        model.gen_transformer,
-        tp_mesh,
-        main_plan,
-    )
-
-    # TODO: Adding plan_transformer Modules
-    for layer in model.gen_transformer.layers:
-        layer_plan = {}
-
-        layer_plan["attention"] = PrepareModuleInput(
-            input_layouts=(Shard(1), None),
-            desired_input_layouts=(Replicate(), None),
-        )
-        layer_plan["attention_norm"] = SequenceParallel()
-        layer_plan["attention.wq"] = ColwiseParallel()
-        layer_plan["attention.wk"] = ColwiseParallel()
-        layer_plan["attention.wv"] = ColwiseParallel()
-        layer_plan["attention.wo"] = RowwiseParallel(output_layouts=Shard(1))
-
-        # Feedforward layers TP
-        # Feedforward layers TP
-        layer_plan["feed_forward"] = PrepareModuleInput(
-            input_layouts=(Shard(1),),
-            desired_input_layouts=(Replicate(),),
-        )
-        layer_plan["ffn_norm"] = SequenceParallel()
-        layer_plan["feed_forward.w1"] = ColwiseParallel()
-        layer_plan["feed_forward.w3"] = ColwiseParallel()
-        layer_plan["feed_forward.w2"] = RowwiseParallel(output_layouts=Shard(1))
-
-        parallelize_module(
-            layer,
-            tp_mesh,
-            layer_plan,
+        logger.info(
+            f"LlamaForCausalLM layers parallelized with TP size {distributed_args.tp_size}"
         )
 
-        # Adjusting the number of heads and kv heads according to the tp size
-        attn_layer = layer.attention
-        attn_layer.n_heads = attn_layer.n_heads // distributed_args.tp_size
-        attn_layer.n_kv_heads = attn_layer.n_kv_heads // distributed_args.tp_size
+    logger.info("Tensor Parallelization complete.")

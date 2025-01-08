@@ -13,6 +13,8 @@ from apps.main.model import ModelArgs, Pollux
 from dotenv import load_dotenv
 from apps.main.data import AutoDataLoader, DataArgs
 import torch
+from apps.main.data import DataLoaderArgs
+from apps.main.utils.mongodb_data_load import DictTensorBatchIterator
 
 # Configure logging
 logging.basicConfig(
@@ -22,18 +24,34 @@ logging.basicConfig(
 )
 
 if __name__ == "__main__":
+    dataloader_arg = DataLoaderArgs(
+        batch_size=1,
+        num_workers=16,
+        seed=1024,
+        shuffle=False,
+        pin_memory=True,
+        drop_last=True,
+    )
+
     data_config_dict = {
         "data": {
             "preliminary": {
-                "cc12m_llama3bf128_hunyuanr256_test1m": {
+                "cc12m_l3bf128_hr256": {
                     "use": True,
-                    "data_name": "cc12m_llama3bf128_hunyuanr256_test1m",
-                    "batch_size": 36,
-                    "num_workers": 0,
+                    "data_name": "cc12m_l3bf128_hr256",
                     "source": "mongodb",
                     "task": "text_to_image",
                     "retries": 3,
                     "partition_key": "partition_key",
+                    "extract_field": {
+                        "parquet_size": "sample_num",
+                        "parquet_path": "path",
+                    },
+                    "mapping_field": {
+                        "HunyuanVideo_latent_code": "latent_code",
+                        "LLAMA3_3B_text_embedding": "text_embedding",
+                    },
+                    "dataloader": dataloader_arg,
                 }
             }
         }
@@ -44,12 +62,13 @@ if __name__ == "__main__":
             stage=stage,
             use=config["use"],
             data_name=config["data_name"],
-            batch_size=config["batch_size"],
-            num_workers=config["num_workers"],
             source=config["source"],
             task=config["task"],
             retries=config["retries"],
             partition_key=config["partition_key"],
+            extract_field=config["extract_field"],
+            mapping_field=config["mapping_field"],
+            dataloader=config["dataloader"],
         )
         for stage, datasets in data_config_dict["data"].items()
         for dataset_name, config in datasets.items()
@@ -65,13 +84,27 @@ if __name__ == "__main__":
     data_loader, _ = data_loader_factory.create_dataloader()
     print(len(data_loader))
     print(len(data_loader_factory.dataset))
-    for batch in data_loader:
-        for key, value in batch.items():
-            if isinstance(value, torch.Tensor):
-                print(key, value.size())
-            else:
-                print(key, len(value))
-            # print(key, value.size())
-        break
+    count = 0
+    import time
+
+    start_times = time.time()
+    for idx, batch in enumerate(data_loader):
+        logging.info(f"step {count}")
+        # print(key, value.size())
         # Forward pass
         # model(batch)
+        # for key, value in batch.items():
+        # print(key, value.size())
+        iterrator = iter(DictTensorBatchIterator(batch, 64))
+        while True:
+            try:
+                b = next(iterrator)
+                for key, value in b.items():
+                    print(key, value.size())
+                count += 1
+            except Exception as e:
+                logging.info(f"Error: {e}")
+                break
+        if count > 1000:
+            break
+    logging.info(f"Time: {time.time() - start_times}")

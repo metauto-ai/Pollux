@@ -1,11 +1,10 @@
-# torchrun --standalone --nnodes 1 --nproc-per-node 4 -m apps.main.train config=apps/main/configs/train.yaml
+# torchrun --standalone --nnodes 1 --nproc-per-node 8 -m apps.gen_tran.train config=apps/gen_tran/configs/train.yaml
 
 # Set up single experiment
 version: v0.7
 # From now on, start to align train, data, and model setting with train stage (just finish refactor for dara)
 train_stage: preliminary # options: preliminary, pretraining, posttraining; aligned with data setting
-# name: Pollux_v0.7_gen_transformer_preliminary # used for local dump and wandb log
-name: Pollux_v0.7_MongoDB_ImageNet-1k_Distributed_Data_Test
+name: Pollux_v0.7_gen_transformer_preliminary # used for local dump and wandb log
 output_dir: /jfs/checkpoints/dump
 dump_dir: '' # No need now
 steps: 1000000
@@ -18,9 +17,9 @@ optim:
     weight_decay: 0.01
 
 distributed:
-    gpus: 0,1
+    gpus: 0,1,2,3,4,5,6,7
     fsdp_type: full_shard
-    dp_shard: 4
+    dp_shard: 8
     dp_replicate: 1
     compile: false
     model_dtype: bf16 # options: `fb8` is only supported by H100
@@ -82,7 +81,6 @@ model:
         pre_trained_path: /jfs/checkpoints/Llama-3.2-1B/original/consolidated.00.pth
         attn_type: bi_causal
         norm_eps: 1e-5
-        text_only: True
     tokenizer:
         model_path: /jfs/checkpoints/Llama-3.2-1B/original/tokenizer.model
 
@@ -90,52 +88,63 @@ data:
   - stage: preliminary
     id: 0
     task: class_to_image
-    data_name: ILSVRC/imagenet-1k
-    source: huggingface
-    batch_size: 48 #96
-    image_size: 256
-    num_workers: 8
-    split: train
-    root_dir: /jfs/data
-    cache_dir: /jfs/data/imagenet-1k
-    use: False
-
-  - stage: preliminary
-    id: 1
-    task: class_to_image
     data_name: imagenet-1k
     source: mongodb
-    batch_size: 48 #96
     image_size: 256
-    num_workers: 8
     split: train
+    partition_key: 'key'
     use: True
-
-
+    dataloader:
+        prefetch_factor: 2
+        batch_size: 64
+        num_workers: 16
+        seed: 1024
+        shuffle: True # this may lead more time for initial dataloader
+        pin_memory: True
+        drop_last: True
+  
   - stage: preliminary
-    id: 2
-    task: class_to_image
-    data_name: dummy
-    source: local
-    batch_size: 12
-    image_size: 256
-    num_workers: 8
-    split: train
-    root_dir: /jfs/data
-    cache_dir: ''
-    use: False
-
-  - stage: pretraining
-    id: 0
-    task: image_generation
-    data_name: NucluesIMG-100M
+    id: 1
+    data_name: cc12m
+    task: text_to_image
     source: mongodb
-    batch_size: 12
     image_size: 256
-    num_workers: 8
-    mongo_uri: mongodb://localhost:27017
+    partition_key: 'key'
+    retries: 3
+    extract_field:
+        "s3url": "image"
     use: False
-
+    dataloader:
+        prefetch_factor: 2
+        batch_size: 64
+        num_workers: 16
+        seed: 1024
+        shuffle: True # this may lead more time for initial dataloader
+        pin_memory: True
+        drop_last: True
+  
+  
+  - stage: preliminary
+    id: 1
+    data_name: cc12m_llama3bf128_hunyuanr256_test1m
+    task: latent_text_to_image
+    source: mongodb
+    partition_key: 'partition_key'
+    retries: 3
+    extract_field:
+        "parquet_size": "sample_num"
+        "parquet_path": "path"
+    mapping_field:
+        "HunyuanVideo_latent_code": "latent_code"
+        "LLAMA3_3B_text_embedding": "text_embedding"
+    use: False
+    dataloader:
+        batch_size: 64
+        num_workers: 0
+        seed: 1024
+        shuffle: False
+        pin_memory: False
+        drop_last: True
 
 profiling:
     run: true
@@ -150,10 +159,10 @@ checkpoint:
 
 logging:
     freq: 100
-    # wandb:
-    #     project: Pollux
-    #     entity: metauto
-    #     name: ''
+    wandb:
+        project: Pollux
+        entity: metauto
+        name: ''
 
 env:
     ENABLE_INTRA_NODE_COMM: '0'  # '0' for local machine (otherwise errors happen); '1' for slurmn (need test)

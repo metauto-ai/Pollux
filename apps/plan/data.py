@@ -17,14 +17,14 @@ import torch
 from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms
 
-
-from apps.main.modules.preprocessing import ImageProcessing
+from apps.main.modules.preprocess import ImageProcessing
 from apps.main.utils.hf_data_load import HFDataLoad
 from apps.main.utils.dummy_data_load import DummyDataLoad
 from apps.main.utils.mongodb_data_load import (
     MongoDBDataLoad,
     MongoDBImageNetDataLoad,
     MongoDBCC12MDataLoad,
+    MongoDBParquetDataLoad,
 )
 from apps.main.utils.sampler import StatefulDistributedSampler
 
@@ -39,12 +39,12 @@ Deterministic distributed dataloader
     if each dataloader worker should apply different transform randomly,
     set  seed + workder_id
 """
+
+
 def worker_init(workder_id, seed):
     torch.manual_seed(seed)  # + worker_id)
     np.random.seed(seed)  # + worker_id)
     random.seed(seed)  # + worker_id)
-
-
 
 
 @dataclass
@@ -70,6 +70,8 @@ class DataArgs:
     )  # MongoDB query  # MongoDB query
     retries: Optional[int] = 3  # Number of retries for MongoDB connection
     use: bool = False  # Whether to use this dataset
+    partition_key: str = "key"  # MongoDB partition key
+    prefetch_factor: int = 2  # Prefetch factor for dataloader
 
 
 class AutoDataLoader:
@@ -78,10 +80,9 @@ class AutoDataLoader:
         shard_id: int,
         num_shards: int,
         train_stage: str,
-        init_signal_handler: bool,
         data_config: List[DataArgs],
         # * following args should only be used by dataloader and sampler
-        shuffle: Optional[bool] = True,
+        shuffle: Optional[bool] = False,
         pin_memory: Optional[bool] = True,
         drop_last: Optional[bool] = True,
         seed: Optional[int] = 1024,
@@ -91,7 +92,6 @@ class AutoDataLoader:
         self.num_shards = num_shards
         self.train_stage = train_stage
         self.data_config = data_config
-        self.init_signal_handler = init_signal_handler
         # * used by dataloader and sampler
         self.shuffle = shuffle
         self.pin_memory = pin_memory
@@ -118,7 +118,6 @@ class AutoDataLoader:
                 # NOTE: we need to through the error to the upper level if the dataloader is failed to load
                 logger.error(f"Error initializing dataloader: {str(e)}")
                 raise
-
 
         raise ValueError(
             f"No dataset configured for stage {self.train_stage} with `use: True`."
@@ -162,8 +161,8 @@ class AutoDataLoader:
                 num_shards=self.num_shards,
                 shard_idx=self.shard_id,
                 collection_name=args.data_name,
-                init_signal_handler=self.init_signal_handler,
                 temporal_cache_name=args.data_name,
+                partition_key=args.partition_key,
                 args=args,
             )
         elif args.data_name == "cc12m":
@@ -173,11 +172,28 @@ class AutoDataLoader:
                 shard_idx=self.shard_id,
                 num_shards=self.num_shards,
                 temporal_cache_name=args.data_name,
-                init_signal_handler=self.init_signal_handler,
                 extract_field={
                     "s3url": "image",
                 },
+                partition_key=args.partition_key,
                 args=args,
+            )
+        elif args.data_name == "cc12m_llama3bf128_hunyuanr256_test1m":
+            dataset = MongoDBParquetDataLoad(
+                collection_name=args.data_name,
+                query=args.query,
+                shard_idx=self.shard_id,
+                num_shards=self.num_shards,
+                temporal_cache_name=args.data_name,
+                extract_field={
+                    "parquet_size": "sample_num",
+                    "parquet_path": "path",
+                },
+                mapping_field={
+                    "HunyuanVideo_latent_code": "latent_code",
+                    "LLAMA3_3B_text_embedding": "text_embedding",
+                },
+                partition_key=args.partition_key,
             )
         else:
             dataset = MongoDBDataLoad(
@@ -186,11 +202,12 @@ class AutoDataLoader:
                 shard_idx=self.shard_id,
                 num_shards=self.num_shards,
                 temporal_cache_name=args.data_name,
-                init_signal_handler=self.init_signal_handler,
+                partition_key=args.partition_key,
             )
 
-        dataset.set_local_cache()
-        dataset.set_sharding()
+        dataset.set_local_partition()
+        if hasattr(dataset, "set_mapping"):
+            dataset.set_mapping()
         self.dataset = dataset
         return self._warp_dataloader_with_stateful_sampler(args, dataset)
 
@@ -213,6 +230,8 @@ class AutoDataLoader:
                 drop_last=self.drop_last,
                 pin_memory=self.pin_memory,
                 num_workers=args.num_workers,
+                persistent_workers=True if args.num_workers > 0 else False,
+                prefetch_factor=args.prefetch_factor if args.num_workers > 0 else None,
             ),
             sampler,
         )

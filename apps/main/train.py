@@ -7,7 +7,6 @@ import os
 import sys
 import time
 
-
 from omegaconf import OmegaConf
 
 cli_args = OmegaConf.from_cli()
@@ -30,7 +29,7 @@ from pathlib import Path
 from timeit import default_timer as timer
 from typing import Any, Dict, List, Optional
 
-from apps.main.utils.sampler import StatefulDistributedSampler
+
 from lingua.args import dump_config, flatten_dict, dataclass_from_dict
 from lingua.checkpoint import CheckpointArgs, CheckpointManager, load_from_checkpoint
 from lingua.distributed import (
@@ -41,6 +40,7 @@ from lingua.distributed import (
     get_device_mesh,
     get_is_master,
     get_world_size,
+    get_local_rank,
     parallelize_model,
     setup_env,
     setup_torch_distributed,
@@ -59,22 +59,22 @@ from lingua.profiling import ProfilerArgs, maybe_run_profiler
 
 from apps.main.data import AutoDataLoader, DataArgs
 from apps.main.modules.schedulers import SchedulerArgs
-from apps.main.utils.cal_flops import get_num_flop_per_token
-from apps.gen_tran.model import (
+from apps.main.utils.sampler import StatefulDistributedSampler
+from apps.main.model import (
     Pollux,
-    LatentPollux,
     ModelArgs,
-    build_fsdp_grouping_plan_latent_pollux,
-    build_fsdp_grouping_plan_pollux,
+    build_fsdp_grouping_plan,
     tp_parallelize,
     get_no_recompute_ops,
 )
-from apps.main.data import DictTensorBatchIterator
+
 from apps.main.eval import (
     launch_eval,
     EVAL_FOLDER_NAME,
     EvalArgs,
 )
+
+from apps.main.utils.cal_flops import get_num_flop_per_token
 
 logger = logging.getLogger()
 
@@ -88,11 +88,12 @@ class TrainArgs:
     output_dir: str = "/mnt/data/dump"
     dump_dir: str = ""
     seed: int = 42
+    # shuffle: bool = False  # NOTE: detect the step = 0 to shuffle otherwise not shuffle
 
     # Number of gradient accumulation steps
     # Total batch size is batch_size*grad_acc_steps
     grad_acc_steps: int = 1
-    # gc_collect_freq: int = 1000
+    gc_collect_freq: int = 1000
     probe_freq: Optional[int] = None
 
     # Nb optimizer steps to take
@@ -123,6 +124,7 @@ class TrainState(Stateful):
 
     def state_dict(self) -> Dict[str, Any]:
         return {
+            # "epoch": self.sampler.epoch,
             "step": self.step,
             "acc_step": self.acc_step,
             "sampler": self.sampler.state_dict(self.step),
@@ -132,10 +134,26 @@ class TrainState(Stateful):
     def load_state_dict(self, state_dict):
         self.step = state_dict["step"]
         self.acc_step = state_dict["acc_step"]
-        self.sampler.load_state_dict(state_dict["sampler"])
+
+        # NOTE: the first time of training the sampler will be loaded with the start_index of 0
+        if "sampler" in state_dict:
+            if self.sampler is not None:
+                self.sampler.load_state_dict(state_dict["sampler"])
+            else:
+                logger.warning(
+                    "Sampler exists in state_dict but no sampler initialized in TrainState."
+                )
+
+        elif self.sampler is not None:
+            logger.warning(
+                "Sampler does not exist in state_dict but sampler initialized in TrainState."
+            )
+            self.sampler.reset()
+
         self.scheduler.load_state_dict(state_dict["scheduler"])
+        self.sampler.set_epoch(state_dict["epoch"])
         logger.info(
-            f"Resume training with distributed sampler state to {self.sampler.start_index} local step."
+            f"Resume training with distributed sampler state to Epoch: {self.sampler.epoch} at data item index: {self.sampler.start_index}."
         )
         logger.info(
             "TrainState is loading state_dict: step, acc-step, sampler, scheduler are loaded."
@@ -248,6 +266,11 @@ def every_n_steps(train_state, freq, acc_step=None, acc_freq=None):
     return test
 
 
+# def save_sampler_state(train_state, logger, reason: str = ""):
+#     train_state.sampler.save_state(train_state.step)
+#     logger.info(f"Sampler state saved at step {train_state.step} ({reason})")
+
+
 def train(args: TrainArgs):
     with ExitStack() as context_stack:
         validate_train_args(
@@ -278,16 +301,8 @@ def train(args: TrainArgs):
 
         torch.manual_seed(args.seed)
         logger.info("Building model")
-        if args.model.type == "latent_pollux":
-            model = LatentPollux(args.model)
-            fsdp_plan = build_fsdp_grouping_plan_latent_pollux(args.model)
-        elif args.model.type == "pollux":
-            model = Pollux(args.model)
-            fsdp_plan = build_fsdp_grouping_plan_pollux(
-                args.model, model.compressor.vae.config
-            )
-        else:
-            raise ValueError(f"Unsupported model type: {args.model.type}")
+
+        model = Pollux(args.model)
         logger.info("Model is built !")
 
         model_param_count = get_num_params(model)
@@ -299,7 +314,9 @@ def train(args: TrainArgs):
             world_mesh,
             args.model,
             args.distributed,
-            fsdp_grouping_plan=fsdp_plan,
+            fsdp_grouping_plan=build_fsdp_grouping_plan(
+                args.model, model.compressor.vae.config
+            ),
             tp_parallelize=tp_parallelize,
             no_recompute_ops=get_no_recompute_ops(),
         )
@@ -326,10 +343,10 @@ def train(args: TrainArgs):
             data_config=active_data,  # Pass the filtered data configuration
         )
         data_loader, sampler = data_loader_factory.create_dataloader()
-        logger.info("Data loader is built !")
-        logger.info(f"Data loader size: {len(data_loader)}")
+
         # build optimizer after apply parallelisms to the model
         optimizer, scheduler = build_optimizer(model, args.optim, args.steps)
+
         train_state = TrainState(
             step=0,
             acc_step=0,
@@ -362,39 +379,35 @@ def train(args: TrainArgs):
             train_state.acc_step += 1
             train_state.acc_step = train_state.acc_step % args.grad_acc_steps
 
+            # NOTE: trigger 1 to save the state of the sampler
+            # if train_state.step % 1000 == 0:
+            #     save_sampler_state(train_state, logger, reason="Periodic Save")
+
             # get batch
             curr_lr = float(optimizer.param_groups[0]["lr"])
             data_load_start = timer()
             try:
-                batch = next(parquet_iterator)
+                batch = next(dataloader_iterator)
             except:
-                try:
-                    batch = next(dataloader_iterator)
-                except:
-                    logger.info("New Epoch!")
-                    sampler.reset()
-                    dataloader_iterator = iter(data_loader)
-                    batch = next(dataloader_iterator)
-                parquet_iterator = DictTensorBatchIterator(
-                    batch, active_data[0].dataloader.batch_size
-                )
-                batch = next(parquet_iterator)
-            # if every_n_steps(train_state, args.gc_collect_freq, acc_step=0):
-            #     logger.info("garbage collection")
-            #     # we do garbage collection manually otherwise different processes
-            #     # run the GC at different times so they slow down the whole pipeline
-            #     gc.collect()
-            if args.model.type == "latent_pollux":
-                batch["latent_code"] = batch["latent_code"].cuda()
-                batch["text_embedding"] = batch["text_embedding"].cuda()
-                data_load_time = round(timer() - data_load_start, 4)
-                nwords_since_last_log += batch["latent_code"].numel()
-            elif args.model.type == "pollux":
-                batch["image"] = batch["image"].cuda()
-                data_load_time = round(timer() - data_load_start, 4)
-                nwords_since_last_log += batch["image"].numel()
-            else:
-                raise ValueError(f"Unsupported model type: {args.model.type}")
+                logger.info("New Epoch!")
+                sampler.reset()
+
+                # NOTE: trigger 2 to save the state of the sampler
+                # save_sampler_state(train_state, logger, reason="Epoch Reset")
+                # * sampler need to keep track of the exact epoch
+                sampler.epoch += 1
+                dataloader_iterator = iter(data_loader)
+                batch = next(dataloader_iterator)
+
+            if every_n_steps(train_state, args.gc_collect_freq, acc_step=0):
+                logger.info("garbage collection")
+                # we do garbage collection manually otherwise different processes
+                # run the GC at different times so they slow down the whole pipeline
+                gc.collect()
+            batch["image"] = batch["image"].cuda()
+            data_load_time = round(timer() - data_load_start, 4)
+            nwords_since_last_log += batch["image"].numel()
+
             # forward
             start_timer = torch.cuda.Event(enable_timing=True)
             end_timer = torch.cuda.Event(enable_timing=True)
@@ -452,7 +465,7 @@ def train(args: TrainArgs):
                     args.grad_acc_steps * train_state.step + train_state.acc_step
                 )
                 # TODO: here need to rewrite in later when we have multiple source
-                tokens_per_gpu = total_acc_steps * active_data[0].dataloader.batch_size
+                tokens_per_gpu = total_acc_steps * active_data[0].batch_size
                 total_tokens = dp_degree * tokens_per_gpu
                 # This is an estimate and the correct values may change
                 # if you change the architecture
@@ -559,6 +572,8 @@ def train(args: TrainArgs):
                         args,
                         device_mesh=world_mesh,
                     )
+                # NOTE: trigger 3 to save the state of the sampler
+                # save_sampler_state(train_state, logger, reason="Preemption")
                 requeue_slurm_job()
                 sys.exit(0)
 
@@ -570,6 +585,8 @@ def train(args: TrainArgs):
             args,
             device_mesh=world_mesh,
         )
+    # NOTE: trigger 4 to save the state of the sampler
+    # save_sampler_state(train_state, logger, reason="Training Finished")
     gc.collect()
 
 

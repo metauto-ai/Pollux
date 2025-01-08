@@ -33,6 +33,7 @@ def main(tokenizer_name: str, path_to_save: str, api_key: Optional[str] = None):
                 raise e
     else:
         from tiktoken import get_encoding
+
         if "TIKTOKEN_CACHE_DIR" not in os.environ:
             os.environ["TIKTOKEN_CACHE_DIR"] = path_to_save
         try:
@@ -42,6 +43,7 @@ def main(tokenizer_name: str, path_to_save: str, api_key: Optional[str] = None):
                 f"Tokenizer {tokenizer_name} not found. Please check the name and try again."
             )
 
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("tokenizer_name", type=str)
@@ -49,4 +51,8 @@ if __name__ == "__main__":
     parser.add_argument("--api_key", type=str, default="")
     args = parser.parse_args()
 
-    main(tokenizer_name=args.tokenizer_name, path_to_save=args.tokenizer_dir, api_key=args.api_key)
+    main(
+        tokenizer_name=args.tokenizer_name,
+        path_to_save=args.tokenizer_dir,
+        api_key=args.api_key,
+    )
