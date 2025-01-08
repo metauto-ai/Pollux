@@ -259,12 +259,15 @@ class MongoDBParquetDataLoad(MongoDBDataLoad):
             idx = idx % len(self)
         file = self.data.iloc[idx][self.path_field]
         try:
-            cur_df = pd.read_parquet(file, engine="pyarrow")
+            # updated to use memory-mapped reading
+            table = pq.read_parquet(file, memory_map=True)
+            cur_df = table.to_pandas()
             self.place_holder_parquet = file
         except Exception as e:
             logging.warning(f"Error reading parquet file: {file}")
             if self.place_holder_parquet is not None:
-                cur_df = pd.read_parquet(self.place_holder_parquet, engine="pyarrow")
+                table = pq.read_parquet(self.place_holder_parquet, memory_map=True)
+                cur_df = table.to_pandas()
             else:
                 return self.__getitem__(random.choice(range(len(self))))
         return_parquet = {}
