@@ -6,7 +6,7 @@ from typing import Any
 import time
 import pandas as pd
 
-import certifi 
+import certifi
 from urllib.parse import quote_plus
 from dotenv import load_dotenv
 from pymongo import MongoClient

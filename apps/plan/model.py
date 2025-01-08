@@ -70,7 +70,7 @@ class ModelArgs:
 
 class Pollux(nn.Module):
 
-    VERSION: str = "v0.8.1"
+    VERSION: str = "v0.8.2"
     DESCRIPTION: str = (
         "The planning model, basically an MLLM for predicting the long visual latent codes."
     )
