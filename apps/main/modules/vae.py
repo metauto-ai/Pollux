@@ -9,7 +9,14 @@ import re
 import numpy as np
 from torchvision import transforms
 from cosmos_tokenizer.video_lib import CausalVideoTokenizer
+from cosmos_tokenizer.networks.configs import (
+    discrete_video as discrete_video_dict,
+)
+from cosmos_tokenizer.networks.configs import (
+    continuous_video as continuous_video_dict,
+)
 import types
+
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
@@ -22,7 +29,7 @@ class LatentVideoVAEArgs:
     pretrained_model_name_or_path: str = "tencent/HunyuanVideo"
     revision: Optional[str] = None
     variant: Optional[str] = None
-    model_dtype: str = "bf16"
+    model_dtype: str = "bfloat16"  # "bfloat16"
     enable_tiling: bool = True
     enable_slicing: bool = True
 
@@ -84,7 +91,7 @@ class HunyuanVideoVAE(BaseLatentVideoVAE):
             vae.enable_tiling()
         else:
             vae.disable_tiling()
-        self.vae=vae
+        self.vae = vae
 
     # TODO: jinjie: we are using video vae for BCHW image generation, so below code is tricky
     # we need to refactor our dataloader once video gen training begins
@@ -165,6 +172,7 @@ def _assert_cosmos_model_type(
         )
     return model_type
 
+
 # * For COSMOS, create have a dummy
 class COSMOSDiscreteVAE(BaseLatentVideoVAE):
 
@@ -174,7 +182,7 @@ class COSMOSDiscreteVAE(BaseLatentVideoVAE):
         Checks model type and returns the initialized VAE instance.
         """
         super().__init__(args)
-        cfg=self.cfg
+        cfg = self.cfg
         model_type = _assert_cosmos_model_type(cfg.pretrained_model_name_or_path, "DV")
         logger.info(f"COSMOSDiscreteVAE initialized with type: {model_type}")
 
@@ -183,13 +191,17 @@ class COSMOSDiscreteVAE(BaseLatentVideoVAE):
         # )
         # return vae
         # Create a "vae" object to hold the encoder and decoder
-        self.vae = types.SimpleNamespace()
-        self.vae.encoder = CausalVideoTokenizer(
-            checkpoint_enc=f"{cfg.pretrained_model_name_or_path}/encoder.jit"
+        encoder_config = discrete_video_dict
+        encoder_config.update(dict(spatial_compression=16))
+        encoder_config.update(dict(temporal_compression=8))
+        self.vae = CausalVideoTokenizer(
+            checkpoint_enc=f"{cfg.pretrained_model_name_or_path}/encoder.jit",
+            checkpoint_dec=f"{cfg.pretrained_model_name_or_path}/decoder.jit",
+            tokenizer_config=discrete_video_dict,
+            dtype=args.model_dtype,
         )
-        self.vae.decoder = CausalVideoTokenizer(
-            checkpoint_dec=f"{cfg.pretrained_model_name_or_path}/decoder.jit"
-        )
+        self.vae._enc_model.quantizer.dtype = getattr(torch, args.model_dtype)
+        self.vae._dec_model.inv_quant.quantizer.dtype = getattr(torch, args.model_dtype)
 
     @torch.no_grad()
     def encode(self, frames_tensor: torch.Tensor) -> torch.Tensor:
@@ -198,13 +210,15 @@ class COSMOSDiscreteVAE(BaseLatentVideoVAE):
 
         return indices with 4d shape, BTHW;
         """
+        dtype = next(self.vae.parameters()).dtype
+        frames_tensor = frames_tensor.to(dtype)
         if (
             frames_tensor.ndim == 4
         ):  # Check if the input tensor is 4D, BCHW, image tensor
             frames_tensor = frames_tensor.unsqueeze(
                 2
             )  # Add a temporal dimension (T=1) for video vae
-        indices, codes = self.vae.encoder.encode(frames_tensor)
+        indices, codes = self.vae.encode(frames_tensor)
         return indices, codes
 
     @torch.no_grad()
@@ -212,7 +226,7 @@ class COSMOSDiscreteVAE(BaseLatentVideoVAE):
         """
         Decodes the discrete indices back into reconstructed frames.
         """
-        x = self.vae.decoder.decode(indices)
+        x = self.vae.decode(indices)
         if x.ndim == 5 and x.shape[2] == 1:  # Check if T=1
             x = x.squeeze(2)  # Remove the temporal dimension at index 2
         return x
@@ -236,13 +250,15 @@ class COSMOSContinuousVAE(BaseLatentVideoVAE):
         cfg = self.cfg
         model_type = _assert_cosmos_model_type(cfg.pretrained_model_name_or_path, "CV")
         logger.info(f"COSMOSContinuousVAE initialized with type: {model_type}")
-
         self.vae = types.SimpleNamespace()
-        self.vae.encoder = CausalVideoTokenizer(
-            checkpoint_enc=f"{cfg.pretrained_model_name_or_path}/encoder.jit"
-        )
-        self.vae.decoder = CausalVideoTokenizer(
-            checkpoint_dec=f"{cfg.pretrained_model_name_or_path}/decoder.jit"
+        encoder_config = continuous_video_dict
+        encoder_config.update(dict(spatial_compression=16))
+        encoder_config.update(dict(temporal_compression=8))
+        self.vae = CausalVideoTokenizer(
+            checkpoint_enc=f"{cfg.pretrained_model_name_or_path}/encoder.jit",
+            checkpoint_dec=f"{cfg.pretrained_model_name_or_path}/decoder.jit",
+            tokenizer_config=continuous_video_dict,
+            dtype=args.model_dtype,
         )
 
     @torch.no_grad()
@@ -250,13 +266,15 @@ class COSMOSContinuousVAE(BaseLatentVideoVAE):
         """
         Encodes the input frames into latent representations.
         """
+        dtype = next(self.vae.parameters()).dtype
+        frames_tensor = frames_tensor.to(dtype)
         if (
             frames_tensor.ndim == 4
         ):  # Check if the input tensor is 4D, BCHW, image tensor
             frames_tensor = frames_tensor.unsqueeze(
                 2
             )  # Add a temporal dimension (T=1) for video vae
-        (latent,) = self.vae.encoder.encode(frames_tensor)
+        (latent,) = self.vae.encode(frames_tensor)
         return latent
 
     @torch.no_grad()
@@ -264,7 +282,9 @@ class COSMOSContinuousVAE(BaseLatentVideoVAE):
         """
         Decodes the latent representations back into reconstructed frames.
         """
-        x = self.vae.decoder.decode(encoded_tensor)
+        dtype = next(self.vae.parameters()).dtype
+        encoded_tensor = encoded_tensor.to(dtype)
+        x = self.vae.decode(encoded_tensor)
         if x.ndim == 5 and x.shape[2] == 1:  # Check if T=1
             x = x.squeeze(2)  # Remove the temporal dimension at index 2
         return x
@@ -279,6 +299,7 @@ class COSMOSContinuousVAE(BaseLatentVideoVAE):
 
 
 T = TypeVar("T", bound=BaseLatentVideoVAE)
+
 
 # LatentVideoVAE class with registry and instantiation
 class LatentVideoVAE(Generic[T]):
