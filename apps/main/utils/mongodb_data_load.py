@@ -6,7 +6,7 @@ from typing import Any
 import time
 import pandas as pd
 
-import certifi 
+import certifi
 from urllib.parse import quote_plus
 from dotenv import load_dotenv
 from pymongo import MongoClient
@@ -260,13 +260,13 @@ class MongoDBParquetDataLoad(MongoDBDataLoad):
         file = self.data.iloc[idx][self.path_field]
         try:
             # updated to use memory-mapped reading
-            table = pq.read_parquet(file, memory_map=True)
+            table = pq.read_table(file, memory_map=True)
             cur_df = table.to_pandas()
             self.place_holder_parquet = file
         except Exception as e:
             logging.warning(f"Error reading parquet file: {file}")
             if self.place_holder_parquet is not None:
-                table = pq.read_parquet(self.place_holder_parquet, memory_map=True)
+                table = pq.read_table(self.place_holder_parquet, memory_map=True)
                 cur_df = table.to_pandas()
             else:
                 return self.__getitem__(random.choice(range(len(self))))
