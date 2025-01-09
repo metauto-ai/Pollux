@@ -195,7 +195,6 @@ class COSMOSDiscreteVAE(BaseLatentVideoVAE):
         encoder_config.update(dict(spatial_compression=16))
         encoder_config.update(dict(temporal_compression=8))
         self.vae = CausalVideoTokenizer(
-            checkpoint=f"{cfg.pretrained_model_name_or_path}/autoencoder.jit",
             checkpoint_enc=f"{cfg.pretrained_model_name_or_path}/encoder.jit",
             checkpoint_dec=f"{cfg.pretrained_model_name_or_path}/decoder.jit",
             tokenizer_config=discrete_video_dict,
