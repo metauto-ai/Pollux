@@ -12,7 +12,8 @@ client = boto3.client(
     region_name='us-east-1'  # specify your region
 )
 
-system_prompt = """You are tasked with generating image captions that will be used for training diffusion text-to-image models. Your goal is to create captions that closely resemble what humans might use as prompts when generating images. These captions should be descriptive, creative, and diverse.
+system_prompt = """You are tasked with generating image captions that will be used for training diffusion text-to-image models. 
+                   Your goal is to create captions that imitate what humans might use as prompts when generating images. 
 
 Guidelines for generating image captions:
 1. Please generate a comprehensive, single-paragraph caption that includes every visible element in the image, including any readable text. 
@@ -59,7 +60,7 @@ messages = [
     }
 ]
 
-inf_params = {"maxTokens": 300, "topP": 0.1, "temperature": 0.3}
+inf_params = {"maxTokens": 200, "topP": 0.1, "temperature": 1.0}
 
 additionalModelRequestFields = {
     "inferenceConfig": {
