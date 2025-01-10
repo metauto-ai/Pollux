@@ -23,9 +23,7 @@ logger.setLevel(logging.INFO)
 
 @dataclass
 class LatentVideoVAEArgs:
-    model_name: Literal["Hunyuan", "COSMOS-DV", "COSMOS-CV"] = (
-        "Hunyuan"  # Default value is "Hunyuan"
-    )
+    model_name: str = "COSMOS-DV"  # ["Hunyuan", "COSMOS-DV", "COSMOS-CV"]
     pretrained_model_name_or_path: str = "tencent/HunyuanVideo"
     revision: Optional[str] = None
     variant: Optional[str] = None
