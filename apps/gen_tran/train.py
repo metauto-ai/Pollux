@@ -365,9 +365,31 @@ def train(args: TrainArgs):
             # get batch
             curr_lr = float(optimizer.param_groups[0]["lr"])
             data_load_start = timer()
-            try:
-                batch = next(parquet_iterator)
-            except:
+            if args.model.type == "latent_pollux":
+                try:
+                    batch = next(parquet_iterator)
+                except:
+                    try:
+                        batch = next(dataloader_iterator)
+                    except:
+                        logger.info("New Epoch!")
+                        sampler.reset()
+                        dataloader_iterator = iter(data_loader)
+                        batch = next(dataloader_iterator)
+                    parquet_iterator = DictTensorBatchIterator(
+                        batch, active_data[0].dataloader.batch_size
+                    )
+                    batch = next(parquet_iterator)
+                # if every_n_steps(train_state, args.gc_collect_freq, acc_step=0):
+                #     logger.info("garbage collection")
+                #     # we do garbage collection manually otherwise different processes
+                #     # run the GC at different times so they slow down the whole pipeline
+                #     gc.collect()
+                batch["latent_code"] = batch["latent_code"].cuda()
+                batch["text_embedding"] = batch["text_embedding"].cuda()
+                data_load_time = round(timer() - data_load_start, 4)
+                nwords_since_last_log += batch["latent_code"].numel()
+            elif args.model.type == "pollux":
                 try:
                     batch = next(dataloader_iterator)
                 except:
@@ -375,21 +397,6 @@ def train(args: TrainArgs):
                     sampler.reset()
                     dataloader_iterator = iter(data_loader)
                     batch = next(dataloader_iterator)
-                parquet_iterator = DictTensorBatchIterator(
-                    batch, active_data[0].dataloader.batch_size
-                )
-                batch = next(parquet_iterator)
-            # if every_n_steps(train_state, args.gc_collect_freq, acc_step=0):
-            #     logger.info("garbage collection")
-            #     # we do garbage collection manually otherwise different processes
-            #     # run the GC at different times so they slow down the whole pipeline
-            #     gc.collect()
-            if args.model.type == "latent_pollux":
-                batch["latent_code"] = batch["latent_code"].cuda()
-                batch["text_embedding"] = batch["text_embedding"].cuda()
-                data_load_time = round(timer() - data_load_start, 4)
-                nwords_since_last_log += batch["latent_code"].numel()
-            elif args.model.type == "pollux":
                 batch["image"] = batch["image"].cuda()
                 data_load_time = round(timer() - data_load_start, 4)
                 nwords_since_last_log += batch["image"].numel()

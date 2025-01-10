@@ -28,32 +28,28 @@ from apps.main.modules.plan_transformer import (
 )
 from apps.main.modules.vae import LatentVideoVAE, LatentVideoVAEArgs
 from apps.main.modules.preprocess import random_mask_images
-
-# from apps.main.em import (
-#     BaseTransformerArgs,
-#     TransformerBlock,
-#     RMSNorm,
-#     FeedForward,
-#     Attention,
-#     AdaLNModulation,
-#     InitStdFactor,
-#     TimestepEmbedder,
-#     ImageEmbedder,
-#     LabelEmbedder,
-#     modulate,
-# )
+import os
 from apps.main.modules.embedder import LabelEmbedder, ImageEmbedder, TimestepEmbedder
 from apps.main.modules.ops import AdaLN as AdaLNModulation, modulate
 from lingua.transformer import (
     BaseTransformerArgs,
     TransformerBlock,
     RMSNorm,
-    FeedForward,
-    Attention,
     InitStdFactor,
 )
+from apps.main.modules.ops import create_causal_mask
 
 logger = logging.getLogger()
+
+
+@dataclass
+class PlanTransformerArgs(BaseTransformerArgs):
+
+    seed: int = 42
+    in_channels: int = 3
+    pre_trained_path: Optional[str] = None
+    text_seqlen: int = 256
+    vocab_size: int = -1
 
 
 @dataclass
@@ -201,6 +197,108 @@ class GenTransformer(BaseDiffusionTransformer):
         nn.init.normal_(self.coe_token, std=0.02)
 
 
+class BasePlanTransformer(nn.Module):
+    def __init__(self, args: PlanTransformerArgs):
+        super().__init__()
+        self.dim = args.dim
+        self.init_base_std = args.init_base_std
+        self.init_std_factor = InitStdFactor(args.init_std_factor)
+        self.layers = nn.ModuleList()
+        assert not (args.n_layers % 2 != 0)
+        for _ in range(args.n_layers):
+            self.layers.append(TransformerBlock(args))
+
+    def forward(
+        self,
+        h,
+        freqs_cis,
+        attn_impl: str = "sdpa",
+    ):
+        seq_len = h.size(1)
+        mask = create_causal_mask(seq_len, attn_impl)
+        for idx, layer in enumerate(self.layers):
+            h = layer(h, freqs_cis, mask=mask, attn_impl=attn_impl)
+        return h
+
+    def reset_parameters(self):
+        # Either use fixed base std or sqrt model dim
+        pass
+
+    def init_weights(self, pre_trained_path: Optional[str] = None):
+        self.reset_parameters()
+        for depth, layer in enumerate(self.layers):
+            factor = {
+                InitStdFactor.CURRENT_DEPTH: (2 * (depth + 1)) ** 0.5,
+                InitStdFactor.GLOBAL_DEPTH: (2 * (len(self.layers) + 1)) ** 0.5,
+                InitStdFactor.DIM_RATIO: self.dim / 4096,
+                InitStdFactor.DISABLED: 1.0,
+            }[self.init_std_factor]
+
+            layer.init_weights(self.init_base_std, factor)
+        if pre_trained_path:
+            assert os.path.exists(pre_trained_path)
+            ckpt_state_dict = torch.load(pre_trained_path, map_location="cpu")
+            target_state_dict = self.state_dict()
+            filtered_state_dict = {
+                k: v
+                for k, v in ckpt_state_dict.items()
+                if k in target_state_dict and v.shape == target_state_dict[k].shape
+            }
+            target_state_dict.update(filtered_state_dict)
+            self.load_state_dict(target_state_dict)
+            missing_keys = set(target_state_dict.keys()) - set(
+                filtered_state_dict.keys()
+            )
+            unexpected_keys = set(ckpt_state_dict.keys()) - set(
+                target_state_dict.keys()
+            )
+            logger.info(f"Load the checkpoints from {pre_trained_path}")
+            logger.warning(f"Missing keys: {missing_keys}")
+            logger.warning(f"Unexpected keys: {unexpected_keys}")
+
+
+class PlanTransformer(
+    BasePlanTransformer
+):  # TODO As planning model is not finished, we use a pure LLAMA model here, we will update this with the latest planning  model
+    def __init__(self, args: PlanTransformerArgs):
+        super().__init__(args)
+        self.text_seqlen = args.text_seqlen
+        self.tok_embeddings = torch.nn.Embedding(args.vocab_size, args.dim)
+        self.rope_embeddings_cap = RotaryEmbedding1D(
+            theta=args.rope_theta,
+            head_dim=args.head_dim or args.dim // args.n_heads,
+            max_seqlen=args.text_seqlen,
+        )
+        self.dim = args.dim
+        self.norm = RMSNorm(args.dim, eps=args.norm_eps)
+
+    def forward(
+        self,
+        batch: dict[str:any],
+        attn_impl: str = "sdpa",
+    ):
+        x_cap = self.tok_embeddings(batch["cap_token"])
+
+        freqs_cis = self.rope_embeddings_cap.freqs_cis[: x_cap.size(1)]
+        h = super().forward(x_cap, freqs_cis, attn_impl=attn_impl)
+
+        return self.norm(h)
+
+    def reset_parameters(self, init_std=None):
+        # Either use fixed base std or sqrt model dim
+        super().reset_parameters()
+        init_std = init_std or (self.dim ** (-0.5))
+        self.norm.reset_parameters()
+        self.rope_embeddings_cap.reset_parameters()
+        nn.init.trunc_normal_(
+            self.tok_embeddings.weight,
+            mean=0.0,
+            std=init_std,
+            a=-3 * init_std,
+            b=3 * init_std,
+        )
+
+
 class Pollux(nn.Module):
     """
     Latent Diffusion Transformer Model.
@@ -219,25 +317,19 @@ class Pollux(nn.Module):
         self.compressor = LatentVideoVAE(args.vae)
         self.scheduler = RectifiedFlow(args.scheduler)
         self.gen_transformer = GenTransformer(args.gen_transformer)
-        # self.tokenizer = Tokenizer(model_path=args.tokenizer.model_path)
+        self.tokenizer = Tokenizer(model_path=args.tokenizer.model_path)
 
-        # assert args.plan_transformer.vocab_size == self.tokenizer.n_words
+        assert args.plan_transformer.vocab_size == self.tokenizer.n_words
 
-        # self.plan_transformer = PlanTransformer(args.plan_transformer)
-        self.plan_transformer = LabelEmbedder(
-            num_classes=args.num_classes,
-            hidden_size=args.gen_transformer.dim,
-            dropout_prob=args.image_cfg_ratio,
-        )
-        # self.text_seqlen = self.plan_transformer.text_seqlen
-        # self.text_cfg_ratio = args.text_cfg_ratio
-        self.image_cfg_ratio = args.image_cfg_ratio
-        # self.mask_patch = args.mask_patch
+        self.plan_transformer = PlanTransformer(args.plan_transformer)
+        self.text_seqlen = self.plan_transformer.text_seqlen
+        self.text_cfg_ratio = args.text_cfg_ratio
         self.token_proj = nn.Linear(
-            in_features=args.gen_transformer.dim,
+            in_features=args.plan_transformer.dim,
             out_features=args.gen_transformer.dim,
             bias=False,
         )
+        self.negative_token = nn.Parameter(torch.zeros(1, 1, args.plan_transformer.dim))
         init_std = self.gen_transformer.dim ** (-0.5)
         nn.init.trunc_normal_(
             self.token_proj.weight,
@@ -246,9 +338,9 @@ class Pollux(nn.Module):
             a=-3 * init_std,
             b=3 * init_std,
         )
-        self.plan_transformer.reset_parameters()
+        nn.init.normal_(self.negative_token, std=0.02)
 
-    def cap_pos_tokenize(self, batch: dict[str:any]) -> dict[str:any]:
+    def cap_tokenize(self, batch: dict[str:any]) -> dict[str:any]:
         batch["cap_token"] = [
             self.tokenizer.encode(x, bos=True, eos=False) for x in batch["caption"]
         ]
@@ -271,28 +363,24 @@ class Pollux(nn.Module):
         batch["cap_token"] = tokens
         return batch
 
-    def cap_neg_tokenize(self, batch: dict[str:any]) -> dict[str:any]:
-        bsz = len(batch["caption"])
-        pad_id = self.tokenizer.pad_id
-        tokens = torch.full(
-            (bsz, self.plan_transformer.text_seqlen),
-            pad_id,
-            dtype=torch.long,
-        ).cuda()
-        batch["cap_token"] = tokens
-        return batch
-
-    def cap_tokenize(self, batch: dict[str:any]) -> torch.Tensor:
-        if random.random() > self.text_cfg_ratio:
-            return self.cap_pos_tokenize(batch)
-        else:
-            return self.cap_neg_tokenize(batch)
+    def prepare_negative_context(self, batch: dict[str:any]) -> dict[str:any]:
+        batch["negative_token"] = self.negative_token.repeat(
+            batch["text_embedding"].size(0), batch["text_embedding"].size(1), 1
+        )
+        return batch["negative_token"]
 
     def forward(self, batch: dict[str:any]) -> dict[str:any]:
 
         image = batch["image"]
-        conditional_signal = self.plan_transformer(batch["label"], train=True)
-        latent_code = self.compressor.encode(image)
+        batch = self.cap_tokenize(batch)
+        with torch.no_grad():
+            batch["text_embedding"] = self.plan_transformer(batch)
+        if random.random() > self.text_cfg_ratio:
+            conditional_signal = batch["text_embedding"]
+        else:
+            conditional_signal = self.prepare_negative_context(batch)
+        with torch.no_grad():
+            latent_code = self.compressor.encode(image)
         conditional_signal = self.token_proj(conditional_signal)
         noised_x, t, target = self.scheduler.sample_noised_input(latent_code)
         output = self.gen_transformer(
@@ -306,15 +394,16 @@ class Pollux(nn.Module):
         return batch, loss
 
     def set_train(self):
-        self.plan_transformer.train()
         self.gen_transformer.train()
 
     def set_eval(self):
-        self.plan_transformer.eval()
         self.gen_transformer.eval()
 
     def init_weights(self, args: ModelArgs):
         self.gen_transformer.init_weights(args.gen_transformer.pre_trained_path)
+        self.plan_transformer.init_weights(args.plan_transformer.pre_trained_path)
+        self.plan_transformer = self.plan_transformer.requires_grad_(False)
+        self.plan_transformer.eval()
 
 
 class LatentPollux(nn.Module):
@@ -348,6 +437,7 @@ class LatentPollux(nn.Module):
             b=3 * init_std,
         )
         self.negative_token = nn.Parameter(torch.zeros(1, 1, args.plan_transformer.dim))
+        nn.init.normal_(self.negative_token, std=0.02)
 
     def forward(self, batch: dict[str:any]) -> dict[str:any]:
         if random.random() > self.text_cfg_ratio:
@@ -391,8 +481,8 @@ def build_fsdp_grouping_plan_pollux(model_args: ModelArgs, vae_config: dict):
     for i in range(len(vae_config.down_block_types)):
         group_plan.append((f"compressor.vae.encoder.down_blocks.{i}", False))
 
-    # for i in range(model_args.plan_transformer.n_layers):
-    #     group_plan.append((f"plan_transformer.layers.{i}", False))
+    for i in range(model_args.plan_transformer.n_layers):
+        group_plan.append((f"plan_transformer.layers.{i}", False))
 
     for i in range(model_args.gen_transformer.n_layers):
         group_plan.append((f"gen_transformer.layers.{i}", False))
