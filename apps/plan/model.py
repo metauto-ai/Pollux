@@ -183,7 +183,7 @@ class Pollux(nn.Module):
 
 
     def apply_2d_rope(self, patch_embs: torch.Tensor, H: int, W: int) -> torch.Tensor:
-
+  
         B, M, D = patch_embs.shape
         if H * W != M:
             raise ValueError(
@@ -191,13 +191,13 @@ class Pollux(nn.Module):
             )
 
         x_2d = patch_embs.view(B, H, W, D)
-        freqs_h, freqs_w = self._precompute_freqs_cis(D // 2, H, W)
+        freqs_h, freqs_w = self._precompute_freqs_cis(D // 2, H, W, device=patch_embs.device)
         out_list = []
         for b_idx in range(B):
             out_list.append(self._apply_2d_rope_single(x_2d[b_idx], freqs_h, freqs_w))
-
         x_2d_after = torch.stack(out_list, dim=0)  # [B, H, W, D]
         return x_2d_after.view(B, M, D)
+
 
 
     def _apply_2d_rope_single(
@@ -219,16 +219,15 @@ class Pollux(nn.Module):
 
         return torch.cat([rope_emb_real, rope_emb_imag], dim=-1)
 
-    def _precompute_freqs_cis(self, dim: int, H: int, W: int, base: float = 10000.0):
-        freqs = 1.0 / (base ** (torch.arange(0, dim, 2).float() / dim))
-        pos_h = torch.arange(H).unsqueeze(1)
-        pos_w = torch.arange(W).unsqueeze(1)
+    def _precompute_freqs_cis(self, dim: int, H: int, W: int, base: float = 10000.0, device=None):
+ 
+        freqs = 1.0 / (base ** (torch.arange(0, dim, 2, device=device).float() / dim))
+        pos_h = torch.arange(H, device=device).unsqueeze(1)  # [H, 1]
+        pos_w = torch.arange(W, device=device).unsqueeze(1)  # [W, 1]
+        freqs_h = torch.cat([torch.cos(pos_h * freqs), torch.sin(pos_h * freqs)], dim=1)  # [H, dim]
+        freqs_w = torch.cat([torch.cos(pos_w * freqs), torch.sin(pos_w * freqs)], dim=1)  # [W, dim]
 
-        freqs_h = torch.cat([torch.cos(pos_h * freqs), torch.sin(pos_h * freqs)], dim=1)
-        freqs_w = torch.cat([torch.cos(pos_w * freqs), torch.sin(pos_w * freqs)], dim=1)
-
-        return freqs_h.to(patch_embs.device), freqs_w.to(patch_embs.device)
-
+        return freqs_h, freqs_w
 
 
     def forward(
@@ -249,7 +248,7 @@ class Pollux(nn.Module):
         vae_indices, vae_latent = self.vae.encode(images)  # [B, 1, H/16, W/16], [B, 6, 1, H/16, W/16]
         vae_embs, H_, W_ = self.patchify_and_embed(vae_latent.squeeze(2)) # [B, H/16 * W/16, D]
         M = vae_embs.shape[1]
-        original_rope = self.apply_2d_rope(vae_embs.clone())
+        original_rope = self.apply_2d_rope(vae_embs.clone(), H_, W_)
 
 
         # Text Embedding
