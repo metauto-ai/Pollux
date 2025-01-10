@@ -24,7 +24,7 @@ logging.basicConfig(
 Image.MAX_IMAGE_PIXELS = None
 config = Config(
     retries={"max_attempts": 10, "mode": "adaptive"},
-    max_pool_connections=50,  # Increase pool size (default is 10)
+    max_pool_connections=60,  # Increase pool size (default is 10)
 )
 
 
