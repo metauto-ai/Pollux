@@ -4,7 +4,15 @@ import torch
 import torch.nn as nn
 from typing import Tuple
 import math
-from configure import calculate_settings
+def calculate_flops(batch_size: int, seq_len: int, hidden_dim: int) -> int:
+    flops_per_seq = (
+        hidden_dim +          # Square each element
+        (hidden_dim - 1) +    # Sum reduction
+        1 +                   # Division by hidden_dim
+        1 +                   # Square root
+        (2 * hidden_dim)      # Final division and scale multiplication
+    )
+    return flops_per_seq * batch_size * seq_len
 
 @triton.jit
 def _rmsn_fwd_kernel(
@@ -24,9 +32,9 @@ def _rmsn_fwd_kernel(
     x = tl.load(inp_ptr + offset, mask=mask).to(tl.float16)
     
     x_f32 = x.to(tl.float32)
-    sum_sqr_x = tl.sum(x_f32 * x_f32, axis=0)
+    sum_sqr_x = tl.sum(x_f32 * x_f32, axis=0) 
     
-    rms = tl.sqrt(sum_sqr_x / inp_row_stride).to(tl.float16)
+    rms = tl.sqrt(sum_sqr_x / inp_row_stride + 1e-6).to(tl.float16)
     scale = tl.load(scale_ptr + cols, mask=mask).to(tl.float16)
     
     out = (x / rms) * scale
@@ -82,9 +90,11 @@ class RMSNorm(torch.autograd.Function):
         cols = dims[-1]
         x = x.view(-1, cols)
         
+        # Create or use provided scale
         if scale is None:
             scale = torch.ones(cols, dtype=torch.float16, device='cuda')
         
+        # Initialize output
         out = torch.zeros_like(x, dtype=torch.float16)
         
         block_size, num_warps = calculate_settings(cols)
@@ -137,3 +147,12 @@ class RMSNorm(torch.autograd.Function):
         )
         
         return grad_input.view(dims), grad_scale if scale.requires_grad else None
+
+def rmsnorm(x: torch.Tensor):
+    if x.dtype != torch.float16:
+        x = x.half()
+    
+    scale = torch.ones(x.shape[-1], dtype=torch.float16, device='cuda')
+    
+    rms = torch.sqrt((x * x).mean(dim=-1, keepdim=True)).half()
+    return (x / rms) * scale
