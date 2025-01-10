@@ -13,11 +13,18 @@ import logging
 import requests
 import wandb
 import uuid
+import re
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
+
+
+def filter_image_caption(text):
+    # TODO: could add more logic here if we find sth that needs to be filtered
+    pattern = r"(?i)^image caption:\s*"
+    return re.sub(pattern, "", text)
 
 
 class NovaCaption:
@@ -89,12 +96,11 @@ class NovaCaption:
 
                     logging.info(f"\n[Full Response for {_id}]")
                     logging.info(f"\n[Response Content Text for {_id}]")
-                    logging.info(response["output"]["message"]["content"][0]["text"])
+                    caption = response["output"]["message"]["content"][0]["text"]
+                    caption = filter_image_caption(caption)
+                    self.update_data(_id, caption)
                     if wandb_logger:
-                        wandb_logger.add_image(
-                            image_bytes,
-                            response["output"]["message"]["content"][0]["text"],
-                        )
+                        wandb_logger.add_image(image_bytes, caption)
             wandb_logger.log_images()
 
     def read_data_from_mongoDB(self):
@@ -163,6 +169,11 @@ class NovaCaption:
         response = self.generate_image_caption(image_bytes)
         return response, image_bytes
 
+    def update_data(self, _id, caption):
+        query = {"_id": _id}
+        update = {"$set": {f"{self.caption_field}": caption}}
+        self.collection.update_one(query, update)
+
 
 class WandBLogger:
     def __init__(self, project: str, run_name: str, entity: str = None):
@@ -219,13 +230,13 @@ class WandBLogger:
 
 if __name__ == "__main__":
     nova_caption = NovaCaption(
-        collection_name="cc12m",
+        collection_name="unsplash_images",
         image_field="s3url",
         caption_field="nova_lite_caption",
         maxTokens=150,
         topP=0.1,
         temperature=1.0,
-        max_workers=64,
+        max_workers=16,
         batch_size=100,
     )
     wandb_logger = WandBLogger(
