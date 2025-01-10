@@ -46,13 +46,14 @@ logger = logging.getLogger()
 @dataclass
 class LLMArgs:
     model_name: str
+    hidden_size: int
 
 
 @dataclass
 class LatentProjecterArgs:
     latent_dim: int = 16
     output_dim: int = 3072
-    patch_size: int = 2
+    patchify_size: int = 1
 
 
 @dataclass
@@ -66,11 +67,12 @@ class ModelArgs:
     text_cfg_ratio: float = 0.1
     image_cfg_ratio: float = 0.1
     scheduler: SchedulerArgs = field(default_factory=SchedulerArgs)
+    num_classes: int = 1000
 
 
 class Pollux(nn.Module):
 
-    VERSION: str = "v0.8.1"
+    VERSION: str = "v0.8.2"
     DESCRIPTION: str = (
         "The planning model, basically an MLLM for predicting the long visual latent codes."
     )
@@ -79,37 +81,37 @@ class Pollux(nn.Module):
         super().__init__()
         self.args = args
 
-        # vision encoder
         self.vae = LatentVideoVAE(args.vae)
-
-        # latent projector
-        self.patch_size = args.latent_projector.patch_size
+        self.patchify_size = args.latent_projector.patchify_size
         self.latent_projector = nn.Linear(
-            self.patch_size**2 * args.latent_projector.latent_dim,
+            self.patchify_size**2 * args.latent_projector.latent_dim,
             args.latent_projector.output_dim,
             bias=False,
         )
 
-        # vision boi embedding
-        if args.use_vision_boi:
-            self.vision_boi_emb = nn.Parameter(
-                torch.zeros(1, args.latent_projector.output_dim)
-            )
+        self.vision_cls_emb = LabelEmbedder(
+            num_classes=args.num_classes,
+            hidden_size=args.llm.hidden_size,
+            dropout_prob=args.image_cfg_ratio,
+        )
 
-        # llm
+        self.vision_boi_emb = nn.Parameter(torch.zeros(1, args.latent_projector.output_dim))
+        self.vision_eoi_emb = nn.Parameter(torch.zeros(1, args.latent_projector.output_dim))
+
         self.llm_tokenizer = LlamaTokenizerFast.from_pretrained(args.llm.model_name)
         self.llm = LlamaForCausalLM.from_pretrained(args.llm.model_name)
         if self.llm_tokenizer.pad_token is None:
             self.llm_tokenizer.pad_token = self.llm_tokenizer.eos_token
 
-        # head
         self.latent_head = nn.Linear(
             args.latent_projector.output_dim,
-            self.patch_size**2 * args.latent_projector.latent_dim,
+            self.patchify_size**2 * args.latent_projector.latent_dim,
         )
 
+
+    
     def patchify_and_embed(self, x: torch.Tensor):
-        pH = pW = self.patch_size
+        pH = pW = self.patchify_size
         B, C, H, W = x.size()
         x = x.view(B, C, H // pH, pH, W // pW, pW).permute(0, 2, 4, 1, 3, 5).flatten(3)
         x = self.latent_projector(x)
@@ -118,50 +120,67 @@ class Pollux(nn.Module):
 
     def unpatchify_image(self, x: torch.Tensor, H: int, W: int) -> torch.Tensor:
         B = x.size(0)
-        pH = pW = self.patch_size
+        pH = pW = self.patchify_size
+
         x = x.view(B, H // pH, W // pW, pH, pW, -1)
         x = x.permute(0, 5, 1, 3, 2, 4).flatten(4, 5).flatten(2, 3)  # [B,16,H/8,W/8]
         return x
 
     def process_mask(
-        self, input_ids, images_embs, mask_strategy: str, random_rate: float = 0.15
-    ) -> torch.Tensor:
+        self,
+        input_ids: torch.Tensor,
+        images_embs: torch.Tensor,
+        mask_strategy: str,
+        random_rate: float = 0.15,
+    ) -> Tuple[torch.Tensor, List[List[int]], torch.Tensor]:
+
+        device = images_embs.device
+        B = images_embs.shape[0]  
 
         text_seq_len = input_ids.shape[1]
-        visual_seq_len = images_embs.shape[1]
-
+        visual_seq_len = images_embs.shape[1]  
         if mask_strategy == "full_mask":
             attention_mask = torch.cat(
                 [
-                    torch.ones(
-                        (input_ids.shape[0], text_seq_len), device=input_ids.device
-                    ),
-                    torch.zeros(
-                        (input_ids.shape[0], visual_seq_len), device=input_ids.device
-                    ),
+                    torch.ones((B, text_seq_len), device=device),
+                    torch.zeros((B, visual_seq_len), device=device),
                 ],
                 dim=1,
             )
         elif mask_strategy == "random_mask":
-            random_mask = (
-                torch.rand(
-                    (input_ids.shape[0], visual_seq_len), device=input_ids.device
-                )
-                < random_rate
-            )
             attention_mask = torch.cat(
                 [
-                    torch.ones(
-                        (input_ids.shape[0], text_seq_len), device=input_ids.device
-                    ),
-                    (~random_mask).float(),
+                    torch.ones((B, text_seq_len), device=device),
+                    torch.ones((B, visual_seq_len), device=device),
                 ],
                 dim=1,
             )
         else:
             raise ValueError(f"Invalid mask strategy: {mask_strategy}")
 
-        return attention_mask
+        masked_indices_list = []
+        reordered_images_embs_list = []
+
+        if mask_strategy == "random_mask":
+            for b_idx in range(B):
+
+                M = images_embs[b_idx].shape[0]
+                random_mask = torch.rand(M, device=device) < random_rate
+                unmasked_idx = torch.where(~random_mask)[0]
+                masked_idx = torch.where(random_mask)[0]
+                masked_indices_list.append(masked_idx.tolist())
+
+                # Causal Fusion
+                reordered_idx = torch.cat([unmasked_idx, masked_idx], dim=0)
+                reordered_images_embs_list.append(images_embs[b_idx, reordered_idx, :])
+            reordered_images_embs = torch.stack(reordered_images_embs_list, dim=0)
+        else:
+            reordered_images_embs = images_embs
+            for _ in range(B):
+                masked_indices_list.append([])
+
+        return attention_mask, masked_indices_list, reordered_images_embs
+
 
     def forward(
         self,
@@ -170,42 +189,60 @@ class Pollux(nn.Module):
         random_rate: float = 0.3,
     ) -> Tuple[dict[str, any], torch.Tensor]:
 
-        images = batch["image"]  # Shape: [B, C, H, W]
+        images = batch["image"]
+        labels = batch["label"]
         captions = batch["caption"]
 
-        # vision vae
-        vae_latent = self.vae.encode(images)  # [B,16,H/8,W/8]
-        vae_embed, H_, W_ = self.patchify_and_embed(vae_latent)  # [B,H/16*W/16,D]
+        # Class Embedding
+        cls_emb = self.vision_cls_emb(labels, train=True).unsqueeze(1)  # [B, 1, D]
 
-        # text embed
+        # Vision Discrete Latent Codes
+        vae_indices, vae_latent = self.vae.encode(images)  # [B, 1, H/16, W/16], [B, 6, 1, H/16, W/16]
+
+        vae_embs, H_, W_ = self.patchify_and_embed(vae_latent.squeeze(2)) # [B, H/16 * W/16, D]
+
+        # Text Embedding
         input_ids = self.llm_tokenizer(
             captions, padding=True, truncation=True, return_tensors="pt"
         )["input_ids"].to(self.llm.device)
+
+        vae_embs = self.apply_2d_rope(vae_embs)
+
+        attention_mask, masked_indices, vae_embs = self.process_mask(
+            input_ids,
+            vae_embs,
+            mask_strategy=mask_strategy,
+            random_rate=random_rate,
+            apply_2d_rope=True, 
+        )
+
         text_embs = self.llm.get_input_embeddings()(input_ids)  # [B,T,D]
 
-        # concate embeddings
-        boi_embs = self.vision_boi_emb.unsqueeze(0).expand(vae_embed.size(0), -1, -1)
-        mm_embs = torch.cat(
-            [text_embs, boi_embs, vae_embed], dim=1
-        )  # multi-modal embeddings
-        vae_start_idx = text_embs.size(1) + 1
+        # Concat
+        boi_emb = self.vision_boi_emb.unsqueeze(0).expand(vae_embs.size(0), -1, -1)
+        eoi_emb = self.vision_eoi_emb.unsqueeze(0).expand(vae_embs.size(0), -1, -1)
+        mm_embs = torch.cat([text_embs, cls_emb, boi_emb, vae_embs, eoi_emb], dim=1)
 
-        # llm forward
+        vae_start_idx = text_embs.size(1) + 2
+
+        # LLM Forward
         output = self.llm(
             inputs_embeds=mm_embs,
-            # attention_mask=attention_mask,
+            # NOTE: not sure wether we need attention_mask for causalfusion; will check later
+            # attention_mask=attention_mask, 
             output_hidden_states=True,
             # labels=input_ids,
             return_dict=True,
         )
 
-        # latent head
-        latent_hidden = output.hidden_states[-1][:, vae_start_idx:, :]  # [B,M,D]
+        # Latent Head
+        latent_hidden = output.hidden_states[-1][:, vae_start_idx:vae_start_idx+vae_embs.size(1), :]  # [B,M,D]
         pred_latent = self.latent_head(latent_hidden)
-        pred_latent = self.unpatchify_image(pred_latent, H_, W_)  # [B,16,H/8,W/8]
+        pred_latent = self.unpatchify_image(pred_latent, H_, W_) 
 
         # compute loss
-        pred_loss = F.mse_loss(pred_latent, vae_latent)
+        pred_loss = F.mse_loss(pred_latent, vae_latent.squeeze(2))
+        batch["masked_indices"] = masked_indices
 
         # batch["latent_target"] = latent_target
         # batch["pred_latent"] = pred_latent
@@ -213,9 +250,13 @@ class Pollux(nn.Module):
 
     def set_train(self):
         self.latent_projector.train()
+        self.vision_cls_emb.train()
+        self.llm.train()
 
     def set_eval(self):
         self.latent_projector.eval()
+        self.vision_cls_emb.eval()
+        self.llm.eval()
 
     def init_weights(self, args: ModelArgs):
 
@@ -227,9 +268,11 @@ class Pollux(nn.Module):
 
         nn.init.xavier_uniform_(self.latent_projector.weight)
         nn.init.normal_(self.vision_boi_emb, mean=0.0, std=0.02)
+        nn.init.normal_(self.vision_eoi_emb, mean=0.0, std=0.02)
         nn.init.xavier_uniform_(self.latent_head.weight)
         nn.init.zeros_(self.latent_head.bias)
 
+        self.vision_cls_emb.reset_parameters()
 
 # Optional policy for activation checkpointing. With None, we stick to the default (defined distributed.py: default_no_recompute_ops)
 def get_no_recompute_ops():
@@ -242,29 +285,66 @@ def build_fsdp_grouping_plan(model_args: ModelArgs, model: nn.Module):
     for name, module in model.named_modules():
         logger.info(f"- {name}: {module.__class__.__name__}")
 
-    # vision_transformer = getattr(model.vision_tower, "vision_tower", None)
-
-    # logger.info("VisionTransformer has `blocks` attribute. Building group plan...")
-    # for idx, block in enumerate(vision_transformer.blocks):
-    #     group_plan.append((f"vision_tower.vision_tower.blocks.{idx}", True))
-
-    # group_plan.append(("latent_projector", False))
-
     llama_model = getattr(model, "llm", None)
     if llama_model and hasattr(llama_model, "model"):
         logger.info("LlamaForCausalLM has `model` attribute. Building group plan...")
         for idx, block in enumerate(llama_model.model.layers):
             group_plan.append((f"llm.model.layers.{idx}", False))
 
-    vae_encoder = getattr(model.vae.vae.encoder, "down_blocks", None)
-    if vae_encoder:
-        for i in range(len(vae_encoder)):
-            group_plan.append((f"vae.vae.encoder.down_blocks.{i}", False))
-    else:
-        logger.warning("VAE encoder does not have `down_blocks` attribute.")
+    # NOTE: Hunyuan
+    # vae_encoder = getattr(model.vae.vae.encoder, "down_blocks", None)
+    # if vae_encoder:
+    #     for i in range(len(vae_encoder)):
+    #         group_plan.append((f"vae.vae.encoder.down_blocks.{i}", False))
+    # else:
+    #     logger.warning("VAE encoder does not have `down_blocks` attribute.")
+
+    # NOTE: COSMOS
+    # TODO: We need to add the FSDP, but currently I failed to find the correct module name.
+    # Maybe this is because the torch.jit or RecurrentScriptModule is used.
+
+    # print("==================================")
+    # for name, module in model.vae.named_modules():
+    #     print(name, module)
+    # print("==================================")
+
+    # vae_encoder = getattr(model.vae._enc_model, "encoder", None)
+    # if vae_encoder and hasattr(vae_encoder, "down"):
+    #     for i in range(len(vae_encoder.down)):
+    #         group_plan.append((f"vae._enc_model.encoder.down.{i}", False))
+    # else:
+    #     logger.warning("COSMOS-DV encoder does not have `down` attribute.")
+
+    modules = recursive_list_modules(model.vae)
+    print("Modules found:\n", "\n".join(modules))
+
+    for module_path in modules:
+        if "encoder.down" in module_path:
+            group_plan.append((module_path, False))
+        elif "encoder.mid" in module_path:
+            group_plan.append((module_path, False))
 
     logger.info(f"The `group_plan` for FSDP (layer-level granularity):\n{group_plan}")
     return group_plan
+
+
+def recursive_list_modules(module, prefix=""):
+    modules = []
+    if isinstance(module, (torch.nn.Module, torch.jit.RecursiveScriptModule)):
+        modules.append(prefix.strip("."))
+        for name in dir(module):
+            if not name.startswith("_"):
+                try:
+                    child = getattr(module, name)
+                    if isinstance(
+                        child, (torch.nn.Module, torch.jit.RecursiveScriptModule)
+                    ):
+                        modules.extend(
+                            recursive_list_modules(child, prefix=f"{prefix}.{name}")
+                        )
+                except AttributeError:
+                    pass
+    return modules
 
 
 def tp_parallelize(model, tp_mesh, model_args: ModelArgs, distributed_args):
