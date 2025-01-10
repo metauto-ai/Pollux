@@ -26,7 +26,7 @@ class NovaCaption:
         collection_name,
         image_field: str,
         caption_field: str = "nova_lite_caption",
-        maxTokens: int = 150,
+        maxTokens: int = 200,
         topP: float = 0.1,
         temperature: float = 1.0,
         max_workers: int = 32,
