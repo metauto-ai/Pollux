@@ -242,7 +242,7 @@ class WandBLogger:
 
 if __name__ == "__main__":
     batch_size = 20
-    max_samples_per_min = 450
+    max_samples_per_min = 400
     nova_caption = NovaCaption(
         collection_name="unsplash_images",
         image_field="s3url",
@@ -265,8 +265,6 @@ if __name__ == "__main__":
             if elapsed_time < 60:
                 logging.info(f"Sleeping for {60 - elapsed_time} seconds")
                 time.sleep(60 - elapsed_time)
-            else:
-                continue
             start_time = time.time()
             processed_samples = 0
         logging.info(f"Total samples processed: {total_samples}")
