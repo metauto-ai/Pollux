@@ -126,6 +126,7 @@ class Pollux(nn.Module):
         x = x.permute(0, 5, 1, 3, 2, 4).flatten(4, 5).flatten(2, 3)  # [B,16,H/8,W/8]
         return x
 
+
     def process_mask(
         self,
         input_ids: torch.Tensor,
@@ -133,53 +134,50 @@ class Pollux(nn.Module):
         mask_strategy: str,
         random_rate: float = 0.15,
     ) -> Tuple[torch.Tensor, List[List[int]], torch.Tensor]:
-
+        """
+        Generates attention masks, masked indices, and reordered embeddings.
+        """
         device = images_embs.device
-        B = images_embs.shape[0]  
-
-        text_seq_len = input_ids.shape[1]
-        visual_seq_len = images_embs.shape[1]  
-        if mask_strategy == "full_mask":
-            attention_mask = torch.cat(
-                [
-                    torch.ones((B, text_seq_len), device=device),
-                    torch.zeros((B, visual_seq_len), device=device),
-                ],
-                dim=1,
-            )
-        elif mask_strategy == "random_mask":
-            attention_mask = torch.cat(
-                [
-                    torch.ones((B, text_seq_len), device=device),
-                    torch.ones((B, visual_seq_len), device=device),
-                ],
-                dim=1,
-            )
-        else:
-            raise ValueError(f"Invalid mask strategy: {mask_strategy}")
+        B, M = images_embs.shape[:2]  # Batch size and number of patches
 
         masked_indices_list = []
         reordered_images_embs_list = []
 
         if mask_strategy == "random_mask":
             for b_idx in range(B):
-
-                M = images_embs[b_idx].shape[0]
                 random_mask = torch.rand(M, device=device) < random_rate
                 unmasked_idx = torch.where(~random_mask)[0]
                 masked_idx = torch.where(random_mask)[0]
-                masked_indices_list.append(masked_idx.tolist())
+                attention_mask = torch.cat(
+                    [torch.ones_like(unmasked_idx, device=device),
+                    torch.zeros_like(masked_idx, device=device)],
+                    dim=0
+                )
 
-                # Causal Fusion
+                masked_indices = torch.zeros(M, dtype=torch.bool, device=device)
+                masked_indices[masked_idx] = True
+                masked_indices_list.append(masked_indices.tolist())
                 reordered_idx = torch.cat([unmasked_idx, masked_idx], dim=0)
                 reordered_images_embs_list.append(images_embs[b_idx, reordered_idx, :])
-            reordered_images_embs = torch.stack(reordered_images_embs_list, dim=0)
-        else:
-            reordered_images_embs = images_embs
-            for _ in range(B):
-                masked_indices_list.append([])
 
+        elif mask_strategy == "full_mask":
+            attention_mask = torch.cat(
+                [
+                    torch.ones((B, input_ids.shape[1]), device=device),  # Text tokens: unmasked
+                    torch.zeros((B, M), device=device),                  # Vision tokens: fully masked
+                ],
+                dim=1,
+            )
+            masked_indices_list = [[True] * M for _ in range(B)]  
+            reordered_images_embs_list = [images_embs[b_idx] for b_idx in range(B)]
+
+        else:
+            raise ValueError(f"Invalid mask strategy: {mask_strategy}")
+
+        reordered_images_embs = torch.stack(reordered_images_embs_list, dim=0)
         return attention_mask, masked_indices_list, reordered_images_embs
+
+
 
 
     def apply_2d_rope(self, patch_embs: torch.Tensor, H: int, W: int) -> torch.Tensor:
@@ -197,7 +195,6 @@ class Pollux(nn.Module):
             out_list.append(self._apply_2d_rope_single(x_2d[b_idx], freqs_h, freqs_w))
         x_2d_after = torch.stack(out_list, dim=0)  # [B, H, W, D]
         return x_2d_after.view(B, M, D)
-
 
 
     def _apply_2d_rope_single(
