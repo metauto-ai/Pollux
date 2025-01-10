@@ -250,7 +250,7 @@ if __name__ == "__main__":
         maxTokens=150,
         topP=0.1,
         temperature=1.0,
-        max_workers=20,
+        max_workers=batch_size,
         batch_size=batch_size,
     )
     start_time = time.time()
