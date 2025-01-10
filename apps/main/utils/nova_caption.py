@@ -14,10 +14,17 @@ import requests
 import wandb
 import uuid
 import re
+import time
+from botocore.config import Config
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+)
+Image.MAX_IMAGE_PIXELS = None
+config = Config(
+    retries={"max_attempts": 10, "mode": "adaptive"},
+    max_pool_connections=50,  # Increase pool size (default is 10)
 )
 
 
@@ -45,6 +52,7 @@ class NovaCaption:
             aws_access_key_id="AKIA47CRZU7STC4XUXER",
             aws_secret_access_key="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",
             region_name="us-east-1",
+            config=config,
         )
         # -------- MongoDB --------
         mongodb_client = MongoClient(MONGODB_URI, tlsCAFile=certifi.where())
@@ -94,14 +102,18 @@ class NovaCaption:
                     logging.warning(f"Erros in handling {_id}:{e}")
                 else:
 
-                    logging.info(f"\n[Full Response for {_id}]")
-                    logging.info(f"\n[Response Content Text for {_id}]")
+                    # logging.info(f"\n[Full Response for {_id}]")
+                    # logging.info(f"\n[Response Content Text for {_id}]")
+                    # logging.info(
+                    #     f"{json.dumps(response, indent=2, ensure_ascii=False)}"
+                    # )
                     caption = response["output"]["message"]["content"][0]["text"]
                     caption = filter_image_caption(caption)
                     self.update_data(_id, caption)
                     if wandb_logger:
                         wandb_logger.add_image(image_bytes, caption)
-            wandb_logger.log_images()
+            if wandb_logger:
+                wandb_logger.log_images()
 
     def read_data_from_mongoDB(self):
         query = {f"{self.caption_field}": {"$exists": False}}
@@ -229,6 +241,8 @@ class WandBLogger:
 
 
 if __name__ == "__main__":
+    batch_size = 10
+    max_samples_per_min = 100
     nova_caption = NovaCaption(
         collection_name="unsplash_images",
         image_field="s3url",
@@ -236,10 +250,22 @@ if __name__ == "__main__":
         maxTokens=150,
         topP=0.1,
         temperature=1.0,
-        max_workers=16,
-        batch_size=100,
+        max_workers=10,
+        batch_size=batch_size,
     )
-    wandb_logger = WandBLogger(
-        project="Pollux", run_name="nova-caption-run", entity="metauto"
-    )
-    nova_caption.run(wandb_logger)
+    start_time = time.time()
+    processed_samples = 0
+    total_samples = 0
+    while True:
+        nova_caption.run()
+        elapsed_time = time.time() - start_time
+        processed_samples += batch_size
+        total_samples += processed_samples
+        if processed_samples >= max_samples_per_min:
+            if elapsed_time < 60:
+                time.sleep(60 - elapsed_time)
+            else:
+                continue
+            start_time = time.time()
+            processed_samples = 0
+        logging.info(f"Total samples processed: {total_samples}")
