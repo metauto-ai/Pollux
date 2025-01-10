@@ -95,8 +95,12 @@ class Pollux(nn.Module):
             dropout_prob=args.image_cfg_ratio,
         )
 
-        self.vision_boi_emb = nn.Parameter(torch.zeros(1, args.latent_projector.output_dim))
-        self.vision_eoi_emb = nn.Parameter(torch.zeros(1, args.latent_projector.output_dim))
+        self.vision_boi_emb = nn.Parameter(
+            torch.zeros(1, args.latent_projector.output_dim)
+        )
+        self.vision_eoi_emb = nn.Parameter(
+            torch.zeros(1, args.latent_projector.output_dim)
+        )
 
         self.llm_tokenizer = LlamaTokenizerFast.from_pretrained(args.llm.model_name)
         self.llm = LlamaForCausalLM.from_pretrained(args.llm.model_name)
@@ -108,8 +112,6 @@ class Pollux(nn.Module):
             self.patchify_size**2 * args.latent_projector.latent_dim,
         )
 
-
-    
     def patchify_and_embed(self, x: torch.Tensor):
         pH = pW = self.patchify_size
         B, C, H, W = x.size()
@@ -125,7 +127,6 @@ class Pollux(nn.Module):
         x = x.view(B, H // pH, W // pW, pH, pW, -1)
         x = x.permute(0, 5, 1, 3, 2, 4).flatten(4, 5).flatten(2, 3)  # [B,16,H/8,W/8]
         return x
-
 
     def process_mask(
         self,
@@ -149,9 +150,11 @@ class Pollux(nn.Module):
                 unmasked_idx = torch.where(~random_mask)[0]
                 masked_idx = torch.where(random_mask)[0]
                 attention_mask = torch.cat(
-                    [torch.ones_like(unmasked_idx, device=device),
-                    torch.zeros_like(masked_idx, device=device)],
-                    dim=0
+                    [
+                        torch.ones_like(unmasked_idx, device=device),
+                        torch.zeros_like(masked_idx, device=device),
+                    ],
+                    dim=0,
                 )
 
                 masked_indices = torch.zeros(M, dtype=torch.bool, device=device)
@@ -163,12 +166,14 @@ class Pollux(nn.Module):
         elif mask_strategy == "full_mask":
             attention_mask = torch.cat(
                 [
-                    torch.ones((B, input_ids.shape[1]), device=device),  # Text tokens: unmasked
-                    torch.zeros((B, M), device=device),                  # Vision tokens: fully masked
+                    torch.ones(
+                        (B, input_ids.shape[1]), device=device
+                    ),  # Text tokens: unmasked
+                    torch.zeros((B, M), device=device),  # Vision tokens: fully masked
                 ],
                 dim=1,
             )
-            masked_indices_list = [[True] * M for _ in range(B)]  
+            masked_indices_list = [[True] * M for _ in range(B)]
             reordered_images_embs_list = [images_embs[b_idx] for b_idx in range(B)]
 
         else:
@@ -177,11 +182,8 @@ class Pollux(nn.Module):
         reordered_images_embs = torch.stack(reordered_images_embs_list, dim=0)
         return attention_mask, masked_indices_list, reordered_images_embs
 
-
-
-
     def apply_2d_rope(self, patch_embs: torch.Tensor, H: int, W: int) -> torch.Tensor:
-  
+
         B, M, D = patch_embs.shape
         if H * W != M:
             raise ValueError(
@@ -189,19 +191,17 @@ class Pollux(nn.Module):
             )
 
         x_2d = patch_embs.view(B, H, W, D)
-        freqs_h, freqs_w = self._precompute_freqs_cis(D // 2, H, W, device=patch_embs.device)
+        freqs_h, freqs_w = self._precompute_freqs_cis(
+            D // 2, H, W, device=patch_embs.device
+        )
         out_list = []
         for b_idx in range(B):
             out_list.append(self._apply_2d_rope_single(x_2d[b_idx], freqs_h, freqs_w))
         x_2d_after = torch.stack(out_list, dim=0)  # [B, H, W, D]
         return x_2d_after.view(B, M, D)
 
-
     def _apply_2d_rope_single(
-        self,
-        x_hw_d: torch.Tensor,
-        freqs_h: torch.Tensor,
-        freqs_w: torch.Tensor
+        self, x_hw_d: torch.Tensor, freqs_h: torch.Tensor, freqs_w: torch.Tensor
     ) -> torch.Tensor:
         H, W, D = x_hw_d.shape
         half_dim = D // 2
@@ -216,16 +216,21 @@ class Pollux(nn.Module):
 
         return torch.cat([rope_emb_real, rope_emb_imag], dim=-1)
 
-    def _precompute_freqs_cis(self, dim: int, H: int, W: int, base: float = 10000.0, device=None):
- 
+    def _precompute_freqs_cis(
+        self, dim: int, H: int, W: int, base: float = 10000.0, device=None
+    ):
+
         freqs = 1.0 / (base ** (torch.arange(0, dim, 2, device=device).float() / dim))
         pos_h = torch.arange(H, device=device).unsqueeze(1)  # [H, 1]
         pos_w = torch.arange(W, device=device).unsqueeze(1)  # [W, 1]
-        freqs_h = torch.cat([torch.cos(pos_h * freqs), torch.sin(pos_h * freqs)], dim=1)  # [H, dim]
-        freqs_w = torch.cat([torch.cos(pos_w * freqs), torch.sin(pos_w * freqs)], dim=1)  # [W, dim]
+        freqs_h = torch.cat(
+            [torch.cos(pos_h * freqs), torch.sin(pos_h * freqs)], dim=1
+        )  # [H, dim]
+        freqs_w = torch.cat(
+            [torch.cos(pos_w * freqs), torch.sin(pos_w * freqs)], dim=1
+        )  # [W, dim]
 
         return freqs_h, freqs_w
-
 
     def forward(
         self,
@@ -242,11 +247,14 @@ class Pollux(nn.Module):
         cls_emb = self.vision_cls_emb(labels, train=True).unsqueeze(1)  # [B, 1, D]
 
         # Vision Discrete Latent Codes
-        vae_indices, vae_latent = self.vae.encode(images)  # [B, 1, H/16, W/16], [B, 6, 1, H/16, W/16]
-        vae_embs, H_, W_ = self.patchify_and_embed(vae_latent.squeeze(2)) # [B, H/16 * W/16, D]
+        vae_indices, vae_latent = self.vae.encode(
+            images
+        )  # [B, 1, H/16, W/16], [B, 6, 1, H/16, W/16]
+        vae_embs, H_, W_ = self.patchify_and_embed(
+            vae_latent.squeeze(2)
+        )  # [B, H/16 * W/16, D]
         M = vae_embs.shape[1]
         original_rope = self.apply_2d_rope(vae_embs.clone(), H_, W_)
-
 
         # Text Embedding
         input_ids = self.llm_tokenizer(
@@ -260,11 +268,13 @@ class Pollux(nn.Module):
             random_rate=random_rate,
         )
 
-        restored_rope_embs = torch.zeros_like(vae_embs)  
-        for b_idx in range(vae_embs.size(0)): 
+        restored_rope_embs = torch.zeros_like(vae_embs)
+        for b_idx in range(vae_embs.size(0)):
             reordered_indices = torch.cat(
-                [torch.where(~torch.tensor(masked_indices[b_idx], device=vae_embs.device))[0],  
-                torch.where(torch.tensor(masked_indices[b_idx], device=vae_embs.device))[0]]  
+                [
+                    torch.where(~torch.tensor(masked_indices[b_idx], device=vae_embs.device))[0],
+                    torch.where(torch.tensor(masked_indices[b_idx], device=vae_embs.device))[0],
+                ]
             )
             restored_rope_embs[b_idx] = original_rope[b_idx, reordered_indices, :]
 
@@ -273,7 +283,9 @@ class Pollux(nn.Module):
         # Concat
         boi_emb = self.vision_boi_emb.unsqueeze(0).expand(vae_embs.size(0), -1, -1)
         eoi_emb = self.vision_eoi_emb.unsqueeze(0).expand(vae_embs.size(0), -1, -1)
-        mm_embs = torch.cat([text_embs, cls_emb, boi_emb, vae_embs, eoi_emb], dim=1)
+        vae_embs_with_rope = vae_embs + original_rope
+        mm_embs = torch.cat([text_embs, cls_emb, boi_emb, vae_embs_with_rope, eoi_emb], dim=1)
+
 
         vae_start_idx = text_embs.size(1) + 2
 
@@ -281,16 +293,18 @@ class Pollux(nn.Module):
         output = self.llm(
             inputs_embeds=mm_embs,
             # NOTE: not sure wether we need attention_mask for causalfusion; will check later
-            # attention_mask=attention_mask, 
+            # attention_mask=attention_mask,
             output_hidden_states=True,
             # labels=input_ids,
             return_dict=True,
         )
 
         # Latent Head
-        latent_hidden = output.hidden_states[-1][:, vae_start_idx:vae_start_idx+vae_embs.size(1), :]  # [B,M,D]
+        latent_hidden = output.hidden_states[-1][
+            :, vae_start_idx : vae_start_idx + vae_embs.size(1), :
+        ]  # [B,M,D]
         pred_latent = self.latent_head(latent_hidden)
-        pred_latent = self.unpatchify_image(pred_latent, H_, W_) 
+        pred_latent = self.unpatchify_image(pred_latent, H_, W_)
 
         # compute loss
         pred_loss = F.mse_loss(pred_latent, vae_latent.squeeze(2))
@@ -325,6 +339,7 @@ class Pollux(nn.Module):
         nn.init.zeros_(self.latent_head.bias)
 
         self.vision_cls_emb.reset_parameters()
+
 
 # Optional policy for activation checkpointing. With None, we stick to the default (defined distributed.py: default_no_recompute_ops)
 def get_no_recompute_ops():
