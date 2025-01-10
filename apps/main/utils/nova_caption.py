@@ -103,8 +103,24 @@ class NovaCaption:
         return list(cursor)
 
     def process_image(self, image):
-        # need help to write image procvessing code
-        return image
+        width, height = image.size
+        min_dim = min(width, height)
+
+        if min_dim > 512:
+            scale = 512 / min_dim
+        elif min_dim < 512:
+            scale = 256 / min_dim
+        else:
+            # If the size is already 512, return the original image
+            return image
+
+        # Calculate new dimensions while keeping the aspect ratio
+        new_width = int(width * scale)
+        new_height = int(height * scale)
+
+        # Resize the image
+        resized_image = image.resize((new_width, new_height), Image.Resampling.LANCZOS)
+        return resized_image
 
     def download_image(self, s3url):
         response = requests.get(s3url)
@@ -206,10 +222,10 @@ if __name__ == "__main__":
         collection_name="cc12m",
         image_field="s3url",
         caption_field="nova_lite_caption",
-        maxTokens=100,
+        maxTokens=150,
         topP=0.1,
         temperature=1.0,
-        max_workers=2,
+        max_workers=64,
         batch_size=100,
     )
     wandb_logger = WandBLogger(
