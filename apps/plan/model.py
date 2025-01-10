@@ -256,8 +256,6 @@ class Pollux(nn.Module):
             captions, padding=True, truncation=True, return_tensors="pt"
         )["input_ids"].to(self.llm.device)
 
-        vae_embs = self.apply_2d_rope(vae_embs)
-
         attention_mask, masked_indices, vae_embs = self.process_mask(
             input_ids,
             vae_embs,
