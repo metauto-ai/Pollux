@@ -26,7 +26,7 @@ class NovaCaption:
         collection_name,
         image_field: str,
         caption_field: str = "nova_lite_caption",
-        maxTokens: int = 200,
+        maxTokens: int = 150,
         topP: float = 0.1,
         temperature: float = 1.0,
         max_workers: int = 32,
@@ -48,9 +48,10 @@ class NovaCaption:
         self.batch_size = batch_size
         # -------- System Prompt --------
 
-        system_prompt = """You are tasked with generating image captions that will be used for training diffusion text-to-image models. 
-                        Your goal is to create captions that imitate what humans might use as prompts when generating images. 
-        Guidelines for generating image captions:
+        system_prompt = """You are tasked with generating image prompts that will be used for training diffusion text-to-image models. 
+                          This is a reverse-engineering process: you are creating prompts based on the image, generating the textual description a user would provide to produce a similar result.
+
+        Guidelines for generating image prompts:
         1. Please generate a comprehensive, single-paragraph caption that includes every visible element in the image, including any readable text. 
         2. Include information about style, mood, lighting, and composition when relevant.
         3. Use a mix of concrete and abstract terms.
