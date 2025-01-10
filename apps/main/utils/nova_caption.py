@@ -241,7 +241,7 @@ class WandBLogger:
 
 
 if __name__ == "__main__":
-    batch_size = 10
+    batch_size = 20
     max_samples_per_min = 100
     nova_caption = NovaCaption(
         collection_name="unsplash_images",
@@ -250,7 +250,7 @@ if __name__ == "__main__":
         maxTokens=150,
         topP=0.1,
         temperature=1.0,
-        max_workers=10,
+        max_workers=20,
         batch_size=batch_size,
     )
     start_time = time.time()
@@ -260,7 +260,7 @@ if __name__ == "__main__":
         nova_caption.run()
         elapsed_time = time.time() - start_time
         processed_samples += batch_size
-        total_samples += processed_samples
+        total_samples += batch_size
         if processed_samples >= max_samples_per_min:
             if elapsed_time < 60:
                 time.sleep(60 - elapsed_time)
