@@ -11,6 +11,8 @@ from apps.main.utils.mongodb_data_load import MONGODB_URI
 from pymongo import MongoClient
 import logging
 import requests
+import wandb
+import uuid
 
 logging.basicConfig(
     level=logging.INFO,
@@ -69,7 +71,7 @@ class NovaCaption:
         # -------- ThreadPoolExecutor --------
         self.max_workers = max_workers
 
-    def run(self):
+    def run(self, wandb_logger=None):
         docs = self.read_data_from_mongoDB()
         with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
             future_to_id = {
@@ -79,24 +81,34 @@ class NovaCaption:
             for future in as_completed(future_to_id):
                 _id = future_to_id[future]
                 try:
-                    response = future.result()
+                    response, image_bytes = future.result()
                 except Exception as e:
                     logging.warning(f"Erros in handling {_id}:{e}")
                 else:
 
                     logging.info(f"\n[Full Response for {_id}]")
-                    logging.info(json.dumps(response, indent=2, ensure_ascii=False))
                     logging.info(f"\n[Response Content Text for {_id}]")
                     logging.info(response["output"]["message"]["content"][0]["text"])
+                    if wandb_logger:
+                        wandb_logger.add_image(
+                            image_bytes,
+                            response["output"]["message"]["content"][0]["text"],
+                        )
+            wandb_logger.log_images()
 
     def read_data_from_mongoDB(self):
         query = {f"{self.caption_field}": {"$exists": False}}
         cursor = self.collection.find(query).limit(self.batch_size)
         return list(cursor)
 
+    def process_image(self, image):
+        # need help to write image procvessing code
+        return image
+
     def download_image(self, s3url):
         response = requests.get(s3url)
         image = Image.open(io.BytesIO(response.content)).convert("RGB")
+        image = self.process_image(image)
         buffer = io.BytesIO()
         image.save(buffer, format="JPEG", quality=95)
         buffer.seek(0)
@@ -132,7 +144,60 @@ class NovaCaption:
     def batch_process(self, doc):
         image_bytes = self.download_image(doc[self.image_field])
         response = self.generate_image_caption(image_bytes)
-        return response
+        return response, image_bytes
+
+
+class WandBLogger:
+    def __init__(self, project: str, run_name: str, entity: str = None):
+        """
+        Initialize the WandBLogger class.
+
+        Args:
+            project (str): The W&B project name.
+            run_name (str): The name of the run.
+            entity (str): The W&B entity (team or account). Optional.
+        """
+        self.run = wandb.init(project=project, name=run_name, entity=entity)
+        self.images = []
+
+    def add_image(self, image_bytes: bytes, caption: str):
+        """
+        Add an image to the list of images to be logged later.
+
+        Args:
+            image_bytes (bytes): Raw image bytes (e.g., from a buffer).
+            caption (str): Caption for the image.
+        """
+        # Convert bytes to PIL Image
+        image = Image.open(io.BytesIO(image_bytes))
+        self.images.append(wandb.Image(image, caption=caption))
+
+    def log_images(self, log_key: str = "images"):
+        """
+        Log all gathered images to W&B at once.
+
+        Args:
+            log_key (str): The key under which the images are logged. Default is "images".
+        """
+        if self.images:
+            wandb.log({log_key: self.images})
+            self.images = []  # Clear the list after logging
+
+    def log_image(self, image_bytes: bytes, caption: str, log_key: str = "image"):
+        """
+        Log an image with a caption to W&B.
+
+        Args:
+            image_path (str): Path to the image file.
+            caption (str): Caption for the image.
+            log_key (str): The key under which the image is logged. Default is "image".
+        """
+        image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+        wandb.log({log_key: wandb.Image(image, caption=caption)})
+
+    def finish(self):
+        """Finish the W&B run."""
+        wandb.finish()
 
 
 if __name__ == "__main__":
@@ -144,6 +209,9 @@ if __name__ == "__main__":
         topP=0.1,
         temperature=1.0,
         max_workers=2,
-        batch_size=5,
+        batch_size=100,
     )
-    nova_caption.run()
+    wandb_logger = WandBLogger(
+        project="Pollux", run_name="nova-caption-run", entity="metauto"
+    )
+    nova_caption.run(wandb_logger)
