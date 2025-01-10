@@ -241,7 +241,7 @@ class WandBLogger:
 
 
 if __name__ == "__main__":
-    batch_size = 20
+    batch_size = 60
     max_samples_per_min = 400
     nova_caption = NovaCaption(
         collection_name="unsplash_images",
