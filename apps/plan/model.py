@@ -127,44 +127,60 @@ class Pollux(nn.Module):
         return x
 
     def process_mask(
-        self, input_ids, images_embs, mask_strategy: str, random_rate: float = 0.15
-    ) -> torch.Tensor:
+        self,
+        input_ids: torch.Tensor,
+        images_embs: torch.Tensor,
+        mask_strategy: str,
+        random_rate: float = 0.15,
+    ) -> Tuple[torch.Tensor, List[List[int]], torch.Tensor]:
+
+        device = images_embs.device
+        B = images_embs.shape[0]  
 
         text_seq_len = input_ids.shape[1]
-        visual_seq_len = images_embs.shape[1]
-
+        visual_seq_len = images_embs.shape[1]  
         if mask_strategy == "full_mask":
             attention_mask = torch.cat(
                 [
-                    torch.ones(
-                        (input_ids.shape[0], text_seq_len), device=input_ids.device
-                    ),
-                    torch.zeros(
-                        (input_ids.shape[0], visual_seq_len), device=input_ids.device
-                    ),
+                    torch.ones((B, text_seq_len), device=device),
+                    torch.zeros((B, visual_seq_len), device=device),
                 ],
                 dim=1,
             )
         elif mask_strategy == "random_mask":
-            random_mask = (
-                torch.rand(
-                    (input_ids.shape[0], visual_seq_len), device=input_ids.device
-                )
-                < random_rate
-            )
             attention_mask = torch.cat(
                 [
-                    torch.ones(
-                        (input_ids.shape[0], text_seq_len), device=input_ids.device
-                    ),
-                    (~random_mask).float(),
+                    torch.ones((B, text_seq_len), device=device),
+                    torch.ones((B, visual_seq_len), device=device),
                 ],
                 dim=1,
             )
         else:
             raise ValueError(f"Invalid mask strategy: {mask_strategy}")
 
-        return attention_mask
+        masked_indices_list = []
+        reordered_images_embs_list = []
+
+        if mask_strategy == "random_mask":
+            for b_idx in range(B):
+
+                M = images_embs[b_idx].shape[0]
+                random_mask = torch.rand(M, device=device) < random_rate
+                unmasked_idx = torch.where(~random_mask)[0]
+                masked_idx = torch.where(random_mask)[0]
+                masked_indices_list.append(masked_idx.tolist())
+
+                # Causal Fusion
+                reordered_idx = torch.cat([unmasked_idx, masked_idx], dim=0)
+                reordered_images_embs_list.append(images_embs[b_idx, reordered_idx, :])
+            reordered_images_embs = torch.stack(reordered_images_embs_list, dim=0)
+        else:
+            reordered_images_embs = images_embs
+            for _ in range(B):
+                masked_indices_list.append([])
+
+        return attention_mask, masked_indices_list, reordered_images_embs
+
 
     def forward(
         self,
@@ -182,25 +198,38 @@ class Pollux(nn.Module):
 
         # Vision Discrete Latent Codes
         vae_indices, vae_latent = self.vae.encode(images)  # [B, 1, H/16, W/16], [B, 6, 1, H/16, W/16]
-        vae_embs, H_, W_ = self.patchify_and_embed(vae_latent.squeeze(2)) # [B, H/16*W/16, D]
+
+        vae_embs, H_, W_ = self.patchify_and_embed(vae_latent.squeeze(2)) # [B, H/16 * W/16, D]
 
         # Text Embedding
         input_ids = self.llm_tokenizer(
             captions, padding=True, truncation=True, return_tensors="pt"
         )["input_ids"].to(self.llm.device)
+
+        vae_embs = self.apply_2d_rope(vae_embs)
+
+        attention_mask, masked_indices, vae_embs = self.process_mask(
+            input_ids,
+            vae_embs,
+            mask_strategy=mask_strategy,
+            random_rate=random_rate,
+            apply_2d_rope=True, 
+        )
+
         text_embs = self.llm.get_input_embeddings()(input_ids)  # [B,T,D]
 
         # Concat
         boi_emb = self.vision_boi_emb.unsqueeze(0).expand(vae_embs.size(0), -1, -1)
         eoi_emb = self.vision_eoi_emb.unsqueeze(0).expand(vae_embs.size(0), -1, -1)
-
         mm_embs = torch.cat([text_embs, cls_emb, boi_emb, vae_embs, eoi_emb], dim=1)
+
         vae_start_idx = text_embs.size(1) + 2
 
         # LLM Forward
         output = self.llm(
             inputs_embeds=mm_embs,
-            # attention_mask=attention_mask,
+            # NOTE: not sure wether we need attention_mask for causalfusion; will check later
+            # attention_mask=attention_mask, 
             output_hidden_states=True,
             # labels=input_ids,
             return_dict=True,
@@ -213,6 +242,7 @@ class Pollux(nn.Module):
 
         # compute loss
         pred_loss = F.mse_loss(pred_latent, vae_latent.squeeze(2))
+        batch["masked_indices"] = masked_indices
 
         # batch["latent_target"] = latent_target
         # batch["pred_latent"] = pred_latent
