@@ -182,6 +182,55 @@ class Pollux(nn.Module):
         return attention_mask, masked_indices_list, reordered_images_embs
 
 
+    def apply_2d_rope(self, patch_embs: torch.Tensor, H: int, W: int) -> torch.Tensor:
+
+        B, M, D = patch_embs.shape
+        if H * W != M:
+            raise ValueError(
+                f"Input H ({H}) and W ({W}) do not match the number of patches M ({M}). Ensure H * W == M."
+            )
+
+        x_2d = patch_embs.view(B, H, W, D)
+        freqs_h, freqs_w = self._precompute_freqs_cis(D // 2, H, W)
+        out_list = []
+        for b_idx in range(B):
+            out_list.append(self._apply_2d_rope_single(x_2d[b_idx], freqs_h, freqs_w))
+
+        x_2d_after = torch.stack(out_list, dim=0)  # [B, H, W, D]
+        return x_2d_after.view(B, M, D)
+
+
+    def _apply_2d_rope_single(
+        self,
+        x_hw_d: torch.Tensor,
+        freqs_h: torch.Tensor,
+        freqs_w: torch.Tensor
+    ) -> torch.Tensor:
+        H, W, D = x_hw_d.shape
+        half_dim = D // 2
+        q_real = x_hw_d[..., :half_dim]
+        q_imag = x_hw_d[..., half_dim:]
+
+        freqs_h = freqs_h.unsqueeze(1).expand(H, W, half_dim)
+        freqs_w = freqs_w.unsqueeze(0).expand(H, W, half_dim)
+
+        rope_emb_real = torch.cos(freqs_h) * q_real + torch.sin(freqs_h) * q_imag
+        rope_emb_imag = torch.cos(freqs_w) * q_real - torch.sin(freqs_w) * q_imag
+
+        return torch.cat([rope_emb_real, rope_emb_imag], dim=-1)
+
+    def _precompute_freqs_cis(self, dim: int, H: int, W: int, base: float = 10000.0):
+        freqs = 1.0 / (base ** (torch.arange(0, dim, 2).float() / dim))
+        pos_h = torch.arange(H).unsqueeze(1)
+        pos_w = torch.arange(W).unsqueeze(1)
+
+        freqs_h = torch.cat([torch.cos(pos_h * freqs), torch.sin(pos_h * freqs)], dim=1)
+        freqs_w = torch.cat([torch.cos(pos_w * freqs), torch.sin(pos_w * freqs)], dim=1)
+
+        return freqs_h.to(patch_embs.device), freqs_w.to(patch_embs.device)
+
+
+
     def forward(
         self,
         batch: dict[str, any],
@@ -198,8 +247,10 @@ class Pollux(nn.Module):
 
         # Vision Discrete Latent Codes
         vae_indices, vae_latent = self.vae.encode(images)  # [B, 1, H/16, W/16], [B, 6, 1, H/16, W/16]
-
         vae_embs, H_, W_ = self.patchify_and_embed(vae_latent.squeeze(2)) # [B, H/16 * W/16, D]
+        M = vae_embs.shape[1]
+        original_rope = self.apply_2d_rope(vae_embs.clone())
+
 
         # Text Embedding
         input_ids = self.llm_tokenizer(
@@ -213,8 +264,15 @@ class Pollux(nn.Module):
             vae_embs,
             mask_strategy=mask_strategy,
             random_rate=random_rate,
-            apply_2d_rope=True, 
         )
+
+        restored_rope_embs = torch.zeros_like(vae_embs)  
+        for b_idx in range(vae_embs.size(0)): 
+            reordered_indices = torch.cat(
+                [torch.where(~torch.tensor(masked_indices[b_idx], device=vae_embs.device))[0],  
+                torch.where(torch.tensor(masked_indices[b_idx], device=vae_embs.device))[0]]  
+            )
+            restored_rope_embs[b_idx] = original_rope[b_idx, reordered_indices, :]
 
         text_embs = self.llm.get_input_embeddings()(input_ids)  # [B,T,D]
 
