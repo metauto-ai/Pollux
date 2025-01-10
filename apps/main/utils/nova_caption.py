@@ -206,7 +206,7 @@ if __name__ == "__main__":
         collection_name="cc12m",
         image_field="s3url",
         caption_field="nova_lite_caption",
-        maxTokens=200,
+        maxTokens=100,
         topP=0.1,
         temperature=1.0,
         max_workers=2,
