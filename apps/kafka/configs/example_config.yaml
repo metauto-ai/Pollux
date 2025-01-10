@@ -1,0 +1,33 @@
+kafka_topics:
+  database:
+    name: database
+    partitions: 64
+  downloadedImages:
+    name: downloadedImages
+    partitions: 64
+  scoredImages:
+    name: scoredImages
+    partitions: 16
+
+stages:
+  main_worker:
+    producer_config:
+      topic: database
+
+  downloader_worker:
+    batch_size: 16    # per database partition
+    consumer_config:
+      topic: database
+    producer_config:
+      topic: downloadedImages
+
+  scorer_worker:
+    batch_size: 16
+    consumer_config:
+      topic: downloadedImages
+    producer_config:
+      topic: scoredImages
+
+  updater_worker:
+    consumer_config:
+      topic: scoredImages
