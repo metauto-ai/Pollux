@@ -1,16 +1,11 @@
 from dataclasses import dataclass, field
-from typing import Optional, Tuple, List
+from typing import Optional, Tuple
 import logging
-import random
-import numpy as np
-from PIL import Image
-import math
+import os
 
 import torch
-from einops import rearrange
 from torch import nn
 import torch.nn.functional as F
-from torch.nn.functional import log_softmax
 from torch.distributed._tensor import Replicate, Shard
 from torch.distributed.tensor.parallel import (
     ColwiseParallel,
@@ -19,34 +14,16 @@ from torch.distributed.tensor.parallel import (
     PrepareModuleInput,
     parallelize_module,
 )
-
-from transformers.configuration_utils import PretrainedConfig
-from transformers import (
-    AutoConfig,
-    AutoModelForCausalLM,
-    PreTrainedModel,
-    LlamaConfig,
-    LlamaForCausalLM,
-    LlamaTokenizerFast,
-)
-from transformers.models.llama.modeling_llama import LlamaRMSNorm
-
-
-from apps.main.modules.tokenizer import Tokenizer, TokenizerArgs
-from apps.main.modules.schedulers import RectifiedFlow, SchedulerArgs
-from apps.main.modules.vision_tower import VisionTower, VisionTowerArgs
+from transformers import LlamaTokenizerFast
 from apps.main.modules.vae import LatentVideoVAE, LatentVideoVAEArgs
-from apps.main.modules.preprocess import random_mask_images
 from apps.main.modules.embedder import LabelEmbedder
-
+from apps.main.modules.gen_transformer import (
+    RotaryEmbedding1D,
+    RotaryEmbedding2D,
+)
+from lingua.transformer import TransformerBlock, RMSNorm, InitStdFactor, cross_entropy
 
 logger = logging.getLogger()
-
-
-@dataclass
-class LLMArgs:
-    model_name: str
-    hidden_size: int
 
 
 @dataclass
@@ -57,17 +34,90 @@ class LatentProjecterArgs:
 
 
 @dataclass
-class ModelArgs:
+class TokenizerArgs:
+    model_name: str = "meta-llama/Llama-3.2-3B"
 
-    vision_tower: VisionTowerArgs = field(default_factory=VisionTowerArgs)
-    latent_projector: LatentProjecterArgs = field(default_factory=LatentProjecterArgs)
-    llm: Optional[LLMArgs] = None
+
+@dataclass
+class LlamaArgs:
+    dim: int = 512
+    n_layers: int = 8
+    head_dim: Optional[int] = None
+    n_heads: Optional[int] = None
+    n_kv_heads: Optional[int] = None
+    ffn_dim_multiplier: Optional[float] = None
+    multiple_of: int = 256
+    norm_eps: float = 1e-5
+    rope_theta: float = 10000.0
+    init_base_std: Optional[float] = None
+    init_std_factor: str = "disabled"
+    gen_seqlen: int = 256
+    condition_seqlen: int = 320
+    vocab_size: int = 128256
+    pre_trained_path: Optional[str] = None
+
+
+@dataclass
+class ModelArgs:
     vae: LatentVideoVAEArgs = field(default_factory=LatentVideoVAEArgs)
+    latent_projector: LatentProjecterArgs = field(default_factory=LatentProjecterArgs)
+    tokenizer: TokenizerArgs = field(default_factory=TokenizerArgs)
+    llm: LlamaArgs = field(default_factory=LlamaArgs)
     use_vision_boi: bool = True
     text_cfg_ratio: float = 0.1
     image_cfg_ratio: float = 0.1
-    scheduler: SchedulerArgs = field(default_factory=SchedulerArgs)
+    codebook_size: int = 512
     num_classes: int = 1000
+
+
+class LlamaTransformer(nn.Module):
+    def __init__(self, args: LlamaArgs):
+        super().__init__()
+        self.dim = args.dim
+        self.init_base_std = args.init_base_std
+        self.init_std_factor = InitStdFactor(args.init_std_factor)
+
+        self.tok_embeddings = nn.Embedding(args.vocab_size, args.dim)
+        self.layers = nn.ModuleList()
+        for _ in range(args.n_layers):
+            self.layers.append(TransformerBlock(args))
+
+    def forward(self, h, freq_cis, mask: str = "causal", attn_impl: str = "sdpa"):
+        for layer in self.layers:
+            h = layer(h, freq_cis, mask=mask, attn_impl=attn_impl)
+        return h
+
+    def init_weights(self, pre_trained_path: Optional[str] = None):
+        for depth, layer in enumerate(self.layers):
+            factor = {
+                InitStdFactor.CURRENT_DEPTH: (2 * (depth + 1)) ** 0.5,
+                InitStdFactor.GLOBAL_DEPTH: (2 * (len(self.layers) + 1)) ** 0.5,
+                InitStdFactor.DIM_RATIO: self.dim / 4096,
+                InitStdFactor.DISABLED: 1.0,
+            }[self.init_std_factor]
+
+            layer.init_weights(self.init_base_std, factor)
+
+        if pre_trained_path:
+            assert os.path.exists(pre_trained_path)
+            ckpt_state_dict = torch.load(pre_trained_path, map_location="cpu")
+            target_state_dict = self.state_dict()
+            filtered_state_dict = {
+                k: v
+                for k, v in ckpt_state_dict.items()
+                if k in target_state_dict and v.shape == target_state_dict[k].shape
+            }
+            target_state_dict.update(filtered_state_dict)
+            self.load_state_dict(target_state_dict)
+            missing_keys = set(target_state_dict.keys()) - set(
+                filtered_state_dict.keys()
+            )
+            unexpected_keys = set(ckpt_state_dict.keys()) - set(
+                target_state_dict.keys()
+            )
+            logger.info(f"Load the checkpoints from {pre_trained_path}")
+            logger.warning(f"Missing keys: {missing_keys}")
+            logger.warning(f"Unexpected keys: {unexpected_keys}")
 
 
 class Pollux(nn.Module):
@@ -83,42 +133,93 @@ class Pollux(nn.Module):
 
         self.vae = LatentVideoVAE(args.vae)
         self.patchify_size = args.latent_projector.patchify_size
+        assert self.patchify_size == 1, "Patchify size must be 1 for now."
         self.latent_projector = nn.Linear(
             self.patchify_size**2 * args.latent_projector.latent_dim,
             args.latent_projector.output_dim,
             bias=False,
         )
 
+        # additional embeddings
+        self.mask_token = nn.Parameter(
+            torch.zeros(1, 1, args.latent_projector.output_dim)
+        )
         self.vision_cls_emb = LabelEmbedder(
             num_classes=args.num_classes,
-            hidden_size=args.llm.hidden_size,
+            hidden_size=args.llm.dim,
             dropout_prob=args.image_cfg_ratio,
         )
-
         self.vision_boi_emb = nn.Parameter(
             torch.zeros(1, args.latent_projector.output_dim)
         )
-        self.vision_eoi_emb = nn.Parameter(
-            torch.zeros(1, args.latent_projector.output_dim)
+        # self.vision_eoi_emb = nn.Parameter(
+        #     torch.zeros(1, args.latent_projector.output_dim)
+        # )
+        # we do not use eoi for now
+
+        # rope embedding
+        self.rope_embeddings_image = RotaryEmbedding2D(
+            theta=args.llm.rope_theta,
+            head_dim=args.llm.head_dim or args.llm.dim // args.llm.n_heads,
+            max_seqlen=args.llm.gen_seqlen,
+        )
+        self.rope_embeddings_conditions = RotaryEmbedding1D(
+            theta=args.llm.rope_theta,
+            head_dim=args.llm.head_dim or args.llm.dim // args.llm.n_heads,
+            max_seqlen=args.llm.condition_seqlen,
         )
 
-        self.llm_tokenizer = LlamaTokenizerFast.from_pretrained(args.llm.model_name)
-        self.llm = LlamaForCausalLM.from_pretrained(args.llm.model_name)
+        # llama model
+        self.llm_tokenizer = LlamaTokenizerFast.from_pretrained(
+            args.tokenizer.model_name
+        )
         if self.llm_tokenizer.pad_token is None:
             self.llm_tokenizer.pad_token = self.llm_tokenizer.eos_token
 
+        self.llm = LlamaTransformer(args.llm)
+        self.llm.init_weights(args.llm.pre_trained_path)
+
+        # head
+        self.dim = args.llm.dim
+        self.norm = RMSNorm(args.llm.dim, eps=args.llm.norm_eps)
         self.latent_head = nn.Linear(
             args.latent_projector.output_dim,
-            self.patchify_size**2 * args.latent_projector.latent_dim,
+            self.patchify_size**2 * args.codebook_size,
+            bias=False,
         )
 
-    def patchify_and_embed(self, x: torch.Tensor):
+    def init_weights(self, args: ModelArgs, init_std: Optional[float] = None):
+        self.rope_embeddings_image.reset_parameters()
+        self.rope_embeddings_conditions.reset_parameters()
+        init_std = init_std or (self.dim ** (-0.5))
+        self.norm.reset_parameters()
+        nn.init.trunc_normal_(
+            self.latent_head.weight,
+            mean=0.0,
+            std=init_std,
+            a=-3 * init_std,
+            b=3 * init_std,
+        )
+        nn.init.normal_(self.vision_boi_emb, std=0.02)
+        # nn.init.normal_(self.vision_eoi_emb, std=0.02)
+        nn.init.xavier_uniform_(self.latent_projector.weight)
+        nn.init.xavier_uniform_(self.latent_head.weight)
+        # nn.init.zeros_(self.latent_head.bias)
+        self.vision_cls_emb.reset_parameters()
+
+    def patchify_and_embed(
+        self, x: torch.Tensor
+    ) -> Tuple[torch.Tensor, int, int, torch.Tensor]:
         pH = pW = self.patchify_size
         B, C, H, W = x.size()
         x = x.view(B, C, H // pH, pH, W // pW, pW).permute(0, 2, 4, 1, 3, 5).flatten(3)
         x = self.latent_projector(x)
         x = x.flatten(1, 2)  # [B, H/16*W/16, D]
-        return x, H, W
+
+        # rope embeddings
+        freqs_cis = self.rope_embeddings_image.freqs_cis[: H // pH, : W // pW]
+        freqs_cis = freqs_cis.flatten(0, 1)
+        return x, H, W, freqs_cis
 
     def unpatchify_image(self, x: torch.Tensor, H: int, W: int) -> torch.Tensor:
         B = x.size(0)
@@ -130,113 +231,59 @@ class Pollux(nn.Module):
 
     def process_mask(
         self,
-        input_ids: torch.Tensor,
         images_embs: torch.Tensor,
         mask_strategy: str,
         random_rate: float = 0.15,
-    ) -> Tuple[torch.Tensor, List[List[int]], torch.Tensor]:
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Generates attention masks, masked indices, and reordered embeddings.
         """
         device = images_embs.device
-        B, M = images_embs.shape[:2]  # Batch size and number of patches
-
-        masked_indices_list = []
-        reordered_images_embs_list = []
+        B, L, D = images_embs.shape
 
         if mask_strategy == "random_mask":
-            for b_idx in range(B):
-                random_mask = torch.rand(M, device=device) < random_rate
-                unmasked_idx = torch.where(~random_mask)[0]
-                masked_idx = torch.where(random_mask)[0]
-                attention_mask = torch.cat(
-                    [
-                        torch.ones_like(unmasked_idx, device=device),
-                        torch.zeros_like(masked_idx, device=device),
-                    ],
-                    dim=0,
-                )
+            len_keep = int(L * (1 - random_rate))
+            noise = torch.rand(B, L, device=device)
 
-                masked_indices = torch.zeros(M, dtype=torch.bool, device=device)
-                masked_indices[masked_idx] = True
-                masked_indices_list.append(masked_indices.tolist())
-                reordered_idx = torch.cat([unmasked_idx, masked_idx], dim=0)
-                reordered_images_embs_list.append(images_embs[b_idx, reordered_idx, :])
+            # sort noise for each sample
+            ids_shuffle = torch.argsort(
+                noise, dim=1
+            )  # ascend: small is keep, large is remove
+            ids_restore = torch.argsort(ids_shuffle, dim=1)
+
+            # keep the first subset
+            ids_keep = ids_shuffle[:, :len_keep]
+            images_embs_keep = torch.gather(
+                images_embs, 1, ids_keep.unsqueeze(-1).repeat(1, 1, D)
+            )
+
+            # generate the binary mask: 0 is keep, 1 is remove
+            mask = torch.ones([B, L], device=device)
+            mask[:, :len_keep] = 0
+            # unshuffle to get the binary mask
+            mask = torch.gather(mask, dim=1, index=ids_restore)
+
+            # padded mask tokens
+            images_embs_pad = self.mask_token.expand(B, L - len_keep, D)
+
+            # concatenate the keep and pad tokens
+            images_embs = torch.cat(
+                [images_embs_keep, images_embs_pad], dim=1
+            )  # [B, L, D]
 
         elif mask_strategy == "full_mask":
-            attention_mask = torch.cat(
-                [
-                    torch.ones(
-                        (B, input_ids.shape[1]), device=device
-                    ),  # Text tokens: unmasked
-                    torch.zeros((B, M), device=device),  # Vision tokens: fully masked
-                ],
-                dim=1,
-            )
-            masked_indices_list = [[True] * M for _ in range(B)]
-            reordered_images_embs_list = [images_embs[b_idx] for b_idx in range(B)]
+            raise NotImplementedError("Full mask is not implemented yet.")
 
         else:
             raise ValueError(f"Invalid mask strategy: {mask_strategy}")
-
-        reordered_images_embs = torch.stack(reordered_images_embs_list, dim=0)
-        return attention_mask, masked_indices_list, reordered_images_embs
-
-    def apply_2d_rope(self, patch_embs: torch.Tensor, H: int, W: int) -> torch.Tensor:
-
-        B, M, D = patch_embs.shape
-        if H * W != M:
-            raise ValueError(
-                f"Input H ({H}) and W ({W}) do not match the number of patches M ({M}). Ensure H * W == M."
-            )
-
-        x_2d = patch_embs.view(B, H, W, D)
-        freqs_h, freqs_w = self._precompute_freqs_cis(
-            D // 2, H, W, device=patch_embs.device
-        )
-        out_list = []
-        for b_idx in range(B):
-            out_list.append(self._apply_2d_rope_single(x_2d[b_idx], freqs_h, freqs_w))
-        x_2d_after = torch.stack(out_list, dim=0)  # [B, H, W, D]
-        return x_2d_after.view(B, M, D)
-
-    def _apply_2d_rope_single(
-        self, x_hw_d: torch.Tensor, freqs_h: torch.Tensor, freqs_w: torch.Tensor
-    ) -> torch.Tensor:
-        H, W, D = x_hw_d.shape
-        half_dim = D // 2
-        q_real = x_hw_d[..., :half_dim]
-        q_imag = x_hw_d[..., half_dim:]
-
-        freqs_h = freqs_h.unsqueeze(1).expand(H, W, half_dim)
-        freqs_w = freqs_w.unsqueeze(0).expand(H, W, half_dim)
-
-        rope_emb_real = torch.cos(freqs_h) * q_real + torch.sin(freqs_h) * q_imag
-        rope_emb_imag = torch.cos(freqs_w) * q_real - torch.sin(freqs_w) * q_imag
-
-        return torch.cat([rope_emb_real, rope_emb_imag], dim=-1)
-
-    def _precompute_freqs_cis(
-        self, dim: int, H: int, W: int, base: float = 10000.0, device=None
-    ):
-
-        freqs = 1.0 / (base ** (torch.arange(0, dim, 2, device=device).float() / dim))
-        pos_h = torch.arange(H, device=device).unsqueeze(1)  # [H, 1]
-        pos_w = torch.arange(W, device=device).unsqueeze(1)  # [W, 1]
-        freqs_h = torch.cat(
-            [torch.cos(pos_h * freqs), torch.sin(pos_h * freqs)], dim=1
-        )  # [H, dim]
-        freqs_w = torch.cat(
-            [torch.cos(pos_w * freqs), torch.sin(pos_w * freqs)], dim=1
-        )  # [W, dim]
-
-        return freqs_h, freqs_w
+        return images_embs, ids_restore
 
     def forward(
         self,
         batch: dict[str, any],
         mask_strategy: str = "random_mask",
         random_rate: float = 0.3,
+        attn_impl: str = "sdpa",
     ) -> Tuple[dict[str, any], torch.Tensor]:
 
         images = batch["image"]
@@ -247,68 +294,79 @@ class Pollux(nn.Module):
         cls_emb = self.vision_cls_emb(labels, train=True).unsqueeze(1)  # [B, 1, D]
 
         # Vision Discrete Latent Codes
-        vae_indices, vae_latent = self.vae.encode(
-            images
-        )  # [B, 1, H/16, W/16], [B, 6, 1, H/16, W/16]
-        vae_embs, H_, W_ = self.patchify_and_embed(
-            vae_latent.squeeze(2)
-        )  # [B, H/16 * W/16, D]
-        M = vae_embs.shape[1]
-        original_rope = self.apply_2d_rope(vae_embs.clone(), H_, W_)
+        self.vae.vae.vae._enc_model.to(images.device)
+        vae_indices, vae_latent = self.vae.encode(images)
+        # [B, 1, H/16, W/16], [B, 6, 1, H/16, W/16]
+        vae_embs, H_, W_, freqs_cis_img = self.patchify_and_embed(vae_latent.squeeze(2))
+        # [B, H/16 * W/16, D]
 
-        # Text Embedding
-        input_ids = self.llm_tokenizer(
-            captions, padding=True, truncation=True, return_tensors="pt"
-        )["input_ids"].to(self.llm.device)
-
-        attention_mask, masked_indices, vae_embs = self.process_mask(
-            input_ids,
+        # apply masking
+        original_vae_embs = vae_embs.clone()
+        vae_embs, ids_restore = self.process_mask(
             vae_embs,
             mask_strategy=mask_strategy,
             random_rate=random_rate,
         )
 
-        restored_rope_embs = torch.zeros_like(vae_embs)
-        for b_idx in range(vae_embs.size(0)):
-            reordered_indices = torch.cat(
-                [
-                    torch.where(~torch.tensor(masked_indices[b_idx], device=vae_embs.device))[0],
-                    torch.where(torch.tensor(masked_indices[b_idx], device=vae_embs.device))[0],
-                ]
-            )
-            restored_rope_embs[b_idx] = original_rope[b_idx, reordered_indices, :]
-
-        text_embs = self.llm.get_input_embeddings()(input_ids)  # [B,T,D]
+        # Text Embedding
+        tokenizer_output = self.llm_tokenizer(
+            captions,
+            padding=True,
+            truncation=True,
+            return_tensors="pt",
+        )
+        text_input_ids = tokenizer_output["input_ids"].to(vae_embs.device)  # [B, L]
+        text_embs = self.llm.tok_embeddings(text_input_ids)  # [B, L, D]
+        # attn_mask = tokenizer_output["attention_mask"].to(vae_embs.device)  # [B, L]
+        # attn_mask: left padding, invalid is 0, valid is 1. we do not need it now.
 
         # Concat
         boi_emb = self.vision_boi_emb.unsqueeze(0).expand(vae_embs.size(0), -1, -1)
-        eoi_emb = self.vision_eoi_emb.unsqueeze(0).expand(vae_embs.size(0), -1, -1)
-        vae_embs_with_rope = vae_embs + original_rope
-        mm_embs = torch.cat([text_embs, cls_emb, boi_emb, vae_embs_with_rope, eoi_emb], dim=1)
-
-
+        # eoi_emb = self.vision_eoi_emb.unsqueeze(0).expand(vae_embs.size(0), -1, -1)
+        mm_embs = torch.cat(
+            [
+                text_embs,
+                cls_emb,
+                boi_emb,
+                vae_embs,
+                # eoi_emb,
+            ],
+            dim=1,
+        )
         vae_start_idx = text_embs.size(1) + 2
 
+        # rope freq
+        freqs_cis_text = self.rope_embeddings_conditions.freqs_cis[:vae_start_idx]
+        freqs_cis_text = freqs_cis_text.to(mm_embs.device)
+        freqs_cis_img = freqs_cis_img.to(mm_embs.device)
+        freqs_cis = torch.cat([freqs_cis_text, freqs_cis_img], dim=0)
+
         # LLM Forward
-        output = self.llm(
-            inputs_embeds=mm_embs,
-            # NOTE: not sure wether we need attention_mask for causalfusion; will check later
-            # attention_mask=attention_mask,
-            output_hidden_states=True,
-            # labels=input_ids,
-            return_dict=True,
-        )
+        h = self.llm(mm_embs, freqs_cis, attn_impl=attn_impl)
 
         # Latent Head
-        latent_hidden = output.hidden_states[-1][
-            :, vae_start_idx : vae_start_idx + vae_embs.size(1), :
-        ]  # [B,M,D]
-        pred_latent = self.latent_head(latent_hidden)
-        pred_latent = self.unpatchify_image(pred_latent, H_, W_)
+        latent_hidden = h[:, vae_start_idx : vae_start_idx + vae_embs.size(1), :]
+        pred_latent = self.latent_head(self.norm(latent_hidden))  # [B,M,D]
+        # pred_latent = self.unpatchify_image(pred_latent, H_, W_)
+
+        # restore the order of the latent codes
+        pred_latent = torch.gather(
+            pred_latent,
+            dim=1,
+            index=ids_restore.unsqueeze(-1).repeat(1, 1, pred_latent.shape[2]),
+        )
 
         # compute loss
-        pred_loss = F.mse_loss(pred_latent, vae_latent.squeeze(2))
-        batch["masked_indices"] = masked_indices
+        # pred_loss = F.mse_loss(pred_latent, vae_latent.squeeze(2))
+        # todo: either next-token-prediction or reconstruction token prediction
+        # vae_indices: [B, 1, H/16, W/16], pred_latent: [B, M, codebook_size]
+        vae_indices = vae_indices.squeeze(1).flatten(1).long()  # [B, H/16*W/16]
+        # pred_loss = F.cross_entropy(pred_latent[:, :-1].permute(0, 2, 1), vae_indices[:, 1:])
+        pred_loss = cross_entropy(
+            pred_latent[:, :-1].flatten(0, 1),
+            vae_indices[:, 1:].flatten(0, 1),
+            reduction="mean",
+        )
 
         # batch["latent_target"] = latent_target
         # batch["pred_latent"] = pred_latent
@@ -324,22 +382,6 @@ class Pollux(nn.Module):
         self.vision_cls_emb.eval()
         self.llm.eval()
 
-    def init_weights(self, args: ModelArgs):
-
-        if args.llm and args.llm.model_name:
-            pretrained_state_dict = LlamaForCausalLM.from_pretrained(
-                args.llm.model_name
-            ).state_dict()
-            self.llm.load_state_dict(pretrained_state_dict)
-
-        nn.init.xavier_uniform_(self.latent_projector.weight)
-        nn.init.normal_(self.vision_boi_emb, mean=0.0, std=0.02)
-        nn.init.normal_(self.vision_eoi_emb, mean=0.0, std=0.02)
-        nn.init.xavier_uniform_(self.latent_head.weight)
-        nn.init.zeros_(self.latent_head.bias)
-
-        self.vision_cls_emb.reset_parameters()
-
 
 # Optional policy for activation checkpointing. With None, we stick to the default (defined distributed.py: default_no_recompute_ops)
 def get_no_recompute_ops():
@@ -352,11 +394,17 @@ def build_fsdp_grouping_plan(model_args: ModelArgs, model: nn.Module):
     for name, module in model.named_modules():
         logger.info(f"- {name}: {module.__class__.__name__}")
 
-    llama_model = getattr(model, "llm", None)
-    if llama_model and hasattr(llama_model, "model"):
-        logger.info("LlamaForCausalLM has `model` attribute. Building group plan...")
-        for idx, block in enumerate(llama_model.model.layers):
-            group_plan.append((f"llm.model.layers.{idx}", False))
+    # llama
+    for i in range(model_args.llm.n_layers):
+        group_plan.append((f"llm.layers.{i}", False))
+
+    group_plan.append(("latent_head", True))
+
+    # llama_model = getattr(model, "llm", None)
+    # if llama_model and hasattr(llama_model, "model"):
+    #     logger.info("LlamaForCausalLM has `model` attribute. Building group plan...")
+    #     for idx, block in enumerate(llama_model.model.layers):
+    #         group_plan.append((f"llm.model.layers.{idx}", False))
 
     # NOTE: Hunyuan
     # vae_encoder = getattr(model.vae.vae.encoder, "down_blocks", None)
@@ -366,52 +414,18 @@ def build_fsdp_grouping_plan(model_args: ModelArgs, model: nn.Module):
     # else:
     #     logger.warning("VAE encoder does not have `down_blocks` attribute.")
 
-    # NOTE: COSMOS
-    # TODO: We need to add the FSDP, but currently I failed to find the correct module name.
-    # Maybe this is because the torch.jit or RecurrentScriptModule is used.
-
-    # print("==================================")
-    # for name, module in model.vae.named_modules():
-    #     print(name, module)
-    # print("==================================")
-
-    # vae_encoder = getattr(model.vae._enc_model, "encoder", None)
+    # COSMOS
+    # vae_encoder = getattr(model.vae.vae.vae._enc_model, "encoder", None)
     # if vae_encoder and hasattr(vae_encoder, "down"):
     #     for i in range(len(vae_encoder.down)):
-    #         group_plan.append((f"vae._enc_model.encoder.down.{i}", False))
-    # else:
-    #     logger.warning("COSMOS-DV encoder does not have `down` attribute.")
-
-    modules = recursive_list_modules(model.vae)
-    print("Modules found:\n", "\n".join(modules))
-
-    for module_path in modules:
-        if "encoder.down" in module_path:
-            group_plan.append((module_path, False))
-        elif "encoder.mid" in module_path:
-            group_plan.append((module_path, False))
+    #         group_plan.append((f"vae.vae.vae._enc_model.encoder.down.{i}", False))
+    # elif vae_encoder and hasattr(vae_encoder, "mid"):
+    #     group_plan.append((f"vae.vae.vae._enc_model.encoder.mid.block_1", False))
+    #     group_plan.append((f"vae.vae.vae._enc_model.encoder.mid.attn_1", False))
+    #     group_plan.append((f"vae.vae.vae._enc_model.encoder.mid.block_2", False))
 
     logger.info(f"The `group_plan` for FSDP (layer-level granularity):\n{group_plan}")
     return group_plan
-
-
-def recursive_list_modules(module, prefix=""):
-    modules = []
-    if isinstance(module, (torch.nn.Module, torch.jit.RecursiveScriptModule)):
-        modules.append(prefix.strip("."))
-        for name in dir(module):
-            if not name.startswith("_"):
-                try:
-                    child = getattr(module, name)
-                    if isinstance(
-                        child, (torch.nn.Module, torch.jit.RecursiveScriptModule)
-                    ):
-                        modules.extend(
-                            recursive_list_modules(child, prefix=f"{prefix}.{name}")
-                        )
-                except AttributeError:
-                    pass
-    return modules
 
 
 def tp_parallelize(model, tp_mesh, model_args: ModelArgs, distributed_args):
