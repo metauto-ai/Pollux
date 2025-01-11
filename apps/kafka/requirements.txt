@@ -1,0 +1,5 @@
+aesthetic-predictor-v2-5==2024.12.18.1
+python-dotenv==1.0.1
+kafka-python==2.0.2
+pymongo==4.10.1
+python-snappy
