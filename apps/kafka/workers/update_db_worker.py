@@ -7,7 +7,7 @@ import torch.multiprocessing as mp
 from loguru import logger
 
 class UpdateWorker:
-    STAGE = "updater_worker"
+    STAGE = "update_database"
 
     def __init__(self, config, rank):
         self.rank = rank

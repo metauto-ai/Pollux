@@ -52,8 +52,8 @@ class ImageDataset(IterableDataset):
                 }
 
 
-class ScorerWorker:
-    STAGE = "scorer_worker"
+class AestheticScorerWorker:
+    STAGE = "aesthetic_scoring"
 
     def __init__(self, config, rank):
         self.stage_config = config["stages"][self.STAGE]
@@ -71,9 +71,13 @@ class ScorerWorker:
         n_gpus = torch.cuda.device_count()
         self.model = self.model.to(torch.bfloat16).to(f"cuda:{rank % n_gpus}").eval()
 
-        producer_topic = self.stage_config["producer_config"]["topic"]
-        topic_partitions = config["kafka_topics"][producer_topic]["partitions"]
-        self.producer = Producer(producer_topic, topic_partitions)
+        producer_topics = self.stage_config["producer_list"]
+        self.producers = [
+            Producer(
+                producer_topic, 
+                config["kafka_topics"][producer_topic]["partitions"]
+            ) for producer_topic in producer_topics
+        ]
 
         self.dataset = ImageDataset(consumer_topic, rank)
         batch_size = self.stage_config["batch_size"]
@@ -96,10 +100,11 @@ class ScorerWorker:
                     "document_ids": batch["document_ids"],
                     "scores": scores
                 })
-                self.producer.send(idx, {
-                    "document_ids": batch["document_ids"],
-                    "scores": scores
-                })
+                for producer in self.producers:
+                    producer.send(idx, {
+                        "document_ids": batch["document_ids"],
+                        "scores": scores
+                    })
             except Exception as e:
                 logger.error(f"Error processing batch {idx}: {e}")
 
@@ -107,7 +112,7 @@ class ScorerWorker:
 def score_image(rank):
     logger.info(f"Starting worker process with rank {rank}")
     config = load_yaml_config("configs/example_config.yaml")
-    worker = ScorerWorker(config, rank)
+    worker = AestheticScorerWorker(config, rank)
     worker.run()
 
 

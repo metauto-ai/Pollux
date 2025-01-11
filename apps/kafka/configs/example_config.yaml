@@ -5,29 +5,27 @@ kafka_topics:
   downloadedImages:
     name: downloadedImages
     partitions: 64
-  scoredImages:
-    name: scoredImages
+  aestheticScoredImages:
+    name: aestheticScoredImages
     partitions: 16
 
 stages:
-  main_worker:
-    producer_config:
-      topic: database
+  read_database:
+    producer_list:
+      - database
 
-  downloader_worker:
+  download_images:
     batch_size: 16    # per database partition
-    consumer_config:
-      topic: database
-    producer_config:
-      topic: downloadedImages
+    consumer: database
+    producer_list:
+      - downloadedImages
 
-  scorer_worker:
+  aesthetic_scoring:
     batch_size: 16
-    consumer_config:
-      topic: downloadedImages
-    producer_config:
-      topic: scoredImages
+    consumer: downloadedImages
+    producer_list:
+      - aestheticScoredImages
 
-  updater_worker:
-    consumer_config:
-      topic: scoredImages
+  update_database:
+    consumer: aestheticScoredImages
+

@@ -50,17 +50,21 @@ class ImageUrlDataset(IterableDataset):
 
 
 class DownloadWorker:
-    STAGE = "downloader_worker"
+    STAGE = "download_images"
 
     def __init__(self, config, rank):
         self.stage_config = config["stages"][self.STAGE]
         logger.info(f"Config: {self.stage_config}")
         
-        consumer_topic = self.stage_config["consumer_config"]["topic"]
+        consumer_topic = self.stage_config["consumer"]
 
-        producer_topic = self.stage_config["producer_config"]["topic"]
-        topic_partitions = config["kafka_topics"][producer_topic]["partitions"]
-        self.producer = Producer(producer_topic, topic_partitions)
+        producer_topics = self.stage_config["producer_list"]
+        self.producers = [
+            Producer(
+                producer_topic, 
+                config["kafka_topics"][producer_topic]["partitions"]
+            ) for producer_topic in producer_topics
+        ]
 
         self.dataset = ImageUrlDataset(consumer_topic, rank)
         batch_size = self.stage_config["batch_size"]
@@ -76,7 +80,8 @@ class DownloadWorker:
                 "document_ids": batch["document_ids"].tolist() if torch.is_tensor(batch["document_ids"]) else batch["document_ids"]
             }
             
-            self.producer.send(idx, message)
+            for producer in self.producers:
+                producer.send(idx, message)
 
 
 def download_image_worker(rank, config):
@@ -87,7 +92,7 @@ def download_image_worker(rank, config):
 if __name__ == "__main__":
     config = load_yaml_config("configs/example_config.yaml")
 
-    topic = config["stages"]["downloader_worker"]["consumer_config"]["topic"]
+    topic = config["stages"]["downloader_worker"]["consumer"]
     N_PROCESSES = config["kafka_topics"][topic]["partitions"]
 
     mp.spawn(
