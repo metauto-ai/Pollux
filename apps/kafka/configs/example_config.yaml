@@ -4,14 +4,14 @@ kafka_topics:
     partitions: 16
   downloadedImages:
     name: downloadedImages
-    partitions: 32
+    partitions: 8
   aestheticScoredImages:
     name: aestheticScoredImages
     partitions: 16
 
 stages:
   read_database:
-    batch_size: 32
+    batch_size: 128
     num_shards: 2
     shard_idx: 0
     dataset: diffusion
