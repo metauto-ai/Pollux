@@ -24,7 +24,7 @@ logging.basicConfig(
 Image.MAX_IMAGE_PIXELS = None
 config = Config(
     retries={"max_attempts": 10, "mode": "adaptive"},
-    max_pool_connections=60,  # Increase pool size (default is 10)
+    max_pool_connections=80,  # Increase pool size (default is 10)
 )
 
 
@@ -241,8 +241,8 @@ class WandBLogger:
 
 
 if __name__ == "__main__":
-    batch_size = 60
-    max_samples_per_min = 400
+    batch_size = 80
+    max_samples_per_min = 480
     nova_caption = NovaCaption(
         collection_name="unsplash_images",
         image_field="s3url",
