@@ -1,7 +1,10 @@
 import base64
 import io
+import multiprocessing
+import threading
+import time
 from workers.kafka_utils import Consumer, Producer
-from workers.common import load_yaml_config
+from workers.common import load_yaml_config, print_counter
 from loguru import logger
 from PIL import Image
 
@@ -10,6 +13,9 @@ import torch.multiprocessing as mp
 from torch.utils.data import IterableDataset, DataLoader
 from aesthetic_predictor_v2_5 import convert_v2_5_from_siglip
 from transformers import SiglipImageProcessor
+
+
+STAGE = "aesthetic_scoring"
 
 
 class ImageDataset(IterableDataset):
@@ -21,9 +27,9 @@ class ImageDataset(IterableDataset):
     def __iter__(self):
         consumer = Consumer(self.consumer_topic, partition_id=self.rank)
         preprocessor = SiglipImageProcessor.from_pretrained("google/siglip-so400m-patch14-384")
-        logger.info(f"Created consumer for topic {self.consumer_topic}")
+        logger.info(f"Created consumer for topic {self.consumer_topic} and partition {self.rank}")
         for message in consumer.consumer:
-            logger.debug(f"Processing message with {len(message.value['image_contents'])} images")
+            # logger.debug(f"Processing message with {len(message.value['image_contents'])} images")
             message_data = message.value
             try:
                 image_contents = [
@@ -50,16 +56,15 @@ class ImageDataset(IterableDataset):
                     "images": img,
                     "document_ids": doc_id
                 }
+        consumer.close()
 
 
 class AestheticScorerWorker:
-    STAGE = "aesthetic_scoring"
-
-    def __init__(self, config, rank):
-        self.stage_config = config["stages"][self.STAGE]
+    def __init__(self, config, rank, counter):
+        self.stage_config = config["stages"][STAGE]
         logger.info(f"Config: {self.stage_config}")
         
-        consumer_topic = self.stage_config["consumer_config"]["topic"]
+        consumer_topic = self.stage_config["consumer"]
 
         self.model, _ = convert_v2_5_from_siglip(
             low_cpu_mem_usage=True,
@@ -67,9 +72,10 @@ class AestheticScorerWorker:
             use_flash_attention_2=True
         )
         
-        # Move model to GPU
+        # Move model to device and convert to bfloat16 after initialization
         n_gpus = torch.cuda.device_count()
-        self.model = self.model.to(torch.bfloat16).to(f"cuda:{rank % n_gpus}").eval()
+        device = torch.device(f"cuda:{rank % n_gpus}")
+        self.model = self.model.to(device).to(torch.bfloat16).eval()
 
         producer_topics = self.stage_config["producer_list"]
         self.producers = [
@@ -86,44 +92,48 @@ class AestheticScorerWorker:
         logger.info(f"Initialized model on device cuda:{rank % n_gpus}")
         logger.info("ScorerWorker initialization complete")
 
-
+        self.counter = counter
     def run(self):
         logger.info("Starting scoring process")
         for idx, batch in enumerate(self.dataloader):
-            logger.info(f"Processing batch {idx} with {len(batch['document_ids'])} documents")
+            # logger.info(f"Processing batch {idx} with {len(batch['document_ids'])} documents")
             try:
                 images = batch["images"].to(self.model.device)
                 with torch.no_grad():
                     scores = self.model(images).logits.to(torch.float32).cpu().numpy()
-                logger.debug(f"Successfully scored batch {idx}")
-                print ({
-                    "document_ids": batch["document_ids"],
-                    "scores": scores
-                })
+                # logger.debug(f"Successfully scored batch {idx}")
                 for producer in self.producers:
                     producer.send(idx, {
                         "document_ids": batch["document_ids"],
                         "scores": scores
                     })
+                with self.counter.get_lock():
+                    self.counter.value += len(batch["document_ids"])
             except Exception as e:
                 logger.error(f"Error processing batch {idx}: {e}")
+        for producer in self.producers:
+            producer.close()
 
 
-def score_image(rank):
+def score_image(rank, config, counter):
     logger.info(f"Starting worker process with rank {rank}")
-    config = load_yaml_config("configs/example_config.yaml")
-    worker = AestheticScorerWorker(config, rank)
+    worker = AestheticScorerWorker(config, rank, counter)
     worker.run()
 
 
 if __name__ == "__main__":
-    N_PROCESSES = 1
+    # Add this line before any other code
+    mp.set_start_method('spawn', force=True)
+    
+    config = load_yaml_config("configs/example_config.yaml")
+    stage_consumer = config["stages"][STAGE]["consumer"]
+    N_PROCESSES = config["kafka_topics"][stage_consumer]["partitions"]
 
-    num_gpus = torch.cuda.device_count()
+    counter = print_counter()
 
     mp.spawn(
         score_image,
-        args=(),
+        args=(config, counter),
         nprocs=N_PROCESSES,
         join=True
     )

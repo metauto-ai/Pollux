@@ -1,8 +1,10 @@
 import base64
 import io
 import multiprocessing
+import threading
+import time
 from workers.kafka_utils import Consumer, Producer
-from workers.common import load_yaml_config
+from workers.common import load_yaml_config, print_counter
 from loguru import logger
 from PIL import Image
 import aiohttp
@@ -13,16 +15,14 @@ from torch.utils.data import IterableDataset, DataLoader
 
 
 async def download_image(session, url):
-    async with session.get(url) as response:
-        image_data = await response.read()
-        image = Image.open(io.BytesIO(image_data)).convert('RGB')
-        image = image.resize((299, 299), resample=Image.Resampling.BILINEAR)
-        
-        # Convert to JPEG bytes using an in-memory buffer
-        buffer = io.BytesIO()
-        image.save(buffer, format='JPEG')
-        image_bytes = base64.b64encode(buffer.getvalue())
-        return image_bytes.decode('utf-8')
+    try:
+        async with session.get(url) as response:
+            image_data = await response.read()
+            image_bytes = base64.b64encode(image_data)
+            return image_bytes.decode('utf-8')
+    except Exception as e:
+        logger.error(f"Error downloading image from {url}: {e}")
+        return None
 
 async def download_images(urls):
     async with aiohttp.ClientSession() as session:
@@ -43,6 +43,9 @@ class ImageUrlDataset(IterableDataset):
             image_contents = asyncio.run(download_images(message_data["image_urls"]))
 
             for img, doc_id in zip(image_contents, message_data["document_ids"]):
+                if img is None:
+                    logger.warning(f"Skipping document {doc_id} due to image download error")
+                    continue
                 yield {
                     "image_contents": img,
                     "document_ids": doc_id
@@ -52,7 +55,7 @@ class ImageUrlDataset(IterableDataset):
 class DownloadWorker:
     STAGE = "download_images"
 
-    def __init__(self, config, rank):
+    def __init__(self, config, rank, counter):
         self.stage_config = config["stages"][self.STAGE]
         logger.info(f"Config: {self.stage_config}")
         
@@ -69,35 +72,44 @@ class DownloadWorker:
         self.dataset = ImageUrlDataset(consumer_topic, rank)
         batch_size = self.stage_config["batch_size"]
         self.dataloader = DataLoader(self.dataset, batch_size=batch_size, num_workers=1, pin_memory=True, prefetch_factor=3)
-
+        
+        self.counter = counter
 
     def run(self):
         for idx, batch in enumerate(self.dataloader):
-            logger.info(f"Processing batch of {len(batch['document_ids'])} documents")
+            # logger.info(f"Processing batch {idx} of {len(batch['document_ids'])} documents")
+            with self.counter.get_lock():
+                self.counter.value += len(batch['document_ids'])
             
             message = {
                 "image_contents": [img for img in batch["image_contents"]],
                 "document_ids": batch["document_ids"].tolist() if torch.is_tensor(batch["document_ids"]) else batch["document_ids"]
             }
+            total_size = sum(len(img) for img in message["image_contents"])
+            logger.info(f"Batch {idx} total image size: {total_size/1024/1024:.2f} MB")
             
             for producer in self.producers:
                 producer.send(idx, message)
 
 
-def download_image_worker(rank, config):
-    worker = DownloadWorker(config, rank)
+def download_image_worker(rank, config, counter):
+    worker = DownloadWorker(config, rank, counter)
     worker.run()
 
 
 if __name__ == "__main__":
+    mp.set_start_method('spawn', force=True)
+
     config = load_yaml_config("configs/example_config.yaml")
 
-    topic = config["stages"]["downloader_worker"]["consumer"]
+    topic = config["stages"]["download_images"]["consumer"]
     N_PROCESSES = config["kafka_topics"][topic]["partitions"]
+
+    counter = print_counter()
 
     mp.spawn(
         download_image_worker,
-        args=(config, ),
+        args=(config, counter),
         nprocs=N_PROCESSES,
         join=True
     )
