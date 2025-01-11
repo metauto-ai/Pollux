@@ -74,6 +74,9 @@ python -m apps.main.test
 ![pipeline](https://github.com/user-attachments/assets/2289daf0-2639-4bf9-aaaa-e708721fe9e4)
 
 
+## Data Pipeline
+haozhe is working on that.
+
 ### TODO 
 
 see issues
