@@ -1,5 +1,3 @@
-import threading
-import time
 from multiprocessing import Value
 from workers.kafka_utils import Producer, create_kafka_partitions
 from workers.mongo_utils import PD12MDataset, DiffusionDataset, CC12MDataset
@@ -52,7 +50,8 @@ class MainWorker:
                 # logger.info(f"Processing batch of {len(batch['document_ids'])} documents")
                 for producer in self.producers:
                     producer.send(idx, batch)
-                self.counter.value += len(batch['document_ids'])
+                with self.counter.get_lock():
+                    self.counter.value += len(batch['document_ids'])
         except Exception as e:
             logger.error(f"Error in MainWorker: {e}")
             self.dataloader = DataLoader(self.dataset_cls(), batch_size=self.stage_config["batch_size"], num_workers=1)

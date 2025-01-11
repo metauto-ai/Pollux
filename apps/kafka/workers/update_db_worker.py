@@ -57,7 +57,8 @@ class UpdateWorker:
 
                 # logger.debug(f"Rank {self.rank}: Attempting to update {len(operations)} documents")
                 result = self.dataset.bulkUpdate(operations)
-                self.counter.value += len(message_data['document_ids'])
+                with self.counter.get_lock():
+                    self.counter.value += len(result.modified_count)
                 # logger.info(
                 #     f"Rank {self.rank}: Updated {result.modified_count}/{len(operations)} documents "
                 #     f"(matched: {result.matched_count}, upserted: {result.upserted_count})"

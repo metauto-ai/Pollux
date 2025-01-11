@@ -23,7 +23,7 @@ def print_counter():
             with total_counter.get_lock():
                 total_counter.value += counter_value
             print (f"##########################################################")
-            print (f"{total_counter.value} documents processed: {counter_value / print_every} documents per second")
+            print (f"{total_counter.value} documents processed: {counter_value / print_every:.2f} documents per second")
             print (f"##########################################################")
 
     counter_thread = threading.Thread(target=counter_daemon, daemon=True)
