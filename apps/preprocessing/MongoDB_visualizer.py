@@ -91,13 +91,21 @@ class MongoDBVisualizer:
 
 
 if __name__ == "__main__":
+    # visualizer = MongoDBVisualizer(
+    #     collection_name="big35m_new",
+    #     media_field="azure_url",
+    #     other_fields=["text", "aesthetic_score"],
+    #     batch_size=100,
+    #     max_workers=100,
+    #     run_name="big35m_new_visualization",
+    # )
     visualizer = MongoDBVisualizer(
-        collection_name="big35m_new",
-        media_field="azure_url",
-        other_fields=["text", "aesthetic_score"],
+        collection_name="cc12m",
+        media_field="s3url",
+        other_fields=["caption"],
         batch_size=100,
         max_workers=100,
-        run_name="big35m_new_visualization",
+        run_name="cc12m_visualization",
     )
     for _ in range(10):
         visualizer.collect()
