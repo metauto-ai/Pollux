@@ -66,10 +66,9 @@ class MongoDBVisualizer:
                 _id = future_to_id[future]
                 try:
                     caption, image_bytes = future.result()
+                    self.wandb_logger.add_image(image_bytes, str(caption))
                 except Exception as e:
                     logging.warning(f"Erros in handling {_id}:{e}")
-                else:
-                    self.wandb_logger.add_image(image_bytes, str(caption))
 
     def run(self, doc):
         media = doc[self.media_field]
@@ -100,14 +99,18 @@ if __name__ == "__main__":
     #     run_name="big35m_new_visualization",
     # )
     visualizer = MongoDBVisualizer(
-        collection_name="cc12m",
+        collection_name="laion12m_new",
         media_field="s3url",
-        other_fields=["caption"],
+        other_fields=[
+            "TEXT",
+            "pwatermark",
+            "AESTHETIC_SCORE",
+        ],
         batch_size=100,
         max_workers=100,
-        run_name="cc12m_visualization",
+        run_name="laion12m_visualization",
     )
-    for _ in range(10):
+    for _ in range(1):
         visualizer.collect()
         visualizer.visualize()
     visualizer.finish()
