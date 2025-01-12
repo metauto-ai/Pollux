@@ -94,7 +94,7 @@ if __name__ == "__main__":
         other_fields=["aesthetic_score"],
         batch_size=100,
         max_workers=100,
-        run_name="big35m_aethetic_score_visualization",
+        run_name="cc12m_aethetic_score_visualization",
         score_field="aesthetic_score",
     )
     visualizer.collect(0, 3.0)
