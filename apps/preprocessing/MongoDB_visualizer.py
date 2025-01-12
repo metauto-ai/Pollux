@@ -99,14 +99,14 @@ if __name__ == "__main__":
     #     run_name="big35m_new_visualization",
     # )
     visualizer = MongoDBVisualizer(
-        collection_name="midjourneyv6",
-        media_field="azure_url",
+        collection_name="pd12m",
+        media_field="s3url",
         other_fields=[
-            "prompt",
+            "caption",
         ],
         batch_size=100,
         max_workers=100,
-        run_name="midjourney_v6_visualization",
+        run_name="pd12m_visualization",
     )
     for _ in range(10):
         visualizer.collect()
