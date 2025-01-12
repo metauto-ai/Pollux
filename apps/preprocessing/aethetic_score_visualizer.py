@@ -114,7 +114,7 @@ if __name__ == "__main__":
     visualizer.collect(7.0, 7.5)
     visualizer.visualize("aethetic-score: 7.0-7.5")
     visualizer.collect(7.5, 8.0)
-    visualizer.visualize("aethetic-score: 7.0-7.5")
+    visualizer.visualize("aethetic-score: 7.5-8.0")
     visualizer.collect(8.0, 10)
     visualizer.visualize("aethetic-score: >8.0")
     visualizer.finish()
