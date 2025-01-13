@@ -50,41 +50,41 @@ def count_doc_multi_proc(query, collection_name, num_workers, partition_key):
 
 
 num = count_doc_multi_proc(
-    num_workers=64,
-    partition_key="key",
-    collection_name="cc12m",
+    num_workers=128,
+    partition_key="partition_key",
+    collection_name="big35m_new",
     query={"aesthetic_score": {"$gt": 4.5}},
 )
 logging.info(f"Number of images with aesthetic score > 4.5: {num}")
 
 num = count_doc_multi_proc(
-    num_workers=64,
-    partition_key="key",
-    collection_name="cc12m",
+    num_workers=128,
+    partition_key="partition_key",
+    collection_name="big35m_new",
     query={"aesthetic_score": {"$gt": 5.0}},
 )
 logging.info(f"Number of images with aesthetic score > 5.0: {num}")
 
 num = count_doc_multi_proc(
-    num_workers=64,
-    partition_key="key",
-    collection_name="cc12m",
+    num_workers=128,
+    partition_key="partition_key",
+    collection_name="big35m_new",
     query={"aesthetic_score": {"$gt": 5.5}},
 )
 logging.info(f"Number of images with aesthetic score > 5.5: {num}")
 
 num = count_doc_multi_proc(
-    num_workers=64,
-    partition_key="key",
-    collection_name="cc12m",
+    num_workers=128,
+    partition_key="partition_key",
+    collection_name="big35m_new",
     query={"aesthetic_score": {"$gt": 6.0}},
 )
 logging.info(f"Number of images with aesthetic score > 6.0: {num}")
 
 num = count_doc_multi_proc(
-    num_workers=64,
-    partition_key="key",
-    collection_name="cc12m",
+    num_workers=128,
+    partition_key="partition_key",
+    collection_name="big35m_new",
     query={"aesthetic_score": {"$gt": 6.5}},
 )
 logging.info(f"Number of images with aesthetic score > 6.5: {num}")
