@@ -131,9 +131,9 @@ class Pollux(nn.Module):
         super().__init__()
         self.args = args
 
-        self.vae = LatentVideoVAE(args.vae)
+        self.tvae = LatentVideoVAE(args.vae)
         self.patchify_size = args.latent_projector.patchify_size
-        assert self.patchify_size == 1, "Patchify size must be 1 for now."
+        assert self.patchify_size == 1, "Patchify size must be 1 for 16x16x8 TVAE."
         self.latent_projector = nn.Linear(
             self.patchify_size**2 * args.latent_projector.latent_dim,
             args.latent_projector.output_dim,
@@ -157,16 +157,17 @@ class Pollux(nn.Module):
         # )
         # we do not use eoi for now
 
+        self.rope_embeddings_conditions = RotaryEmbedding1D(
+            theta=args.llm.rope_theta,
+            head_dim=args.llm.head_dim or args.llm.dim // args.llm.n_heads,
+            max_seqlen=args.llm.condition_seqlen,
+        )
+
         # rope embedding
         self.rope_embeddings_image = RotaryEmbedding2D(
             theta=args.llm.rope_theta,
             head_dim=args.llm.head_dim or args.llm.dim // args.llm.n_heads,
             max_seqlen=args.llm.gen_seqlen,
-        )
-        self.rope_embeddings_conditions = RotaryEmbedding1D(
-            theta=args.llm.rope_theta,
-            head_dim=args.llm.head_dim or args.llm.dim // args.llm.n_heads,
-            max_seqlen=args.llm.condition_seqlen,
         )
 
         # llama model
@@ -294,8 +295,8 @@ class Pollux(nn.Module):
         cls_emb = self.vision_cls_emb(labels, train=True).unsqueeze(1)  # [B, 1, D]
 
         # Vision Discrete Latent Codes
-        self.vae.vae.vae._enc_model.to(images.device)
-        vae_indices, vae_latent = self.vae.encode(images)
+        self.tvae.vae.vae._enc_model.to(images.device)
+        vae_indices, vae_latent = self.tvae.encode(images)
         # [B, 1, H/16, W/16], [B, 6, 1, H/16, W/16]
         vae_embs, H_, W_, freqs_cis_img = self.patchify_and_embed(vae_latent.squeeze(2))
         # [B, H/16 * W/16, D]
@@ -358,7 +359,7 @@ class Pollux(nn.Module):
 
         # compute loss
         # pred_loss = F.mse_loss(pred_latent, vae_latent.squeeze(2))
-        # todo: either next-token-prediction or reconstruction token prediction
+        # TODO: either next-token-prediction or reconstruction token prediction
         # vae_indices: [B, 1, H/16, W/16], pred_latent: [B, M, codebook_size]
         vae_indices = vae_indices.squeeze(1).flatten(1).long()  # [B, H/16*W/16]
         # pred_loss = F.cross_entropy(pred_latent[:, :-1].permute(0, 2, 1), vae_indices[:, 1:])
