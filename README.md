@@ -45,6 +45,7 @@ python test_vae.py
 * If you need to run data preprocessing (Optional dependencies)
 ```
 pip install timm
+pip install torchmetrics
 ```
 
 ## Preliminary Usages
