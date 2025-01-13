@@ -32,8 +32,9 @@ class Consumer:
     def _create_consumer(self):
         return KafkaConsumer(
             bootstrap_servers=BOOTSTRAP_SERVERS,
+            api_version=(2, 0, 2),
             group_id=self.group_id,
-            auto_offset_reset='earliest',
+            auto_offset_reset='latest',
             enable_auto_commit=False,
             max_poll_records=100,
             max_partition_fetch_bytes=524288000,  # 30MB
@@ -55,6 +56,7 @@ class Producer:
     def _create_producer(self):
         return KafkaProducer(
             bootstrap_servers=BOOTSTRAP_SERVERS,
+            api_version=(2, 0, 2),
             acks='all',
             retries=3,
             compression_type='gzip',
@@ -65,7 +67,7 @@ class Producer:
             max_block_ms=30000,
             value_serializer=lambda x: json.dumps(x, cls=NumpyEncoder).encode('utf-8')
         )
-    
+        
     def send(self, id, value):
         self.producer.send(self.topic, partition=id % self.partitions, value=value).add_errback(self._on_send_error)
 
