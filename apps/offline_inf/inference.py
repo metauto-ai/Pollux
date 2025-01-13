@@ -55,6 +55,8 @@ class InferenceArgs:
     parque_size: int = 32768  # Number of samples to save in a single parquet file
     # * whether do profiling
     profile: Optional[bool] = False
+    s3_bucket: Optional[str] = None
+    s3_key: Optional[str] = None
 
 
 def launch_inference(cfg: InferenceArgs):
@@ -100,6 +102,7 @@ def launch_inference(cfg: InferenceArgs):
     in_parquet_num = 0
 
     # * stateful inference, support resume if dump_dir is the same
+    # TODO need support s3
     saved_parquet = list(
         glob.glob(os.path.join(cfg.dump_dir, f"{world_size}_{global_rank}_*.parquet"))
     )

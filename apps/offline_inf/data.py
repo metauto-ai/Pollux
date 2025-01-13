@@ -21,6 +21,20 @@ import torch.utils.benchmark as benchmark
 import pyarrow as pa
 import pyarrow.parquet as pq
 import pandas as pd
+from io import BytesIO
+import boto3
+
+config = Config(
+    retries={"max_attempts": 10, "mode": "adaptive"},
+    max_pool_connections=200,  # Increase pool size (default is 10)
+)
+s3 = boto3.client(
+    "s3",
+    aws_access_key_id="AKIA47CRZU7STC4XUXER",
+    aws_secret_access_key="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",
+    region_name="us-east-1",
+    config=config,
+)
 
 logger = logging.getLogger()
 
@@ -229,6 +243,35 @@ def save_parquet(
     # Save the table as a Parquet file
     df.to_parquet(parquet_path, engine="pyarrow", index=False)
 
+    save_time = time.time() - start_time
+    if save_meter:
+        save_meter.update(save_time, 1)
+    total_size_bytes = os.path.getsize(parquet_path)
+    if storage_meter:
+        storage_meter.update(total_size_bytes, 1)
+    logger.warning(f"Saved data to {parquet_path}")
+    return parquet_path
+
+
+def upload_parquet(
+    data: Dict[str, Any],
+    output_dir: str,
+    prefix: str = "data",
+    bucket_name: str = "haozhe",
+    save_meter: AverageMeter = None,
+    storage_meter: StorageMeter = None,
+):
+    start_time = time.time()
+
+    # Convert the dictionary to a PyArrow Table
+    df = pd.DataFrame(data)
+
+    # Define the output file path
+    parquet_path = f"{output_dir}/{prefix}.parquet"
+    buffer = BytesIO()
+    df.to_parquet(buffer, engine="pyarrow", compression="snappy", index=False)
+    buffer.seek(0)
+    s3.upload_fileobj(buffer, bucket_name, parquet_path)
     save_time = time.time() - start_time
     if save_meter:
         save_meter.update(save_time, 1)
