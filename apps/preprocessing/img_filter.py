@@ -29,7 +29,7 @@ class ImgFilterArgs:
     model_name: Literal["WaterMarkFilter", "CLIPFilter"] = "WaterMarkFilter"
     pretrained_model_name_or_path: Literal[
         "/jfs/checkpoints/data_preprocessing/watermark_model_v1.pt",
-        "openai/clip-vit-base-patch16",
+        "/jfs/checkpoints/models--openai--clip-vit-base-patch16/snapshots/57c216476eefef5ab752ec549e440a49ae4ae5f3/",
     ] = "/jfs/checkpoints/data_preprocessing/watermark_model_v1.pt"
 
 
@@ -141,9 +141,7 @@ class CLIPFilter(BaseFilter):
         # Calculate CLIP score using the metric
         clip_score_value = self.clip_score_metric(image_tensor, prompt)
 
-        return (
-            clip_score_value.cpu().detach().round()
-        )  # Return the score as a tensor on CPU
+        return clip_score_value.cpu().detach().round() # Return the score as a tensor on CPU
 
 
 def build_filter(args: ImgFilterArgs) -> BaseFilter:

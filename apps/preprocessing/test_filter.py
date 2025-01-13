@@ -26,7 +26,7 @@ watermark_filter_args = ImgFilterArgs(
 # Define the clip filter args with the model path
 clip_filter_args = ImgFilterArgs(
     model_name="CLIPFilter",
-    pretrained_model_name_or_path="openai/clip-vit-base-patch16",
+    pretrained_model_name_or_path="/jfs/checkpoints/models--openai--clip-vit-base-patch16/snapshots/57c216476eefef5ab752ec549e440a49ae4ae5f3/",
 )
 
 
