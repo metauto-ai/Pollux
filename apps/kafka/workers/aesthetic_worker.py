@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import io
 import multiprocessing
@@ -18,45 +19,49 @@ from transformers import SiglipImageProcessor
 STAGE = "aesthetic_scoring"
 
 
+async def preprocess_image(image_content, preprocessor):
+    try:
+        image_data = base64.b64decode(image_content)
+        image = Image.open(io.BytesIO(image_data)).convert("RGB")
+        processed = preprocessor(images=image, return_tensors="np").pixel_values.squeeze(0)
+        return processed
+    except Exception as e:
+        logger.error(f"Error preprocessing image: {e}")
+        return None
+
+async def preprocess_images(image_contents, preprocessor):
+    tasks = [preprocess_image(image_content, preprocessor) for image_content in image_contents]
+    return await asyncio.gather(*tasks)
+
+
 class ImageDataset(IterableDataset):
     def __init__(self, consumer_topic, rank):
         self.consumer_topic = consumer_topic
         self.rank = rank
         logger.info(f"Initialized ImageDataset for rank {rank}")
+        self.consumer = None
 
     def __iter__(self):
-        consumer = Consumer(self.consumer_topic, partition_id=self.rank)
+        self.consumer = Consumer(self.consumer_topic, partition_id=self.rank)
         preprocessor = SiglipImageProcessor.from_pretrained("google/siglip-so400m-patch14-384")
         logger.info(f"Created consumer for topic {self.consumer_topic} and partition {self.rank}")
-        for message in consumer.consumer:
+        for message in self.consumer.consumer:
             # logger.debug(f"Processing message with {len(message.value['image_contents'])} images")
             message_data = message.value
-            try:
-                image_contents = [
-                    base64.b64decode(image_content) 
-                    for image_content in message_data["image_contents"]
-                ]
-                images = [
-                    Image.open(io.BytesIO(image_content)).convert("RGB")
-                    for image_content in image_contents
-                ]
-            except Exception as e:
-                logger.error(f"Error processing image: {e}")
-                continue
-        
-            # Store document IDs
-            document_id = message_data["document_ids"]
 
-            # Preprocess images
-            processed = preprocessor(images=images, return_tensors="pt").pixel_values.to(torch.bfloat16)
+            document_id = message_data["document_ids"]
+            processed = asyncio.run(preprocess_images(message_data["image_contents"], preprocessor))
         
-            # Return one image from the buffer
             for img, doc_id in zip(processed, document_id):
+            # for img, doc_id in zip(message_data["image_contents"], message_data["document_ids"]):
                 yield {
                     "images": img,
                     "document_ids": doc_id
                 }
-        consumer.close()
+    
+    def __del__(self):
+        if self.consumer:
+            self.consumer.consumer.close()
 
 
 class AestheticScorerWorker:
@@ -93,12 +98,13 @@ class AestheticScorerWorker:
         logger.info("ScorerWorker initialization complete")
 
         self.counter = counter
+
     def run(self):
         logger.info("Starting scoring process")
         for idx, batch in enumerate(self.dataloader):
             # logger.info(f"Processing batch {idx} with {len(batch['document_ids'])} documents")
             try:
-                images = batch["images"].to(self.model.device)
+                images = batch["images"].to(self.model.device, dtype=torch.bfloat16)
                 with torch.no_grad():
                     scores = self.model(images).logits.to(torch.float32).cpu().numpy()
                 # logger.debug(f"Successfully scored batch {idx}")
@@ -111,8 +117,16 @@ class AestheticScorerWorker:
                     self.counter.value += len(batch["document_ids"])
             except Exception as e:
                 logger.error(f"Error processing batch {idx}: {e}")
-        for producer in self.producers:
-            producer.close()
+        
+    def __del__(self):
+        if self.dataloader is not None:
+            self.dataloader._iterator = None  # Force cleanup of iterator
+            del self.dataloader
+        if self.dataset is not None:
+            del self.dataset
+        if self.producers is not None:
+            for producer in self.producers:
+                producer.close()
 
 
 def score_image(rank, config, counter):
@@ -125,7 +139,11 @@ if __name__ == "__main__":
     # Add this line before any other code
     mp.set_start_method('spawn', force=True)
     
-    config = load_yaml_config("configs/example_config.yaml")
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--config', type=str, default="configs/diffusion_config.yaml", help='Path to config file')
+    args = parser.parse_args()
+    config = load_yaml_config(args.config)
     stage_consumer = config["stages"][STAGE]["consumer"]
     N_PROCESSES = config["kafka_topics"][stage_consumer]["partitions"]
 
@@ -137,3 +155,5 @@ if __name__ == "__main__":
         nprocs=N_PROCESSES,
         join=True
     )
+
+    logger.info("ScorerWorker process completed")
