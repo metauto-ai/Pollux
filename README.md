@@ -47,6 +47,11 @@ python test_vae.py
 pip install timm
 ```
 
+* If you need to run YOLOv10
+```
+pip install ultralytics
+```
+
 ## Preliminary Usages
 
 * Before we develop a MongoDB dataloader, we could first use this to remove `.lock` files for HFDataLoader.
