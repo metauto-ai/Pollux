@@ -7,6 +7,9 @@ import torch.utils.data
 from PIL import Image
 from torchvision import transforms as T
 from dataclasses import dataclass, field
+from torchmetrics.multimodal import CLIPScore
+from typing import Literal
+
 
 # Registry to store all available filter classes
 FILTER_REGISTRY = {}
@@ -23,26 +26,29 @@ def register_filter(name):
 
 @dataclass
 class ImgFilterArgs:
-    model_name: str = "WaterMarkFilter"  # ["CLIPFilter"]
-    pretrained_model_name_or_path: str = (
-        "/jfs/checkpoints/data_preprocessing/watermark_model_v1.pt"
-    )
+    model_name: Literal["WaterMarkFilter", "CLIPFilter"] = "WaterMarkFilter"
+    pretrained_model_name_or_path: Literal[
+        "/jfs/checkpoints/data_preprocessing/watermark_model_v1.pt",
+        "/jfs/checkpoints/models--openai--clip-vit-base-patch16/snapshots/57c216476eefef5ab752ec549e440a49ae4ae5f3/",
+    ] = "/jfs/checkpoints/data_preprocessing/watermark_model_v1.pt"
 
 
 class BaseFilter(nn.Module):
     def __init__(self):
         super().__init__()
 
-    def predict(self, batch_frame_tensor: torch.FloatTensor) -> torch.FloatTensor:
+    @torch.no_grad()
+    def predict(self, image: Image.Image, **kwargs) -> torch.FloatTensor:
         raise NotImplementedError
 
 
 @register_filter("WaterMarkFilter")
 class WaterMarkFilter(BaseFilter):
     def __init__(self, args: ImgFilterArgs):
+        super().__init__()
         self.cfg=args
 
-        model = timm.create_model("efficientnet_b3a", pretrained=True, num_classes=2)
+        model = timm.create_model("efficientnet_b3", pretrained=True, num_classes=2)
 
         model.classifier = nn.Sequential(
             # 1536 is the orginal in_features
@@ -72,18 +78,70 @@ class WaterMarkFilter(BaseFilter):
         self.model = model
 
     @torch.no_grad()
-    def predict(self, batch_frame_tensor: torch.FloatTensor) -> torch.FloatTensor:
-        batch_frame_tensor = self.preprocessing(batch_frame_tensor)
-        pred = self.model(batch_frame_tensor)
+    def predict(self, image: Image.Image, **kwargs) -> torch.FloatTensor:
+        """
+        Predict the watermark probability for a single PIL Image.
+
+        Args:
+            image (Image.Image): A PIL Image object.
+
+        Returns:
+            torch.FloatTensor: Probability of 'clear' (no watermark).
+        """
+        # Apply preprocessing to the input image
+        processed_image = self.preprocessing(image).unsqueeze(0).cuda()  
+        # Add batch dimension
+
+        # Predict the scores
+        pred = self.model(processed_image)
+
+        # Apply softmax to get probabilities
         syms = F.softmax(pred, dim=1)
-        score = syms[:, 1].cpu()  # Probability of 'clear_sym' wo watermark
+
+        # Extract the probability for 'clear_sym'
+        score = syms[0, 1].cpu()  # Scalar probability for 'clear' class
         return score
 
 
 @register_filter("CLIPFilter")
 class CLIPFilter(BaseFilter):
+    # Code reference: https://lightning.ai/docs/torchmetrics/stable/multimodal/clip_score.html
     def __init__(self, args: ImgFilterArgs):
-        pass
+        super().__init__()
+        self.cfg = args
+        self.clip_score_metric = CLIPScore(model_name_or_path=self.cfg.pretrained_model_name_or_path).cuda()
+        self.preprocessing = T.Compose(
+            [
+                T.ToTensor(),
+                T.Lambda(lambda x: (x * 255).to(torch.uint8)),
+            ]
+        )
+
+    @torch.no_grad()
+    def predict(self, image: Image.Image, **kwargs) -> torch.FloatTensor:
+        """
+        Predict the CLIP score for a single PIL Image using the CLIPScore metric.
+
+        Args:
+            image (Image.Image): A PIL Image object.
+            **kwargs: Additional keyword arguments (e.g., 'prompts').
+
+        Returns:
+            torch.FloatTensor: The CLIP score as a scalar tensor.
+        """
+        prompt = kwargs.get("prompt")
+        if prompt is None:
+            raise ValueError("The 'prompt' parameter is required for CLIPFilter.")
+
+        prompt=[prompt]
+
+        # Convert PIL Image to PyTorch tensor
+        image_tensor = self.preprocessing(image).unsqueeze(0).cuda()  # Add batch dimension
+
+        # Calculate CLIP score using the metric
+        clip_score_value = self.clip_score_metric(image_tensor, prompt)
+
+        return clip_score_value.cpu().detach().round() # Return the score as a tensor on CPU
 
 
 def build_filter(args: ImgFilterArgs) -> BaseFilter:
