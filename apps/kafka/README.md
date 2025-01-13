@@ -17,38 +17,37 @@ pip install flash-attn==2.7.2.post1 --no-build-isolation
 
 ```yaml
 kafka_topics: # These are the topics that will be used in the pipeline
-  database: # This is the topic that will be used to produce data to the database 
-    name: database # This is the name of the topic
+  databasePD12M: # This is the topic that will be used to produce data to the database 
+    partitions: 96 # This is the number of partitions in the topic
+  downloadedImagesPD12M: # This is the topic that will be used to download images from the database
+    partitions: 8 # This is the number of partitions in the topic
+  aestheticScoredImagesPD12M: # This is the topic that will be used to perform aesthetic scoring on the downloaded images
     partitions: 16 # This is the number of partitions in the topic
-  downloadedImages: 
-    name: downloadedImages
-    partitions: 32
-  aestheticScoredImages:
-    name: aestheticScoredImages
-    partitions: 16
 
 stages: # These are the stages that will be executed in the pipeline
   read_database: # This stage reads data from the database and produces it to the database topic
-    batch_size: 32 # This is the batch size that will be sent to the next stage
-    dataset: diffusion # This is the dataset that will be used to read data from the database
+    batch_size: 256 # This is the batch size that will be sent to the next stage
+    num_shards: 1 # This is the number of shards that will be used to read data from the database
+    shard_idx: 0 # This is the index of the shard that will be used to read data from the database
+    dataset: pd12m # This is the dataset that will be used to read data from the database
     producer_list:
-      - database # This is the topic that will be used to produce data to the database
+      - databasePD12M
 
   download_images: # This stage downloads images from the database and produces it to the downloadedImages topic
     batch_size: 64    # per database partition
-    consumer: database
+    consumer: databasePD12M # This is the topic that will be used to consume data from the database
     producer_list:
-      - downloadedImages
+      - downloadedImagesPD12M # This is the topic that will be used to produce data to the downloadedImages topic
 
-  aesthetic_scoring: # This stage performs aesthetic scoring on the downloaded images and produces it to the aestheticScoredImages topic
-    batch_size: 128
-    consumer: downloadedImages
+  aesthetic_scoring:
+    batch_size: 128 # This is the batch size that will be sent to the next stage
+    consumer: downloadedImagesPD12M # This is the topic that will be used to consume data from the downloadedImages topic
     producer_list:
-      - aestheticScoredImages
+      - aestheticScoredImagesPD12M # This is the topic that will be used to produce data to the aestheticScoredImages topic
 
-  update_database: # This stage updates the database with the aesthetic scores
-    dataset: diffusion
-    consumer: aestheticScoredImages
+  update_database:
+    dataset: pd12m # This is the dataset that will be used to update the database
+    consumer: aestheticScoredImagesPD12M # This is the topic that will be used to consume data from the aestheticScoredImages topic
 ```
 
 Note: 
