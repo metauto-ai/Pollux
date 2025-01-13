@@ -39,32 +39,39 @@ class MainWorker:
         self.dataloader = DataLoader(
             self.dataset_cls(self.num_shards, self.shard_idx), 
             batch_size=self.stage_config["batch_size"], 
-            num_workers=1
+            num_workers=0
         )
 
         self.counter = counter
 
     def run(self):
-        try:
-            for idx, batch in enumerate(self.dataloader):
-                # logger.info(f"Processing batch of {len(batch['document_ids'])} documents")
-                for producer in self.producers:
-                    producer.send(idx, batch)
-                with self.counter.get_lock():
-                    self.counter.value += len(batch['document_ids'])
-        except Exception as e:
-            logger.error(f"Error in MainWorker: {e}")
-            self.dataloader = DataLoader(self.dataset_cls(), batch_size=self.stage_config["batch_size"], num_workers=1)
-            raise e
-        finally:
-            self.dataloader = DataLoader(self.dataset_cls(), batch_size=self.stage_config["batch_size"], num_workers=1)
-            self.run()
+        while True:
+            try:
+                for idx, batch in enumerate(self.dataloader):
+                    # logger.info(f"Processing batch of {len(batch['document_ids'])} documents")
+                    for producer in self.producers:
+                        producer.send(idx, batch)
+                    with self.counter.get_lock():
+                        self.counter.value += len(batch['document_ids'])
+                
+                # completed processing
+                break
+            except Exception as e:
+                logger.error(f"Error in MainWorker: {e}")
+                self.dataloader = DataLoader(
+                    self.dataset_cls(), 
+                    batch_size=self.stage_config["batch_size"], 
+                    num_workers=0
+                )
+
+            
 
 if __name__ == "__main__":
-    config = load_yaml_config("configs/example_config.yaml")
-
-    total_counter = Value('i', 0)
-    counter = Value('i', 0)
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--config', type=str, default="configs/diffusion_config.yaml", help='Path to config file')
+    args = parser.parse_args()
+    config = load_yaml_config(args.config)
 
     counter = print_counter()
 
