@@ -5,7 +5,11 @@ from ultralytics import YOLO
 # TODO: need to organize the label and spatial info; and make this multiprocessing
 model = YOLO("/jfs/checkpoints/yolov11/yolo11x.pt")
 image = Image.open("GhAc5VUWQAAe3Bp.jpeg")
-results = model.predict(source=image, save=True, save_txt=True) 
+results = model.predict(source=image, save=True, save_txt=True, conf=0.5) 
+
+for r in results:
+    print(r.boxes.data)
+    print(r.labels.data)
 # results[0].show()
 
 # # from list of PIL/ndarray
