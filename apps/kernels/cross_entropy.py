@@ -13,7 +13,6 @@ def _cross_entropy_kernel(
     logits_ptr,
     target_ptr,
     loss_ptr,
-    dlogits_ptr,
     vocab_size,
     stride,
     n_rows,
@@ -35,40 +34,23 @@ def _cross_entropy_kernel(
     #     |__________1st pass_______________|  
     #     logsumexp - T --> 2nd pass
 
-    # the maximum of data we can load into mem is 65536, so for larger vocab size we need to split he row into blocks and perform ops
+    # the maximum of data we can load into mem is 65536, so for larger vocab size we need to split the row into blocks and perform ops
     # lets say we have 128k in a row, we split into two blocks of 64k, iterate through each block
 
-    # so for the first pass we iterate over the individual blocks, calculate sums for each block, calculate the global maximum and finally calculate the logsumexp
+    # Precompute mask offsets outside the loop for efficiency
     cols = tl.arange(0, BLOCK_SIZE)
-    mask = cols < vocab_size
+
     logsumexp = 0.0
     sumexp = 0.0
     global_max = float('-inf')
-    # for i in range(n_blocks):
-    #     block_start = row + i * BLOCK_SIZE
-    #     row_block = tl.load(logits_ptr + block_start + cols, mask = mask)
-    #     maxi = tl.max(row_block)
-    #     global_maxi = tl.max(maxi, global_maxi)
-    
-    # for i in range(n_blocks):
-    #     block_start = row + i * BLOCK_SIZE
-    #     row_block = tl.load(logits_ptr + block_start + cols, mask = mask)
-    #     row_block = row_block - global_maxi
-    #     row_block = tl.exp(row_block)
-    #     logsumexp += tl.sum(row_block)
-    # so in th above method, we are loading the row twice, so total no of reads will double, instead online softmax introduced a method to calculate the logsumexp in a single pass
-
-    # online softmax => for logsumexp
-    # block_max = max(global_max, max(row_block))
-    # sum = 0
-    # sum += sum*exp(previous_block_max - block_max) + exp(row_block - block_max)
     for i in range(n_blocks):
         block_start = row + i * BLOCK_SIZE
-        row_block = tl.load(logits_ptr + block_start + cols, mask = mask)
+        block_mask = (cols + i * BLOCK_SIZE) < vocab_size
+        row_block = tl.load(logits_ptr + block_start + cols, mask=block_mask, other=float('-inf'))
         block_max = tl.max(row_block)
         prev_max = global_max
-        global_max = block_max if block_max > global_max else global_max
-        sumexp += sumexp * tl.exp(prev_max - global_max) + tl.sum(tl.exp(row_block - global_max))
+        global_max = tl.where(block_max > global_max, block_max, global_max)
+        sumexp = sumexp * tl.exp(prev_max - global_max) + tl.sum(tl.exp(row_block - global_max))
 
     # for the second pass we just calculate the loss
     logsumexp = tl.log(sumexp) + global_max
@@ -87,18 +69,39 @@ def _cross_entropy_kernel(
     # softmax = exp(logits - global_max)/sumexp
     for i in range(n_blocks):
         block_start = row + i * BLOCK_SIZE
-        row_block = tl.load(logits_ptr + block_start + cols, mask = mask)
+        block_mask = (cols + i * BLOCK_SIZE) < vocab_size
+        row_block = tl.load(logits_ptr + block_start + cols, mask=block_mask, other=float('-inf'))
         row_block = row_block - global_max
         row_block = tl.exp(row_block)
         row_block = (row_block / sumexp) / n_rows
-        tl.store(dlogits_ptr + block_start + cols, row_block, mask = mask)
+        # Store gradient directly into logits_ptr to save memory
+        tl.store(logits_ptr + block_start + cols, row_block, mask=block_mask)
     
     # second backward pass --> we subtract 1/n from the target index
-    dlogits_target = tl.load(dlogits_ptr + row + target)
+    dlogits_target = tl.load(logits_ptr + row + target)
     dlogits_target -= (1.0 / n_rows)
-    tl.store(dlogits_ptr + row + target, dlogits_target)
+    tl.store(logits_ptr + row + target, dlogits_target)
     
     # bazzinga
+
+@triton.jit
+def grad_mul(
+    X_ptr,
+    X_stride,
+    grad_output_ptr,
+    n_cols,
+    BLOCK_SIZE: tl.constexpr,
+):
+    program_id = tl.program_id(0).to(tl.int64)
+
+    X_ptr += program_id * X_stride
+
+    grad_output = tl.load(grad_output_ptr)
+
+    for i in range(0, n_cols, BLOCK_SIZE):
+        X_offsets = i + tl.arange(0, BLOCK_SIZE)
+        X_block = tl.load(X_ptr + X_offsets, mask=X_offsets < n_cols)
+        tl.store(X_ptr + X_offsets, X_block * grad_output, mask=X_offsets < n_cols)
 
 class FastCrossEntropy(torch.autograd.Function):
     @staticmethod
@@ -111,32 +114,37 @@ class FastCrossEntropy(torch.autograd.Function):
             target = target.contiguous()
         
         losses = torch.empty(n_rows, dtype=torch.float32, device=logits.device)
-        dlogits = torch.empty((n_rows, vocab_size), dtype=torch.float32, device=logits.device)
-
+        
         BLOCK_SIZE, num_warps = calculate_settings(vocab_size)
-        
         BLOCK_SIZE = min(MAX_FUSED_SIZE, BLOCK_SIZE)
-        
-        _cross_entropy_kernel[(n_rows,)](
+
+        _cross_entropy_kernel[(n_rows, )](
             logits,
             target,
             losses,
-            dlogits,
             vocab_size,
             vocab_size,
             n_rows,
             BLOCK_SIZE=BLOCK_SIZE,
             num_warps=num_warps
         )
-        
-        ctx.save_for_backward(logits, dlogits)
+
+        ctx.save_for_backward(logits.detach())
+        ctx.BLOCK_SIZE = BLOCK_SIZE
         return losses.mean()
 
     @staticmethod
     def backward(ctx, grad_output):
-        logits, dlogits = ctx.saved_tensors
-        
-        return dlogits, None
+        (logits,) = ctx.saved_tensors
+        n_rows, vocab_size = logits.shape
+        grad_mul[(n_rows, )](
+            logits,
+            logits.stride(-2),
+            grad_output,
+            vocab_size,
+            BLOCK_SIZE=ctx.BLOCK_SIZE,
+        )
+        return logits, None
 
 def fast_cross_entropy(logits, target):
     """
