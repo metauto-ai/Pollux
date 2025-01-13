@@ -13,6 +13,8 @@ import (
 	"sync"
 	"time"
 
+	"math/rand"
+
 	"github.com/IBM/sarama"
 )
 
@@ -25,7 +27,7 @@ func main() {
 	defer cancel()
 
 	// Load config
-	config := load_yaml_config("configs/example_config.yaml")
+	config := load_yaml_config("configs/diffusion_config.yaml")
 
 	// Configure Sarama
 	saramaConfig := sarama.NewConfig()
@@ -50,29 +52,32 @@ func main() {
 	}
 	defer consumer.Close()
 
+	consumerTopic := "databaseDiffusion"
+	producerTopic := "downloadedImagesDiffusion"
+
 	// Create worker pool
-	// numConsumerPartitions := config.KafkaTopics["database"].Partitions
+	numConsumerPartitions := config.KafkaTopics[consumerTopic].Partitions
 	// numConsumerPartitions := 1
-	consumerPartitions, err := consumer.Partitions(config.KafkaTopics["database"].Name)
-	if err != nil {
-		log.Fatal("Failed to get partitions:", err)
-	}
-	producerPartitions := config.KafkaTopics["downloadedImages"].Partitions
+	producerPartitions := config.KafkaTopics[producerTopic].Partitions
 	var wg sync.WaitGroup
 
 	producerConfig := ProducerConfig{
-		Name:       "downloadedImages",
+		Name:       producerTopic,
 		Partitions: producerPartitions,
 		Producer:   producer,
 	}
 
+	// Track the number of messages processed
+	docsChan := make(chan int, 1024)
+
+	log.Printf("Producer Partitions: %d, Consumer Partitions: %d", producerPartitions, numConsumerPartitions)
 	// Start a worker for each partition
-	for _, partition := range consumerPartitions {
+	for partition := range numConsumerPartitions {
 		wg.Add(1)
 		go func(partition int32) {
 			defer wg.Done()
 			partitionConsumer, err := consumer.ConsumePartition(
-				config.KafkaTopics["database"].Name,
+				consumerTopic,
 				partition,
 				sarama.OffsetNewest,
 			)
@@ -81,17 +86,19 @@ func main() {
 				return
 			}
 			defer partitionConsumer.Close()
-			worker(ctx, partitionConsumer, partition, producerConfig)
-		}(partition)
+			worker(ctx, partitionConsumer, partition, producerConfig, docsChan)
+		}(int32(partition))
 	}
+
+	go processDocument(ctx, docsChan)
 
 	// Wait for all workers to complete
 	wg.Wait()
 }
 
 func worker(ctx context.Context, consumer sarama.PartitionConsumer, consumerPartition int32,
-	producerConfig ProducerConfig) {
-	log.Printf("Worker started for partition %d", consumerPartition)
+	producerConfig ProducerConfig, docsChan chan int) {
+	fmt.Printf(" [%d]", consumerPartition)
 	msgChan := make(chan *sarama.ConsumerMessage, 1024)
 
 	// Read messages from Kafka in parallel and push to channel
@@ -107,8 +114,6 @@ func worker(ctx context.Context, consumer sarama.PartitionConsumer, consumerPart
 		}
 	}()
 
-	producerPartitions := producerConfig.Partitions
-	iters := 0
 	for {
 		select {
 		case msg := <-msgChan:
@@ -119,52 +124,72 @@ func worker(ctx context.Context, consumer sarama.PartitionConsumer, consumerPart
 				continue
 			}
 
-			newProducerConfig := ProducerConfig{
-				Name:       producerConfig.Name,
-				Partitions: iters % producerPartitions,
-				Producer:   producerConfig.Producer,
-			}
-			err := downloadAndSend(ctx, consumerPartition, newProducerConfig, data)
-			if err != nil {
-				log.Printf("Error processing image: %v", err)
-				continue
-			}
-			iters++
+			downloadAndSend(ctx, consumerPartition, producerConfig, data, docsChan)
 		case <-ctx.Done():
 			return
 		}
 	}
 }
 
-func downloadAndSend(ctx context.Context, consumerPartition int32, producerConfig ProducerConfig, data MessageContent) error {
-	start := time.Now()
-	results := downloadImages(ctx, producerConfig, data)
+func processDocument(ctx context.Context, docsChan chan int) {
 
-	successful := 0
-	failed := 0
-
+	totalDocuments := 0
+	currProcessedDocuments := 0
 	totalSize := 0
-	// Process results
-	for i := 0; i < len(data.ImageURLs); i++ {
-		result := <-results
-		if result.Success {
-			successful++
-			totalSize += result.Size
-		} else {
-			failed++
-			// log.Printf("Failed to download %s: %v", result.URL, result.Error)
+	// Create a ticker to print processed documents every minute
+	ticker := time.NewTicker(60 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case size := <-docsChan:
+			totalDocuments++
+			currProcessedDocuments++
+			totalSize += size
+		case <-ticker.C:
+			// Print and reset the counter for the current interval
+			fmt.Printf("\n---------------------------------------------------------------------------------------------\n")
+			fmt.Printf("Processed %d documents/second of size %s in the last minute. Total processed: %d\n",
+				currProcessedDocuments/60, humanReadableSize(totalSize), totalDocuments)
+			fmt.Printf("---------------------------------------------------------------------------------------------")
+			totalSize = 0
+			currProcessedDocuments = 0
+		case <-ctx.Done():
+			fmt.Println("Stopping document processing...")
+			return
 		}
 	}
-
-	close(results)
-	duration := time.Since(start)
-	log.Printf("Rank %d: Downloaded %d images (%d successful, %d failed) in %.2f seconds, downloaded %s\n",
-		consumerPartition, len(data.ImageURLs), successful, failed, duration.Seconds(), humanReadableSize(totalSize))
-
-	return nil
 }
 
-func downloadImages(ctx context.Context, producerConfig ProducerConfig, data MessageContent) chan DownloadResult {
+func downloadAndSend(ctx context.Context, consumerPartition int32, producerConfig ProducerConfig, data MessageContent, docsChan chan int) {
+	// start := time.Now()
+	results := downloadImages(ctx, producerConfig, data, docsChan)
+
+	// successful := 0
+	// failed := 0
+
+	// totalSize := 0
+	// Process results
+	docsToWait := int(float64(len(data.ImageURLs)) * 0.1)
+	for i := 0; i < docsToWait; i++ {
+		<-results
+		// result := <-results
+		// if result.Success {
+		// 	successful++
+		// 	totalSize += result.Size
+		// } else {
+		// 	failed++
+		// 	// log.Printf("Failed to download %s: %v", result.URL, result.Error)
+		// }
+	}
+
+	// close(results)
+	// duration := time.Since(start)
+	// log.Printf("Rank %d: Downloaded %d images (%d successful, %d failed) in %.2f seconds, downloaded %s\n",
+	// 	consumerPartition, len(data.ImageURLs), successful, failed, duration.Seconds(), humanReadableSize(totalSize))
+}
+
+func downloadImages(ctx context.Context, producerConfig ProducerConfig, data MessageContent, docsChan chan int) chan DownloadResult {
 	numImages := len(data.ImageURLs)
 	results := make(chan DownloadResult, numImages)
 	jobs := make(chan Job, numImages)
@@ -174,7 +199,7 @@ func downloadImages(ctx context.Context, producerConfig ProducerConfig, data Mes
 		go func() {
 			for job := range jobs {
 				select {
-				case results <- downloadImage(ctx, producerConfig, job.DocumentID, job.URL):
+				case results <- downloadImage(ctx, producerConfig, job.DocumentID, job.URL, docsChan):
 				case <-ctx.Done():
 					return
 				}
@@ -202,7 +227,7 @@ func downloadImages(ctx context.Context, producerConfig ProducerConfig, data Mes
 	return results
 }
 
-func downloadImage(ctx context.Context, producerConfig ProducerConfig, documentID string, url string) DownloadResult {
+func downloadImage(ctx context.Context, producerConfig ProducerConfig, documentID string, url string, docsChan chan int) DownloadResult {
 	client := &http.Client{Timeout: TIMEOUT}
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
@@ -239,12 +264,14 @@ func downloadImage(ctx context.Context, producerConfig ProducerConfig, documentI
 		return DownloadResult{URL: url, Success: false, Error: err}
 	}
 
+	partitionNumber := rand.Intn(producerConfig.Partitions)
 	producerConfig.Producer.Input() <- &sarama.ProducerMessage{
-		Topic:     "downloadedImages",
-		Key:       sarama.StringEncoder(fmt.Sprintf("partition-%d", producerConfig.Partitions)),
+		Topic:     producerConfig.Name,
+		Key:       sarama.StringEncoder(fmt.Sprintf("partition-%d", partitionNumber)),
 		Value:     sarama.ByteEncoder(jsonBuffer.Bytes()),
-		Partition: int32(producerConfig.Partitions),
+		Partition: int32(partitionNumber),
 	}
 
+	docsChan <- jsonBuffer.Len()
 	return DownloadResult{URL: url, Success: true, Error: nil, Size: jsonBuffer.Len()}
 }
