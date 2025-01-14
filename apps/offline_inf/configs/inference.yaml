@@ -2,7 +2,7 @@
 name: "inference"
 stage: inference # preliminary for test normal usage: inference 
 dump_dir:  /jfs/data/cc12m_r256_l3b128_s3/ # change dir
-s3_path: s3://bucket-t2i-test/cc12m_r256_l3b128_s3/ # change dir
+s3_path: s3://t2i-parquet/cc12m_r256_l3b128_s3/ # change dir
 parque_size: 1024
 prefix_mapping:
   "text_embedding": "LLAMA3_3B_text_embedding"
