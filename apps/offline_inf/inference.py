@@ -188,7 +188,7 @@ def launch_inference(cfg: InferenceArgs):
                         save_batch[f"{prefix}_raw_shape"] = batch[f"{key}_raw_shape"]
                 else:
                     save_batch[prefix].extend(batch[key])
-                    if f"{prefix}_raw_shape" in batch:
+                    if f"{key}_raw_shape" in batch:
                         save_batch[f"{prefix}_raw_shape"].extend(
                             batch[f"{key}_raw_shape"]
                         )

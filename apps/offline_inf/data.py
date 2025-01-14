@@ -41,6 +41,9 @@ s3 = boto3.client(
     config=config,
 )
 logger = logging.getLogger()
+logging.getLogger("s3fs").setLevel(logging.WARNING)
+logging.getLogger("botocore").setLevel(logging.WARNING)
+logging.getLogger("boto3").setLevel(logging.WARNING)
 
 
 class AverageMeter:
