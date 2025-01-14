@@ -1,8 +1,7 @@
-
 ## Multi-Node Slurm Training
-We use `lingua/stool.py` to submit slurm job. Besides, we need to unpack the conda env to each compute node when submitting a job.
+We use `lingua/stool.py` to submit slurm jobs. By revise the original code, we support unpack the conda env to each compute node when submitting a job.
 
-BTW, we can continue to use `torchrun --standalone` command in a single node for quick debugging.
+NOTE: we can continue to use `torchrun --standalone` command in a single node for quick debugging.
 
  ## Usage
 
@@ -28,6 +27,7 @@ python -m lingua.stool script=apps.gen_tran.train config=apps/gen_tran/configs/t
   anaconda_zip=/jfs/shuming/code/env/pollux_env.tar.gz \
   anaconda=/tmp/shuming/
 ```
+
 In the above, `anaconda_zip` is the path of the packed file in step 1, and `anaconda` is the path to unpack it in each compute node, which is recommended to be under `/tmp/` for faster speed.
 
 For other arguments, such as `ngpu`, `ncpu`, you can refer to the detailed explanation [here](https://github.com/metauto-ai/Pollux/blob/a9491c7457370ab20756c94dbf178458d8474d23/lingua/stool.py#L17-L37).

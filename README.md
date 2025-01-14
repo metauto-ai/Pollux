@@ -43,15 +43,6 @@ python test_vae.py
 ```
 
 
-* For ImageBind
-
-```bash
-pip install ftfy iopath timm einops torchaudio
-pip install pytorchvideo@git+https://github.com/facebookresearch/pytorchvideo.git@28fe037d212663c6a24f373b94cc5d478c8c1a1d
-```
-
-* Move `.env.sample` to `.env` and fill in the necessary information.
-
 
 ## Preliminary Usages
 
@@ -82,6 +73,9 @@ python -m apps.main.test
 ## Pollux Pipeline
 ![pipeline](https://github.com/user-attachments/assets/2289daf0-2639-4bf9-aaaa-e708721fe9e4)
 
+
+## Data Pipeline
+haozhe is working on that.
 
 ### TODO 
 

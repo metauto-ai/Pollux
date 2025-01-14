@@ -435,20 +435,32 @@ class VisionTransformer(nn.Module):
             nn.Linear(self.embed_dim, num_classes) if num_classes > 0 else nn.Identity()
         )
 
-    def apply_2d_rope(self, x: torch.Tensor, freqs_cis: torch.Tensor, H: int, W: int) -> torch.Tensor:
+    def apply_2d_rope(
+        self, x: torch.Tensor, freqs_cis: torch.Tensor, H: int, W: int
+    ) -> torch.Tensor:
 
-        freqs_cis_h = freqs_cis[:H, :].unsqueeze(1).repeat(1, W, 1)  # (H, W, embed_dim//2)
-        freqs_cis_w = freqs_cis[:, :W].unsqueeze(0).repeat(H, 1, 1)  # (H, W, embed_dim//2)
+        freqs_cis_h = (
+            freqs_cis[:H, :].unsqueeze(1).repeat(1, W, 1)
+        )  # (H, W, embed_dim//2)
+        freqs_cis_w = (
+            freqs_cis[:, :W].unsqueeze(0).repeat(H, 1, 1)
+        )  # (H, W, embed_dim//2)
 
         # Split input tensor for rotary encoding
-        q_real, q_imag = x[..., :x.shape[-1] // 2], x[..., x.shape[-1] // 2:]
-        rope_emb_real = torch.cos(freqs_cis_h) * q_real + torch.sin(freqs_cis_h) * q_imag
-        rope_emb_imag = torch.cos(freqs_cis_w) * q_real - torch.sin(freqs_cis_w) * q_imag
+        q_real, q_imag = x[..., : x.shape[-1] // 2], x[..., x.shape[-1] // 2 :]
+        rope_emb_real = (
+            torch.cos(freqs_cis_h) * q_real + torch.sin(freqs_cis_h) * q_imag
+        )
+        rope_emb_imag = (
+            torch.cos(freqs_cis_w) * q_real - torch.sin(freqs_cis_w) * q_imag
+        )
 
         # Combine back into a single tensor
         return torch.cat([rope_emb_real, rope_emb_imag], dim=-1)
 
-    def precompute_freqs_cis(self, dim: int, H: int, W: int, base: float = 10000.0) -> torch.Tensor:
+    def precompute_freqs_cis(
+        self, dim: int, H: int, W: int, base: float = 10000.0
+    ) -> torch.Tensor:
 
         # Compute the frequencies
         freqs = 1.0 / (base ** (torch.arange(0, dim, 2).float() / dim))
@@ -458,16 +470,27 @@ class VisionTransformer(nn.Module):
         pos_w = torch.arange(0, W).unsqueeze(1)  # (W, 1)
 
         # Compute the cosine and sine embeddings for both height and width
-        freqs_cis_h = torch.cat([torch.cos(pos_h * freqs), torch.sin(pos_h * freqs)], dim=1)  # (H, dim)
-        freqs_cis_w = torch.cat([torch.cos(pos_w * freqs), torch.sin(pos_w * freqs)], dim=1)  # (W, dim)
+        freqs_cis_h = torch.cat(
+            [torch.cos(pos_h * freqs), torch.sin(pos_h * freqs)], dim=1
+        )  # (H, dim)
+        freqs_cis_w = torch.cat(
+            [torch.cos(pos_w * freqs), torch.sin(pos_w * freqs)], dim=1
+        )  # (W, dim)
 
         return freqs_cis_h, freqs_cis_w
 
-    def _pos_embed(self, x: torch.Tensor, use_2d_rope: bool = False, freqs_cis: Optional[torch.Tensor] = None) -> torch.Tensor:
+    def _pos_embed(
+        self,
+        x: torch.Tensor,
+        use_2d_rope: bool = False,
+        freqs_cis: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
         if use_2d_rope and freqs_cis is not None:
             # Apply 2D RoPE
             B, H, W, C = x.shape
-            x = x.view(B, H * W, C)  # Flatten to (B, num_patches, embed_dim) for consistency
+            x = x.view(
+                B, H * W, C
+            )  # Flatten to (B, num_patches, embed_dim) for consistency
             x = self.apply_2d_rope(x, freqs_cis, H, W)
         else:
             if self.dynamic_img_size:
@@ -475,7 +498,9 @@ class VisionTransformer(nn.Module):
                 pos_embed = resample_abs_pos_embed(
                     self.pos_embed,
                     (H, W),
-                    num_prefix_tokens=0 if self.no_embed_class else self.num_prefix_tokens,
+                    num_prefix_tokens=(
+                        0 if self.no_embed_class else self.num_prefix_tokens
+                    ),
                 )
                 x = x.view(B, -1, C)
             else:
@@ -519,7 +544,9 @@ class VisionTransformer(nn.Module):
         B, num_patches, C = x.shape
         grid_size = int(math.sqrt(num_patches))
         height, width = grid_size, grid_size
-        freqs_cis = self.precompute_freqs_cis(dim=self.embed_dim // 2, H=height, W=width)
+        freqs_cis = self.precompute_freqs_cis(
+            dim=self.embed_dim // 2, H=height, W=width
+        )
         x = self._pos_embed(x, use_2d_rope=True, freqs_cis=freqs_cis)
 
         x = self.patch_drop(x)

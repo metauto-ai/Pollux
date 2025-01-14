@@ -4,8 +4,10 @@ from apps.main.modules.vae import build_vae, LatentVideoVAEArgs
 # Test Hunyuan VAE
 
 # hunyuan_config = LatentVideoVAEArgs(
-# model_name="Hunyuan",
-# pretrained_model_name_or_path="/jfs/checkpoints/models--tencent--HunyuanVideo/snapshots/2a15b5574ee77888e51ae6f593b2ceed8ce813e5/vae",
+
+#     model_name="Hunyuan",
+#     pretrained_model_name_or_path="/jfs/checkpoints/models--tencent--HunyuanVideo/snapshots/2a15b5574ee77888e51ae6f593b2ceed8ce813e5/vae",
+
 # )
 # hunyuan_vae = build_vae(hunyuan_config).cuda()
 input_tensor = torch.randn(64, 3, 256, 256).cuda()
@@ -41,6 +43,7 @@ cosmos_dv_reconstructed = cosmos_dv_vae.decode(cosmos_dv_encoded_indices)
 print("Reconstructed Shape:", cosmos_dv_reconstructed.shape)
 # cosmos_dv_output = cosmos_dv_vae.forward(input_tensor)
 # print("Output Shape (Forward Method):", cosmos_dv_output.shape)
+
 
 # print("Encoder structure (COSMOS-DV):\n", cosmos_dv_vae.encoder)
 
