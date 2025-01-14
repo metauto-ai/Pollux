@@ -15,7 +15,8 @@ from torch.distributed.tensor.parallel import (
     parallelize_module,
 )
 from transformers import LlamaTokenizerFast
-from apps.main.modules.vae import LatentVideoVAE, LatentVideoVAEArgs
+#from apps.main.modules.vae import LatentVideoVAE, LatentVideoVAEArgs
+from apps.main.modules.vae import build_vae, LatentVideoVAEArgs
 from apps.main.modules.embedder import LabelEmbedder
 from apps.main.modules.gen_transformer import (
     RotaryEmbedding1D,
@@ -131,7 +132,8 @@ class Pollux(nn.Module):
         super().__init__()
         self.args = args
 
-        self.tvae = LatentVideoVAE(args.vae)
+        #self.tvae = LatentVideoVAE(args.vae)
+        self.tave = build_vae(args.vae)
         self.patchify_size = args.latent_projector.patchify_size
         assert self.patchify_size == 1, "Patchify size must be 1 for 16x16x8 TVAE."
         self.latent_projector = nn.Linear(
@@ -368,6 +370,9 @@ class Pollux(nn.Module):
             vae_indices[:, 1:].flatten(0, 1),
             reduction="mean",
         )
+
+        accuracy = (pred_latent[:, :-1].argmax(-1) == vae_indices[:, 1:]).float().mean()
+        batch["accuracy"] = accuracy
 
         # batch["latent_target"] = latent_target
         # batch["pred_latent"] = pred_latent
