@@ -25,7 +25,7 @@ logging.basicConfig(
 Image.MAX_IMAGE_PIXELS = None
 config = Config(
     retries={"max_attempts": 10, "mode": "adaptive"},
-    max_pool_connections=100,  # Increase pool size (default is 10)
+    max_pool_connections=200,  # Increase pool size (default is 10)
 )
 
 
@@ -189,7 +189,7 @@ class NovaCaption:
 
 
 if __name__ == "__main__":
-    batch_size = 100
+    batch_size = 200
     max_samples_per_min = 500
     nova_caption = NovaCaption(
         collection_name="unsplash_images",
@@ -209,10 +209,10 @@ if __name__ == "__main__":
         elapsed_time = time.time() - start_time
         processed_samples += batch_size
         total_samples += batch_size
-        if processed_samples >= max_samples_per_min:
-            if elapsed_time < 60:
-                logging.info(f"Sleeping for {60 - elapsed_time} seconds")
-                time.sleep(60 - elapsed_time)
-            start_time = time.time()
-            processed_samples = 0
+        # if processed_samples >= max_samples_per_min:
+        #     if elapsed_time < 60:
+        #         logging.info(f"Sleeping for {60 - elapsed_time} seconds")
+        #         time.sleep(60 - elapsed_time)
+        #     start_time = time.time()
+        #     processed_samples = 0
         logging.info(f"Total samples processed: {total_samples}")
