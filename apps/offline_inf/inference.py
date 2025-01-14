@@ -103,7 +103,7 @@ def launch_inference(cfg: InferenceArgs):
 
     # * == stateful inference, if s3_path is not none means saving to dump_dir ==
     # saving to s3_path
-    if cfg.s3_path is not None:
+    if cfg.s3_path is not None and cfg.s3_bucket is not None:
         logger.warning(
             f"dump_dir not found, saving to s3 cloud {cfg.s3_bucket} : {cfg.s3_path}"
         )
