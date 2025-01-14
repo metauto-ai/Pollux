@@ -105,38 +105,70 @@ def launch_inference(cfg: InferenceArgs):
     save_batch = {}
     in_parquet_num = 0
 
-    # * stateful inference, support resume if dump_dir is the same
-    # TODO need support s3
-    saved_parquet = list(
-        glob.glob(os.path.join(cfg.dump_dir, f"{world_size}_{global_rank}_*.parquet"))
-    )
-    saved_parquet_num = len(saved_parquet)
-    if saved_parquet_num <= 0:
-        logger.warning(f"No saved parquet found, doing fresh start now...")
-        index_to_start = 0
-    else:
-        df = pd.read_csv(
-            os.path.join(cfg.dump_dir, f"{world_size}_{global_rank}_metadata.csv")
-        )
-        assert saved_parquet_num == len(
-            df
-        ), f"Parquet CSV record must be consistent with parquet files on the disk, csv record has {len(df)} == but now on the disk {saved_parquet_num}"
-
-        previous_parquet_size = df.iloc[0]["sample_num"]
-
-        assert (
-            previous_parquet_size == cfg.parque_size
-        ), f"Parquet size must be consistent, prevs {previous_parquet_size} == but now {cfg.parque_size}"
-
-        index_to_start = cfg.parque_size * saved_parquet_num
+    # * == stateful inference, if s3_path is not none means saving to dump_dir ==
+    # saving to s3_path
+    if cfg.s3_path is not None and cfg.s3_bucket is not None:
         logger.warning(
-            f"{saved_parquet_num} saved parquet found, with parquet_size={cfg.parque_size}, resuming inference starting from {index_to_start}-th item, continue to generate {saved_parquet_num+1}-th parquet ..."
+            f"dump_dir not found, saving to s3 cloud {cfg.s3_bucket} : {cfg.s3_path}"
         )
+        if os.path.exists(
+            os.path.join(cfg.dump_dir, f"{world_size}_{global_rank}_metadata.csv")
+        ):
+            df = pd.read_csv(
+                os.path.join(cfg.dump_dir, f"{world_size}_{global_rank}_metadata.csv")
+            )
+            saved_parquet_num = len(df)
+            previous_parquet_size = df.iloc[0]["sample_num"]
+            assert (
+                previous_parquet_size == cfg.parque_size
+            ), f"Parquet size must be consistent, prevs {previous_parquet_size} == but now {cfg.parque_size}"
 
-        # set sampler state and counter
-        sampler.load_state_dict({"start_index": index_to_start})
+            index_to_start = cfg.parque_size * saved_parquet_num
+            logger.warning(
+                f"{saved_parquet_num} saved parquet found, with parquet_size={cfg.parque_size}, resuming inference starting from {index_to_start}-th item, continue to generate {saved_parquet_num+1}-th parquet ..."
+            )
+            # set sampler state and counter
+            sampler.load_state_dict({"start_index": index_to_start})
+        else:
+            logger.warning(f"No saved parquet found, doing fresh start now...")
+            saved_parquet_num = 0
+            index_to_start = 0
+    # support resume if dump_dir is the same
+    elif cfg.dump_dir is not None:
+        logger.warning(f"s3_path not found, saving to local {cfg.dump_dir}")
+        saved_parquet = list(
+            glob.glob(
+                os.path.join(cfg.dump_dir, f"{world_size}_{global_rank}_*.parquet")
+            )
+        )
+        saved_parquet_num = len(saved_parquet)
+        if saved_parquet_num <= 0:
+            logger.warning(f"No saved parquet found, doing fresh start now...")
+            index_to_start = 0
+        else:
+            df = pd.read_csv(
+                os.path.join(cfg.dump_dir, f"{world_size}_{global_rank}_metadata.csv")
+            )
+            assert saved_parquet_num == len(
+                df
+            ), f"Parquet CSV record must be consistent with parquet files on the disk, csv record has {len(df)} == but now on the disk {saved_parquet_num}"
+            previous_parquet_size = df.iloc[0]["sample_num"]
+            assert (
+                previous_parquet_size == cfg.parque_size
+            ), f"Parquet size must be consistent, prevs {previous_parquet_size} == but now {cfg.parque_size}"
+            index_to_start = cfg.parque_size * saved_parquet_num
+            logger.warning(
+                f"{saved_parquet_num} saved parquet found, with parquet_size={cfg.parque_size}, resuming inference starting from {index_to_start}-th item, continue to generate {saved_parquet_num+1}-th parquet ..."
+            )
+            # set sampler state and counter
+            sampler.load_state_dict({"start_index": index_to_start})
+
+    else:
+        raise ValueError("You must select s3url or local inference, no config found !")
 
     count = saved_parquet_num
+
+    # * == start inference ==
     logger.info("Start inference now....")
     sleep_time = random.randint(1, 30)
     time.sleep(
