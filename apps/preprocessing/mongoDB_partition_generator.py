@@ -36,11 +36,6 @@ class MongoDBPartitionGenerator:
         cursor = self.collection.find(self.query).limit(self.batch_size)
         return list(cursor)
 
-    def model_inference(self, docs):
-        for i in range(len(docs)):
-            docs[i][self.new_field] = random.randint(0, 100000)
-        return docs
-
     def _update_document(self, filter_query, update_data):
         """
         Function to perform an update operation on a document.
@@ -49,26 +44,24 @@ class MongoDBPartitionGenerator:
         return result.matched_count, result.modified_count
 
     def update_data(self, docs):
-        with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
-            futures = [
-                executor.submit(
-                    self._update_document,
-                    {"_id": doc["_id"]},
-                    {"$set": {self.new_field: doc[self.new_field]}},
-                )
-                for doc in docs
-            ]
-            for future in futures:
-                try:
-                    matched, modified = future.result()
-                except Exception as e:
-                    logging.warning(f"Error: {e}")
+        ids = [doc["_id"] for doc in docs]
+        self.collection.update_many(
+            {"_id": {"$in": ids}},  # Match documents in the batch
+            [
+                {
+                    "$set": {
+                        f"{self.new_field}": {
+                            "$floor": {"$multiply": [{"$rand": {}}, 100000]}
+                        }
+                    }
+                }
+            ],
+        )
         return len(docs)
 
     def run(self):
         docs = self.random_sample()
-        model_inference_docs = self.model_inference(docs)
-        process_count = self.update_data(model_inference_docs)
+        process_count = self.update_data(docs)
         return process_count
 
 
@@ -76,7 +69,7 @@ if __name__ == "__main__":
     updater = MongoDBPartitionGenerator(
         collection_name="big35m_new",
         new_field="partition_key",
-        batch_size=256,
+        batch_size=10000,
     )
     total_acount = 0
     while True:
