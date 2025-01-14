@@ -27,6 +27,10 @@ import s3fs
 
 from botocore.config import Config
 
+boto3.set_stream_logger("boto3", level=logging.WARNING)
+boto3.set_stream_logger("botocore", level=logging.WARNING)
+logging.getLogger("s3fs").setLevel(logging.WARNING)
+
 config = Config(
     retries={"max_attempts": 10, "mode": "adaptive"},
     max_pool_connections=200,  # Increase pool size (default is 10)
@@ -41,10 +45,6 @@ s3 = boto3.client(
     config=config,
 )
 logger = logging.getLogger()
-logging.getLogger("s3fs").setLevel(logging.WARNING)
-logging.getLogger("botocore").setLevel(logging.WARNING)
-logging.getLogger("boto3").setLevel(logging.WARNING)
-logging.getLogger("pandas").setLevel(logging.WARNING)
 
 
 class AverageMeter:
