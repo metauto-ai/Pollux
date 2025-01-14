@@ -101,13 +101,15 @@ def launch_inference(cfg: InferenceArgs):
     save_batch = {}
     in_parquet_num = 0
 
-    # * stateful inference, if s3_path is not none means saving to dump_dir
+    # * == stateful inference, if s3_path is not none means saving to dump_dir ==
     # else saving to s3_path
     # support resume if dump_dir is the same
     if cfg.dump_dir is not None:
         logger.warning(f"s3_path not found, saving to local {cfg.dump_dir}")
         saved_parquet = list(
-            glob.glob(os.path.join(cfg.dump_dir, f"{world_size}_{global_rank}_*.parquet"))
+            glob.glob(
+                os.path.join(cfg.dump_dir, f"{world_size}_{global_rank}_*.parquet")
+            )
         )
         saved_parquet_num = len(saved_parquet)
         if saved_parquet_num <= 0:
@@ -122,15 +124,17 @@ def launch_inference(cfg: InferenceArgs):
             ), f"Parquet CSV record must be consistent with parquet files on the disk, csv record has {len(df)} == but now on the disk {saved_parquet_num}"
 
     elif cfg.s3_path is not None:
+        logger.warning(
+            f"dump_dir not found, saving to s3 cloud {cfg.s3_bucket} : {cfg.s3_path}"
+        )
         df = pd.read_csv(
             os.path.join(cfg.dump_dir, f"{world_size}_{global_rank}_metadata.csv")
         )
         saved_parquet_num = len(df)
-        
+
     else:
-        raise ValueError("You must select s3url or local inference, no config found !")    
-        
-        
+        raise ValueError("You must select s3url or local inference, no config found !")
+
     previous_parquet_size = df.iloc[0]["sample_num"]
     assert (
         previous_parquet_size == cfg.parque_size
@@ -142,9 +146,9 @@ def launch_inference(cfg: InferenceArgs):
     )
     # set sampler state and counter
     sampler.load_state_dict({"start_index": index_to_start})
-
-
     count = saved_parquet_num
+
+    # * == start inference ==
     logger.info("Start inference now....")
     sleep_time = random.randint(1, 30)
     time.sleep(
