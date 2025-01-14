@@ -34,6 +34,7 @@ from apps.offline_inf.data import (
     benchmark_loading,
     benchmark_url_loading,
     save_parquet,
+    upload_parquet,
 )
 import numpy as np
 from apps.main.utils.mongodb_data_load import MONGODB_URI
@@ -55,8 +56,7 @@ class InferenceArgs:
     parque_size: int = 32768  # Number of samples to save in a single parquet file
     # * whether do profiling
     profile: Optional[bool] = False
-    s3_bucket: Optional[str] = None
-    s3_key: Optional[str] = None
+    s3_path: Optional[str] = None  # note the path should without the final '/'
 
 
 def launch_inference(cfg: InferenceArgs):
@@ -74,6 +74,10 @@ def launch_inference(cfg: InferenceArgs):
     model = OfflineInference(cfg.model)
     model.init_weights(cfg.model)
     logger.info("Model loaded")
+    is_s3 = cfg.s3_path is not None
+    if is_s3:
+        s3_path = cfg.s3_path.rstrip("/")
+        logger.info(f"Uploading to S3 path: {s3_path}")
     model.cuda().eval()
 
     active_data = [d for d in cfg.source_data if d.stage == cfg.stage and d.use]
@@ -161,13 +165,21 @@ def launch_inference(cfg: InferenceArgs):
             in_parquet_num += len(batch[key])
 
         if in_parquet_num >= cfg.parque_size:
-            parquet_path = save_parquet(
-                save_batch,
-                cfg.dump_dir,
-                f"{world_size}_{global_rank}_{count}",
-                save_meter=save_meters["parquet"],
-                storage_meter=storage_meters["parquet"],
-            )
+            if is_s3:
+                parquet_path = upload_parquet(
+                    save_batch,
+                    s3_path,
+                    f"{world_size}_{global_rank}_{count}",
+                    save_meter=storage_meters["parquet"],
+                )
+            else:
+                parquet_path = save_parquet(
+                    save_batch,
+                    cfg.dump_dir,
+                    f"{world_size}_{global_rank}_{count}",
+                    save_meter=save_meters["parquet"],
+                    storage_meter=storage_meters["parquet"],
+                )
             count += 1
 
             batch_df = {

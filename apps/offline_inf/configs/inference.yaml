@@ -1,7 +1,8 @@
 # CUDA_VISIBLE_DEVICES=4,5,6,7 torchrun --nnodes 1 --nproc-per-node 4 --rdzv_endpoint=localhost:29400 -m apps.offline_inf.inference config=apps/offline_inf/configs/inference.yaml
 name: "inference"
 stage: inference # preliminary for test normal usage: inference 
-dump_dir:  /jfs/data/cc12m_r256_l3b128/ # change dir
+dump_dir:  /jfs/data/cc12m_r256_l3b128_s3/ # change dir
+s3_path: s3://haozhe/cc12m_r256_l3b128_s3/ # change dir
 parque_size: 1024
 prefix_mapping:
   "text_embedding": "LLAMA3_3B_text_embedding"
@@ -19,6 +20,8 @@ source_data:
     extract_field:
         "s3url": "image"
     use: true
+    query:
+        aesthetic_score: {"$exists": True, "$gt": 6.5}
     dataloader:
         prefetch_factor: 2
         batch_size: 64
@@ -30,6 +33,7 @@ source_data:
 
 model:
     vae:
+        model_name: Hunyuan
         pretrained_model_name_or_path: '/jfs/checkpoints/models--tencent--HunyuanVideo/snapshots/2a15b5574ee77888e51ae6f593b2ceed8ce813e5/vae'
         enable_tiling: true
         enable_slicing: true
