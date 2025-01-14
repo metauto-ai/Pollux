@@ -11,7 +11,7 @@ stages:
     batch_size: 256
     num_shards: 1
     shard_idx: 0
-    dataset: pd12m
+    dataset: diffusion
     producer_list:
       - databaseDiffusion
 
@@ -28,5 +28,5 @@ stages:
       - aestheticScoredImagesDiffusion
 
   update_database:
-    dataset: pd12m
+    dataset: diffusion
     consumer: aestheticScoredImagesDiffusion

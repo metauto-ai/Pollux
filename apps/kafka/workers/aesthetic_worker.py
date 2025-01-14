@@ -4,6 +4,8 @@ import io
 import multiprocessing
 import threading
 import time
+
+import aiohttp
 from workers.kafka_utils import Consumer, Producer
 from workers.common import load_yaml_config, print_counter
 from loguru import logger
@@ -52,6 +54,7 @@ class ImageDataset(IterableDataset):
             document_id = message_data["document_ids"]
             processed = asyncio.run(preprocess_images(message_data["image_contents"], preprocessor))
         
+            # Return one image from the buffer
             for img, doc_id in zip(processed, document_id):
             # for img, doc_id in zip(message_data["image_contents"], message_data["document_ids"]):
                 yield {
@@ -92,7 +95,7 @@ class AestheticScorerWorker:
 
         self.dataset = ImageDataset(consumer_topic, rank)
         batch_size = self.stage_config["batch_size"]
-        self.dataloader = DataLoader(self.dataset, batch_size=batch_size, num_workers=1, pin_memory=True, prefetch_factor=3)
+        self.dataloader = DataLoader(self.dataset, batch_size=batch_size, num_workers=1, pin_memory=True, prefetch_factor=8)
 
         logger.info(f"Initialized model on device cuda:{rank % n_gpus}")
         logger.info("ScorerWorker initialization complete")
@@ -106,7 +109,7 @@ class AestheticScorerWorker:
             try:
                 images = batch["images"].to(self.model.device, dtype=torch.bfloat16)
                 with torch.no_grad():
-                    scores = self.model(images).logits.to(torch.float32).cpu().numpy()
+                    scores = self.model(images).logits.squeeze(1).to(torch.float32).cpu().numpy()
                 # logger.debug(f"Successfully scored batch {idx}")
                 for producer in self.producers:
                     producer.send(idx, {

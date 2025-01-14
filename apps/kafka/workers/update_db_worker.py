@@ -34,7 +34,9 @@ class UpdateWorker:
             raise ValueError(f"Invalid dataset name: {dataset_name}")
 
         self.dataset = self.dataset_cls()
+        self.dataset.set_collection()
         self.counter = counter
+
     def run(self):
         logger.info(f"Rank {self.rank}: Starting UpdateWorker")
         for message in self.consumer:
@@ -71,6 +73,7 @@ class UpdateWorker:
                 logger.error(f"Rank {self.rank}: Error updating database: {e}", exc_info=True)
                 logger.info(f"Rank {self.rank}: Reconnecting to database...")
                 self.dataset = self.dataset_cls()
+                self.dataset.set_collection()
                 continue
 
 def update_database(rank, config, counter):
