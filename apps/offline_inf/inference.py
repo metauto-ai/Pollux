@@ -195,36 +195,40 @@ def launch_inference(cfg: InferenceArgs):
             in_parquet_num += len(batch[key])
 
         if in_parquet_num >= cfg.parque_size:
-            if is_s3:
-                parquet_path = upload_parquet(
-                    save_batch,
-                    s3_path,
-                    f"{world_size}_{global_rank}_{count}",
-                    save_meter=storage_meters["parquet"],
-                )
+            try:
+                if is_s3:
+                    parquet_path = upload_parquet(
+                        save_batch,
+                        s3_path,
+                        f"{world_size}_{global_rank}_{count}",
+                        save_meter=storage_meters["parquet"],
+                    )
+                else:
+                    parquet_path = save_parquet(
+                        save_batch,
+                        cfg.dump_dir,
+                        f"{world_size}_{global_rank}_{count}",
+                        save_meter=save_meters["parquet"],
+                        storage_meter=storage_meters["parquet"],
+                    )
+            except Exception as e:
+                logger.error(f"Error saving parquet: {e}")
             else:
-                parquet_path = save_parquet(
-                    save_batch,
-                    cfg.dump_dir,
-                    f"{world_size}_{global_rank}_{count}",
-                    save_meter=save_meters["parquet"],
-                    storage_meter=storage_meters["parquet"],
-                )
-            count += 1
+                count += 1
 
-            batch_df = {
-                "path": [parquet_path],
-                "sample_num": [in_parquet_num],
-                "timestamp": [datetime.now()],
-                "data_source": [active_data[0].data_name],
-                "resolution": [active_data[0].image_size],
-                "token_length": [cfg.model.plan_transformer.text_seqlen],
-            }
-            batch_df = pd.DataFrame(batch_df)
-            if csv_path.exists():
-                batch_df.to_csv(csv_path, mode="a", header=False, index=False)
-            else:
-                batch_df.to_csv(csv_path, mode="w", header=True, index=False)
+                batch_df = {
+                    "path": [parquet_path],
+                    "sample_num": [in_parquet_num],
+                    "timestamp": [datetime.now()],
+                    "data_source": [active_data[0].data_name],
+                    "resolution": [active_data[0].image_size],
+                    "token_length": [cfg.model.plan_transformer.text_seqlen],
+                }
+                batch_df = pd.DataFrame(batch_df)
+                if csv_path.exists():
+                    batch_df.to_csv(csv_path, mode="a", header=False, index=False)
+                else:
+                    batch_df.to_csv(csv_path, mode="w", header=True, index=False)
             save_batch = {}
             in_parquet_num = 0
         # Jinjie: if we need profile, early break here
