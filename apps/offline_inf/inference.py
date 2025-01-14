@@ -57,8 +57,8 @@ class InferenceArgs:
     # * whether do profiling
     profile: Optional[bool] = False
     s3_path: Optional[str] = None  # note the path should without the final '/'
-    max_save_attempt: int = 3
-    delay: int = 5
+    max_save_attempt: int = 3  # max number of attempts to save a parquet file
+    delay: int = 5  # seconds
 
 
 def launch_inference(cfg: InferenceArgs):
