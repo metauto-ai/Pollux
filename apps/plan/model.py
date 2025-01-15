@@ -58,6 +58,7 @@ class LlamaArgs:
     pre_trained_path: Optional[str] = None
 
 
+
 @dataclass
 class ModelArgs:
     vae: LatentVideoVAEArgs = field(default_factory=LatentVideoVAEArgs)
@@ -281,6 +282,7 @@ class Pollux(nn.Module):
             raise ValueError(f"Invalid mask strategy: {mask_strategy}")
         return images_embs, ids_restore
 
+
     def forward(
         self,
         batch: dict[str, any],
@@ -387,7 +389,7 @@ class Pollux(nn.Module):
         self.latent_projector.eval()
         self.vision_cls_emb.eval()
         self.llm.eval()
-
+        self.vision_cls_emb.reset_parameters()
 
 # Optional policy for activation checkpointing. With None, we stick to the default (defined distributed.py: default_no_recompute_ops)
 def get_no_recompute_ops():
@@ -412,6 +414,7 @@ def build_fsdp_grouping_plan(model_args: ModelArgs, model: nn.Module):
     #     for idx, block in enumerate(llama_model.model.layers):
     #         group_plan.append((f"llm.model.layers.{idx}", False))
 
+
     # NOTE: Hunyuan
     # vae_encoder = getattr(model.vae.vae.encoder, "down_blocks", None)
     # if vae_encoder:
@@ -419,7 +422,6 @@ def build_fsdp_grouping_plan(model_args: ModelArgs, model: nn.Module):
     #         group_plan.append((f"vae.vae.encoder.down_blocks.{i}", False))
     # else:
     #     logger.warning("VAE encoder does not have `down_blocks` attribute.")
-
     # COSMOS
     # vae_encoder = getattr(model.vae.vae.vae._enc_model, "encoder", None)
     # if vae_encoder and hasattr(vae_encoder, "down"):
@@ -430,8 +432,28 @@ def build_fsdp_grouping_plan(model_args: ModelArgs, model: nn.Module):
     #     group_plan.append((f"vae.vae.vae._enc_model.encoder.mid.attn_1", False))
     #     group_plan.append((f"vae.vae.vae._enc_model.encoder.mid.block_2", False))
 
+
     logger.info(f"The `group_plan` for FSDP (layer-level granularity):\n{group_plan}")
     return group_plan
+
+
+def recursive_list_modules(module, prefix=""):
+    modules = []
+    if isinstance(module, (torch.nn.Module, torch.jit.RecursiveScriptModule)):
+        modules.append(prefix.strip("."))
+        for name in dir(module):
+            if not name.startswith("_"):
+                try:
+                    child = getattr(module, name)
+                    if isinstance(
+                        child, (torch.nn.Module, torch.jit.RecursiveScriptModule)
+                    ):
+                        modules.extend(
+                            recursive_list_modules(child, prefix=f"{prefix}.{name}")
+                        )
+                except AttributeError:
+                    pass
+    return modules
 
 
 def tp_parallelize(model, tp_mesh, model_args: ModelArgs, distributed_args):
