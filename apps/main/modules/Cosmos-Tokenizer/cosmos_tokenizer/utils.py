@@ -110,6 +110,7 @@ def _load_pytorch_model(
     return model, ckpts
 
 
+
 def load_jit_model(
     jit_filepath: str = None, device: str = "cuda"
 ) -> torch.jit.ScriptModule:
