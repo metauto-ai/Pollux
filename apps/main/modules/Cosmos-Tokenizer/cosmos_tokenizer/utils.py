@@ -106,7 +106,8 @@ def _load_pytorch_model(
     """
     tokenizer_name = tokenizer_config["name"]
     model = TokenizerModels[tokenizer_name].value(**tokenizer_config)
-    ckpts = torch.jit.load(jit_filepath, map_location=torch.device(device))
+    # ckpts = torch.jit.load(jit_filepath, map_location=torch.device(device))
+    ckpts = torch.jit.load(jit_filepath)
     return model, ckpts
 
 
@@ -122,9 +123,10 @@ def load_jit_model(
     Returns:
         The JIT compiled model loaded to device and on eval mode.
     """
-    model = torch.jit.load(jit_filepath, map_location=torch.device(device))
-    return model.eval()
-
+    # model = torch.jit.load(jit_filepath, map_location=torch.device(device))
+    # return model.eval()
+    model = torch.jit.load(jit_filepath)
+    return model.eval().to(device)
 
 def save_jit_model(
     model: torch.jit.ScriptModule | torch.jit.RecursiveScriptModule = None,

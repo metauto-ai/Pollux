@@ -9,7 +9,9 @@
 version: v0.8.2
 # From now on, start to align train, data, and model setting with train stage (just finish refactor for dara)
 train_stage: preliminary # options: preliminary, pretraining, posttraining; aligned with data setting
-name: Pollux_v0.8.2_Local_ImageNet-1k_multimodal_1e-2_0123
+
+name: Pollux_v0.8.2_Local_ImageNet-1k_multimodal
+
 output_dir: /jfs/checkpoints/dump
 dump_dir: '' # No need now
 steps: 1000000
@@ -22,7 +24,8 @@ optim:
     weight_decay: 0.01
 
 distributed:
-    gpus: 0,1,2,3 #0,1,2,3 #4,5,6,7
+
+    gpus: 4,5,6,7
     fsdp_type: full_shard
     dp_shard: 4
     dp_replicate: 1
@@ -64,6 +67,8 @@ model:
         gen_seqlen: 256
         condition_seqlen: 320
     codebook_size: 64000
+
+
 
 
 data:
@@ -133,6 +138,7 @@ logging:
         project: Pollux
         entity: metauto
         name: ''
+
 
 env:
     ENABLE_INTRA_NODE_COMM: '0'  # '0' for local machine (otherwise errors happen); '1' for slurmn (need test)
