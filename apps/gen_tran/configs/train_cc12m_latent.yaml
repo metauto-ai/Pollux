@@ -1,4 +1,4 @@
-# OMP_NUM_THREADS=8 torchrun --standalone --nnodes 1 --nproc-per-node 4 -m apps.gen_tran.train config=apps/gen_tran/configs/train_cc12m.yaml
+# OMP_NUM_THREADS=8 torchrun --standalone --nnodes 1 --nproc-per-node 4 -m apps.gen_tran.train config=apps/gen_tran/configs/train_cc12m_latent.yaml
 
 # Set up single experiment
 version: v0.7
@@ -108,11 +108,11 @@ data:
     mapping_field:
         "HunyuanVideo_latent_code": "latent_code"
         "LLAMA3_3B_text_embedding": "text_embedding"
-    use: False
+    use: True
     dataloader:
-        prefetch_factor: 16
+        prefetch_factor: 2
         batch_size: 64
-        num_workers: 2
+        num_workers: 32
         seed: 1024
         shuffle: False
         pin_memory: False
