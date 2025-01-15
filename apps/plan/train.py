@@ -399,7 +399,7 @@ def train(args: TrainArgs):
             end_timer = torch.cuda.Event(enable_timing=True)
             start_timer.record()
 
-            batch, loss = model(batch)
+            _, loss = model(batch)
             # We scale loss with grad_acc_steps so the gradient is the same
             # regardless of grad_acc_steps
             loss = loss / args.grad_acc_steps
@@ -426,7 +426,9 @@ def train(args: TrainArgs):
             # updates the scale for next iteration
             # training iteration complete
             end_timer.record()
+
             torch.cuda.synchronize()
+
             curr_iter_time = round(start_timer.elapsed_time(end_timer) * 1e-3, 4)
 
             # if profiler is active
@@ -565,6 +567,7 @@ def train(args: TrainArgs):
                 requeue_slurm_job()
                 sys.exit(0)
 
+    # if not saved and get_is_master():
     # if not saved and get_is_master():
     if not saved and get_is_master():
         # torch.distributed.barrier()

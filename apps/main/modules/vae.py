@@ -30,7 +30,6 @@ class LatentVideoVAEArgs:
     model_dtype: str = "bfloat16"  # "bfloat16"
     enable_tiling: bool = True
     enable_slicing: bool = True
-    device: str = "cpu"
 
 
 class BaseLatentVideoVAE(nn.Module):
@@ -198,7 +197,6 @@ class COSMOSDiscreteVAE(BaseLatentVideoVAE):
             checkpoint_dec=f"{cfg.pretrained_model_name_or_path}/decoder.jit",
             tokenizer_config=discrete_video_dict,
             dtype=args.model_dtype,
-            device=args.device,
         )
         self.vae._enc_model.quantizer.dtype = getattr(torch, args.model_dtype)
         self.vae._dec_model.inv_quant.quantizer.dtype = getattr(torch, args.model_dtype)
@@ -259,7 +257,6 @@ class COSMOSContinuousVAE(BaseLatentVideoVAE):
             checkpoint_dec=f"{cfg.pretrained_model_name_or_path}/decoder.jit",
             tokenizer_config=continuous_video_dict,
             dtype=args.model_dtype,
-            device="cpu",
         )
 
     @torch.no_grad()
