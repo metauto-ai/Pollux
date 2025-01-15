@@ -10,7 +10,7 @@ version: v0.8.2
 # From now on, start to align train, data, and model setting with train stage (just finish refactor for dara)
 train_stage: preliminary # options: preliminary, pretraining, posttraining; aligned with data setting
 
-name: Pollux_v0.8.2_Local_ImageNet-1k_multimodal
+name: Pollux_v0.8.3_Local_ImageNet-1k_multimodal
 
 output_dir: /jfs/checkpoints/dump
 dump_dir: '' # No need now
