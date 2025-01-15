@@ -1,6 +1,6 @@
 # find /jfs/data/imagenet-1k/ -type f -name "*.lock" -exec rm -f {} \;
 # rm -rf /jfs/checkpoints/dump/Pollux_v0.8.2_Local_ImageNet-1k_multimodal/ 
-# torchrun --standalone --nnodes 1 --nproc-per-node 8 -m apps.plan.train config=apps/plan/configs/train.yaml
+# torchrun --standalone --nnodes 1 --nproc-per-node 4 -m apps.plan.train config=apps/plan/configs/train.yaml
 # nohup torchrun --standalone --nnodes 1 --nproc-per-node 4 -m apps.plan.train config=apps/plan/configs/train.yaml > output2.log 2>&1 &
 
 
