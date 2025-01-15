@@ -34,6 +34,7 @@ from apps.offline_inf.data import (
     benchmark_loading,
     benchmark_url_loading,
     save_parquet,
+    upload_parquet,
 )
 import numpy as np
 from apps.main.utils.mongodb_data_load import MONGODB_URI
@@ -55,6 +56,9 @@ class InferenceArgs:
     parque_size: int = 32768  # Number of samples to save in a single parquet file
     # * whether do profiling
     profile: Optional[bool] = False
+    s3_path: Optional[str] = None  # note the path should without the final '/'
+    max_save_attempt: int = 3  # max number of attempts to save a parquet file
+    delay: int = 5  # seconds
 
 
 def launch_inference(cfg: InferenceArgs):
@@ -72,6 +76,10 @@ def launch_inference(cfg: InferenceArgs):
     model = OfflineInference(cfg.model)
     model.init_weights(cfg.model)
     logger.info("Model loaded")
+    is_s3 = cfg.s3_path is not None
+    if is_s3:
+        s3_path = cfg.s3_path.rstrip("/")
+        logger.info(f"Uploading to S3 path: {s3_path}")
     model.cuda().eval()
 
     active_data = [d for d in cfg.source_data if d.stage == cfg.stage and d.use]
@@ -99,37 +107,68 @@ def launch_inference(cfg: InferenceArgs):
     save_batch = {}
     in_parquet_num = 0
 
-    # * stateful inference, support resume if dump_dir is the same
-    saved_parquet = list(
-        glob.glob(os.path.join(cfg.dump_dir, f"{world_size}_{global_rank}_*.parquet"))
-    )
-    saved_parquet_num = len(saved_parquet)
-    if saved_parquet_num <= 0:
-        logger.warning(f"No saved parquet found, doing fresh start now...")
-        index_to_start = 0
-    else:
-        df = pd.read_csv(
+    # * == stateful inference, if s3_path is not none means saving to dump_dir ==
+    # saving to s3_path
+    if is_s3:
+        logger.warning(f"saving to s3 cloud: {cfg.s3_path}")
+        if os.path.exists(
             os.path.join(cfg.dump_dir, f"{world_size}_{global_rank}_metadata.csv")
+        ):
+            df = pd.read_csv(
+                os.path.join(cfg.dump_dir, f"{world_size}_{global_rank}_metadata.csv")
+            )
+            saved_parquet_num = len(df)
+            previous_parquet_size = df.iloc[0]["sample_num"]
+            assert (
+                previous_parquet_size == cfg.parque_size
+            ), f"Parquet size must be consistent, prevs {previous_parquet_size} == but now {cfg.parque_size}"
+
+            index_to_start = cfg.parque_size * saved_parquet_num
+            logger.warning(
+                f"{saved_parquet_num} saved parquet found, with parquet_size={cfg.parque_size}, resuming inference starting from {index_to_start}-th item, continue to generate {saved_parquet_num+1}-th parquet ..."
+            )
+            # set sampler state and counter
+            sampler.load_state_dict({"start_index": index_to_start})
+        else:
+            logger.warning(f"No saved parquet found, doing fresh start now...")
+            saved_parquet_num = 0
+            index_to_start = 0
+    # support resume if dump_dir is the same
+    elif cfg.dump_dir is not None:
+        logger.warning(f"s3_path not found, saving to local {cfg.dump_dir}")
+        saved_parquet = list(
+            glob.glob(
+                os.path.join(cfg.dump_dir, f"{world_size}_{global_rank}_*.parquet")
+            )
         )
-        assert saved_parquet_num == len(
-            df
-        ), f"Parquet CSV record must be consistent with parquet files on the disk, csv record has {len(df)} == but now on the disk {saved_parquet_num}"
+        saved_parquet_num = len(saved_parquet)
+        if saved_parquet_num <= 0:
+            logger.warning(f"No saved parquet found, doing fresh start now...")
+            index_to_start = 0
+        else:
+            df = pd.read_csv(
+                os.path.join(cfg.dump_dir, f"{world_size}_{global_rank}_metadata.csv")
+            )
+            assert saved_parquet_num == len(
+                df
+            ), f"Parquet CSV record must be consistent with parquet files on the disk, csv record has {len(df)} == but now on the disk {saved_parquet_num}"
+            previous_parquet_size = df.iloc[0]["sample_num"]
+            assert (
+                previous_parquet_size == cfg.parque_size
+            ), f"Parquet size must be consistent, prevs {previous_parquet_size} == but now {cfg.parque_size}"
+            index_to_start = cfg.parque_size * saved_parquet_num
+            logger.warning(
+                f"{saved_parquet_num} saved parquet found, with parquet_size={cfg.parque_size}, resuming inference starting from {index_to_start}-th item, continue to generate {saved_parquet_num+1}-th parquet ..."
+            )
+            # set sampler state and counter
+            sampler.load_state_dict({"start_index": index_to_start})
 
-        previous_parquet_size = df.iloc[0]["sample_num"]
-
-        assert (
-            previous_parquet_size == cfg.parque_size
-        ), f"Parquet size must be consistent, prevs {previous_parquet_size} == but now {cfg.parque_size}"
-
-        index_to_start = cfg.parque_size * saved_parquet_num
-        logger.warning(
-            f"{saved_parquet_num} saved parquet found, with parquet_size={cfg.parque_size}, resuming inference starting from {index_to_start}-th item, continue to generate {saved_parquet_num+1}-th parquet ..."
-        )
-
-        # set sampler state and counter
-        sampler.load_state_dict({"start_index": index_to_start})
+    else:
+        raise ValueError("You must select s3url or local inference, no config found !")
 
     count = saved_parquet_num
+
+    # * == start inference ==
     logger.info("Start inference now....")
     sleep_time = random.randint(1, 30)
     time.sleep(
@@ -151,35 +190,54 @@ def launch_inference(cfg: InferenceArgs):
                         save_batch[f"{prefix}_raw_shape"] = batch[f"{key}_raw_shape"]
                 else:
                     save_batch[prefix].extend(batch[key])
-                    if f"{prefix}_raw_shape" in batch:
+                    if f"{key}_raw_shape" in batch:
                         save_batch[f"{prefix}_raw_shape"].extend(
                             batch[f"{key}_raw_shape"]
                         )
             in_parquet_num += len(batch[key])
 
         if in_parquet_num >= cfg.parque_size:
-            parquet_path = save_parquet(
-                save_batch,
-                cfg.dump_dir,
-                f"{world_size}_{global_rank}_{count}",
-                save_meter=save_meters["parquet"],
-                storage_meter=storage_meters["parquet"],
-            )
-            count += 1
+            for attempt in range(cfg.max_save_attempt):
+                try:
+                    if is_s3:
+                        parquet_path = upload_parquet(
+                            save_batch,
+                            s3_path,
+                            f"{world_size}_{global_rank}_{count}",
+                            save_meter=storage_meters["parquet"],
+                        )
+                    else:
+                        parquet_path = save_parquet(
+                            save_batch,
+                            cfg.dump_dir,
+                            f"{world_size}_{global_rank}_{count}",
+                            save_meter=save_meters["parquet"],
+                            storage_meter=storage_meters["parquet"],
+                        )
+                except Exception as e:
+                    logger.warning(f"Attempt {attempt + 1} failed: {e}")
+                    if attempt < cfg.max_retries - 1:
+                        logger.info(f"Retrying in {cfg.delay} seconds...")
+                        time.sleep(cfg.delay)
+                    else:
+                        logger.error("All attempts failed. Unable to save to S3.")
+                else:
+                    count += 1
 
-            batch_df = {
-                "path": [parquet_path],
-                "sample_num": [in_parquet_num],
-                "timestamp": [datetime.now()],
-                "data_source": [active_data[0].data_name],
-                "resolution": [active_data[0].image_size],
-                "token_length": [cfg.model.plan_transformer.text_seqlen],
-            }
-            batch_df = pd.DataFrame(batch_df)
-            if csv_path.exists():
-                batch_df.to_csv(csv_path, mode="a", header=False, index=False)
-            else:
-                batch_df.to_csv(csv_path, mode="w", header=True, index=False)
+                    batch_df = {
+                        "path": [parquet_path],
+                        "sample_num": [in_parquet_num],
+                        "timestamp": [datetime.now()],
+                        "data_source": [active_data[0].data_name],
+                        "resolution": [active_data[0].image_size],
+                        "token_length": [cfg.model.plan_transformer.text_seqlen],
+                    }
+                    batch_df = pd.DataFrame(batch_df)
+                    if csv_path.exists():
+                        batch_df.to_csv(csv_path, mode="a", header=False, index=False)
+                    else:
+                        batch_df.to_csv(csv_path, mode="w", header=True, index=False)
+                    break
             save_batch = {}
             in_parquet_num = 0
         # Jinjie: if we need profile, early break here

@@ -8,7 +8,7 @@ import time
 import torch
 from torch import nn
 import torch.nn.functional as F
-from apps.main.modules.vae import LatentVideoVAE, LatentVideoVAEArgs
+from apps.main.modules.vae import build_vae, LatentVideoVAEArgs
 from apps.main.modules.plan_transformer import (
     BasePlanTransformer,
     RotaryEmbedding1D,
@@ -116,7 +116,7 @@ class OfflineInference(nn.Module):
     def __init__(self, args: ModelArgs):
         super().__init__()
 
-        self.compressor = LatentVideoVAE(args.vae)
+        self.compressor = build_vae(args.vae)
         self.tokenizer = Tokenizer(model_path=args.tokenizer.model_path)
         self.plan_transformer = PlanTransformer(args.plan_transformer)
 
