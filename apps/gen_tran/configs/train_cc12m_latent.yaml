@@ -4,7 +4,7 @@
 version: v0.7
 # From now on, start to align train, data, and model setting with train stage (just finish refactor for dara)
 train_stage: preliminary # options: preliminary, pretraining, posttraining; aligned with data setting
-name: Pollux_v0.8_latent_pollux_cc12m # used for local dump and wandb log
+name: Pollux_v0.8_latent_pollux_cc12m_efficiency_test # used for local dump and wandb log
 output_dir: /jfs/checkpoints/dump
 dump_dir: '' # No need now
 steps: 1000000
@@ -21,7 +21,7 @@ distributed:
     fsdp_type: full_shard
     dp_shard: 4
     dp_replicate: 1
-    compile: true
+    compile: false
     model_dtype: bf16 # options: `fb8` is only supported by H100
     matmul_allow_tf32: false
     selective_activation_checkpointing: false
@@ -112,10 +112,10 @@ data:
     dataloader:
         prefetch_factor: 2
         batch_size: 64
-        num_workers: 32
+        num_workers: 16
         seed: 1024
         shuffle: False
-        pin_memory: False
+        pin_memory: True
         drop_last: False
 
 profiling:
