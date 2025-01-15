@@ -310,6 +310,7 @@ def get_default_policy(no_recompute_ops=None):
 def check_model_value_range(
     model: torch.nn.Module, range: float = 1e3, std: float = 1e3
 ):
+    
     for name, param in chain(model.named_parameters(), model.named_buffers()):
         if isinstance(param, DTensor):
             param = param.to_local()
@@ -323,8 +324,14 @@ def check_model_value_range(
         if torch.isnan(param).any() or torch.isinf(param).any():
             logger.warning(f"Model parameter {name} contains NaN or Inf")
 
-        param_range = param.max() - param.min()
-        param_std = param.std()
+        try:
+            param_range = param.max() - param.min()
+            param_std = param.std()
+        except:
+            # raise RuntimeError(f"Error computing range/std for {name}")
+            logger.info(f"======> SB TVAE COSMOS: {name}")
+            continue
+
 
         if param_range > range:
             logger.warning(

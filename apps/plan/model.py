@@ -134,7 +134,7 @@ class Pollux(nn.Module):
         self.args = args
 
         #self.tvae = LatentVideoVAE(args.vae)
-        self.tave = build_vae(args.vae)
+        self.tvae = build_vae(args.vae)
         self.patchify_size = args.latent_projector.patchify_size
         assert self.patchify_size == 1, "Patchify size must be 1 for 16x16x8 TVAE."
         self.latent_projector = nn.Linear(
@@ -236,6 +236,7 @@ class Pollux(nn.Module):
     def process_mask(
         self,
         images_embs: torch.Tensor,
+        freqs_cis_img: torch.Tensor,
         mask_strategy: str,
         random_rate: float = 0.15,
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
@@ -247,19 +248,29 @@ class Pollux(nn.Module):
 
         if mask_strategy == "random_mask":
             len_keep = int(L * (1 - random_rate))
-            noise = torch.rand(B, L, device=device)
 
+            noise = torch.rand(1, L, device=device).repeat(B, 1)
             # sort noise for each sample
             ids_shuffle = torch.argsort(
                 noise, dim=1
             )  # ascend: small is keep, large is remove
             ids_restore = torch.argsort(ids_shuffle, dim=1)
-
             # keep the first subset
             ids_keep = ids_shuffle[:, :len_keep]
+
             images_embs_keep = torch.gather(
                 images_embs, 1, ids_keep.unsqueeze(-1).repeat(1, 1, D)
             )
+
+            _, fsize1, fsize2, fsize3 = freqs_cis_img.size() # [256, 64, 2, 2]
+            freqs_cis_img_keep = torch.gather(
+                freqs_cis_img, 0, ids_keep[0].view(-1, 1, 1, 1).repeat(1, fsize1, fsize2, fsize3)
+            )
+            ids_mask = ids_shuffle[:, -len_keep:]
+            freqs_cis_img_mask = torch.gather(
+                freqs_cis_img, 0, ids_mask[0].view(-1, 1, 1, 1).repeat(1, fsize1, fsize2, fsize3)
+            )
+
 
             # generate the binary mask: 0 is keep, 1 is remove
             mask = torch.ones([B, L], device=device)
@@ -267,20 +278,19 @@ class Pollux(nn.Module):
             # unshuffle to get the binary mask
             mask = torch.gather(mask, dim=1, index=ids_restore)
 
-            # padded mask tokens
-            images_embs_pad = self.mask_token.expand(B, L - len_keep, D)
 
-            # concatenate the keep and pad tokens
-            images_embs = torch.cat(
-                [images_embs_keep, images_embs_pad], dim=1
-            )  # [B, L, D]
+
+            freqs_cis_img = torch.cat([freqs_cis_img_keep, freqs_cis_img_mask], dim=0)
+
+
+
 
         elif mask_strategy == "full_mask":
             raise NotImplementedError("Full mask is not implemented yet.")
 
         else:
             raise ValueError(f"Invalid mask strategy: {mask_strategy}")
-        return images_embs, ids_restore
+        return images_embs, freqs_cis_img, ids_restore
 
 
     def forward(
@@ -299,7 +309,7 @@ class Pollux(nn.Module):
         cls_emb = self.vision_cls_emb(labels, train=True).unsqueeze(1)  # [B, 1, D]
 
         # Vision Discrete Latent Codes
-        self.tvae.vae.vae._enc_model.to(images.device)
+        #self.tvae.vae.vae._enc_model.to(images.device)
         vae_indices, vae_latent = self.tvae.encode(images)
         # [B, 1, H/16, W/16], [B, 6, 1, H/16, W/16]
         vae_embs, H_, W_, freqs_cis_img = self.patchify_and_embed(vae_latent.squeeze(2))
@@ -307,8 +317,9 @@ class Pollux(nn.Module):
 
         # apply masking
         original_vae_embs = vae_embs.clone()
-        vae_embs, ids_restore = self.process_mask(
+        vae_embs, freqs_cis_img, ids_restore = self.process_mask(
             vae_embs,
+            freqs_cis_img,
             mask_strategy=mask_strategy,
             random_rate=random_rate,
         )
