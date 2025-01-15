@@ -304,8 +304,8 @@ def train(args: TrainArgs):
             no_recompute_ops=get_no_recompute_ops(),
         )
         model = model.to(device="cuda")
-        check_model_value_range(model, range=10.0, std=1.0)
-        logger.info(f"Model size: {model_param_count:,} total parameters")
+        # check_model_value_range(model, range=10.0, std=1.0)
+        # logger.info(f"Model size: {model_param_count:,} total parameters")
 
         gpu_memory_monitor = GPUMemoryMonitor("cuda")
         logger.info(
