@@ -36,9 +36,9 @@ if __name__ == "__main__":
     data_config_dict = {
         "data": {
             "preliminary": {
-                "cc12m_l3bf128_hr256": {
+                "cc12m_aethetics_6_5_llama3bf128_hunyuanr256_s3": {
                     "use": True,
-                    "data_name": "cc12m_l3bf128_hr256",
+                    "data_name": "cc12m_aethetics_6_5_llama3bf128_hunyuanr256_s3",
                     "source": "mongodb",
                     "task": "text_to_image",
                     "retries": 3,
