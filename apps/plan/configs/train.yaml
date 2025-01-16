@@ -126,7 +126,7 @@ data:
     use: False
 
 profiling:
-    run: true
+    run: false
 
 checkpoint:
     dump:
