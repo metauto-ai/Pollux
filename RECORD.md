@@ -1,0 +1,21 @@
+- [x] Support Vision Tower (`siglip_large_patch16_256`)
+- [x] ImageNet-1k Classification for debugging
+- [x] Fix the bug in `sampler.py` (``self.sampler.set_epoch(state_dict["epoch"])``)
+- [x] Load Checkpoints Issue: ``vision_tower.vision_tower.attn_pool.norm.bias is all zeros``
+- [x] Solve the bug for saving checkpoint (FSDP Issue, need to check) (`distcp`)
+- [x] Support LLAMA-3.2 3B
+- [ ] Move `scheduler: SchedulerArgs = field(default_factory=SchedulerArgs)` this to `ModelArgs`
+- [ ] Add validation during training
+- [ ] Add validation in wandb
+- [x] Script to test `mongodb` speed (NOT-MY-DUTY-NOW)
+- [ ] ImageNet-1k Label+Img -> Caption
+- [ ] Support CC12M training
+- [ ] Support multiple datasets
+- [ ] Support TVAE (Hunyuan) in generation decoder
+- [ ] Joint training for planning model
+- [ ] Add Probe
+- [ ] Add `kwargs` in `DataArg`
+- [ ] Add `kwargs` in `ModelArg`
+- [ ] Conduct Pre-training
+- [ ] Support Post-training
+- [ ] Support TRL
