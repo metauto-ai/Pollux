@@ -71,6 +71,7 @@ class ModelArgs:
     image_cfg_ratio: float = 0.1
     codebook_size: int = 512
     num_classes: int = 1000
+    random_rate: float = 0.15
 
 
 class LlamaTransformer(nn.Module):
@@ -302,7 +303,6 @@ class Pollux(nn.Module):
         self,
         batch: dict[str, any],
         mask_strategy: str = "random_mask",
-        random_rate: Optional[float] = None,
         attn_impl: str = "sdpa",
     ) -> Tuple[dict[str, any], torch.Tensor]:
 
@@ -322,7 +322,7 @@ class Pollux(nn.Module):
 
         # apply masking
         original_vae_embs = vae_embs.clone()
-        if random_rate is None:
+        if self.args.random_rate is None:
             random_rate = random.random()
         vae_embs, freqs_cis_img, ids_restore = self.process_mask(
             vae_embs,
