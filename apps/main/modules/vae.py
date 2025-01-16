@@ -296,49 +296,45 @@ class COSMOSContinuousVAE(BaseLatentVideoVAE):
         return self.decode(x)
 
 
-T = TypeVar("T", bound=BaseLatentVideoVAE)
+# Registry to hold VAE classes
+VAE_REGISTRY: Dict[str, Type[BaseLatentVideoVAE]] = {}
 
 
-# LatentVideoVAE class with registry and instantiation
-class LatentVideoVAE(Generic[T]):
-    _registry: Dict[str, Type[T]] = {}
+def register_vae(name: str, vae_class: Type[BaseLatentVideoVAE]):
+    """
+    Register a VAE class to the registry.
 
-    @classmethod
-    def register_vae(cls, name: str, vae_class: Type[T]):
-        cls._registry[name] = vae_class
+    Args:
+        name (str): The name of the VAE model.
+        vae_class (Type[BaseLatentVideoVAE]): The class of the VAE model.
+    """
+    VAE_REGISTRY[name] = vae_class
 
-    def __init__(self, args: LatentVideoVAEArgs, **kwargs):
-        name = args.model_name
-        if name not in self._registry:
-            raise ValueError(
-                f"VAE '{name}' is not registered. Available options: {list(self._registry.keys())}"
-            )
-        self.vae: T = self._registry[name](args, **kwargs)  # Instantiate the VAE class
 
-    def __getattr__(self, attr):
-        """
-        Delegate attribute and method access to the actual internal VAE instance.
-        """
-        if hasattr(self.vae, attr):
-            return getattr(self.vae, attr)
-        raise AttributeError(
-            f"'{self.__class__.__name__}' object has no attribute '{attr}'"
+def build_vae(args: LatentVideoVAEArgs, **kwargs) -> BaseLatentVideoVAE:
+    """
+    Factory function to create a VAE instance based on the model name in args.
+
+    Args:
+        args (LatentVideoVAEArgs): Arguments for creating the VAE instance.
+        **kwargs: Additional arguments to pass to the VAE constructor.
+
+    Returns:
+        BaseLatentVideoVAE: An instance of the requested VAE class.
+
+    Raises:
+        ValueError: If the specified VAE model is not registered.
+    """
+    name = args.model_name
+    if name not in VAE_REGISTRY:
+        raise ValueError(
+            f"VAE '{name}' is not registered. Available options: {list(VAE_REGISTRY.keys())}"
         )
+    return VAE_REGISTRY[name](args, **kwargs)
 
 
 # Register VAE classes
-LatentVideoVAE.register_vae("Hunyuan", HunyuanVideoVAE)
-LatentVideoVAE.register_vae("COSMOS-DV", COSMOSDiscreteVAE)
-LatentVideoVAE.register_vae("COSMOS-CV", COSMOSContinuousVAE)
+register_vae("Hunyuan", HunyuanVideoVAE)
+register_vae("COSMOS-DV", COSMOSDiscreteVAE)
+register_vae("COSMOS-CV", COSMOSContinuousVAE)
 
-
-"""
-# Example usage
-args = {"vae": "VAE1", "param1": 42, "param2": "example"}  # Example args
-compressor = LatentVideoVAE(args["vae"], param1=args["param1"], param2=args["param2"])
-print(compressor.forward("data"))  # Output: VAE1 processing data with 42, example
-
-args = {"vae": "VAE2", "param3": 3.14}  # Example args for VAE2
-compressor = LatentVideoVAE(args["vae"], param3=args["param3"])
-print(compressor.forward("data"))  # Output: VAE2 processing data with 3.14
-"""

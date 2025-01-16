@@ -18,10 +18,12 @@ import time
 from botocore.config import Config
 
 
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
+
 Image.MAX_IMAGE_PIXELS = None
 config = Config(
     retries={"max_attempts": 10, "mode": "adaptive"},
@@ -33,6 +35,7 @@ def filter_image_caption(text):
     # TODO: could add more logic here if we find sth that needs to be filtered
     pattern = r"(?i)^image caption:\s*"
     return re.sub(pattern, "", text)
+
 
 
 class NovaCaption:
@@ -53,7 +56,9 @@ class NovaCaption:
             aws_access_key_id="AKIA47CRZU7STC4XUXER",
             aws_secret_access_key="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",
             region_name="us-east-1",
+
             config=config,
+
         )
         # -------- MongoDB --------
         mongodb_client = MongoClient(MONGODB_URI, tlsCAFile=certifi.where())
@@ -103,6 +108,7 @@ class NovaCaption:
                     logging.warning(f"Erros in handling {_id}:{e}")
                 else:
 
+
                     # logging.info(f"\n[Full Response for {_id}]")
                     # logging.info(f"\n[Response Content Text for {_id}]")
                     # logging.info(
@@ -115,6 +121,7 @@ class NovaCaption:
                         wandb_logger.add_image(image_bytes, caption)
             if wandb_logger:
                 wandb_logger.log_images()
+
 
     def read_data_from_mongoDB(self):
         query = {f"{self.caption_field}": {"$exists": False}}
@@ -182,6 +189,7 @@ class NovaCaption:
         response = self.generate_image_caption(image_bytes)
         return response, image_bytes
 
+
     def update_data(self, _id, caption):
         query = {"_id": _id}
         update = {"$set": {f"{self.caption_field}": caption}}
@@ -193,6 +201,7 @@ if __name__ == "__main__":
     max_samples_per_min = 500
     nova_caption = NovaCaption(
         collection_name="unsplash_images",
+
         image_field="s3url",
         caption_field="nova_lite_caption",
         maxTokens=150,
@@ -216,3 +225,4 @@ if __name__ == "__main__":
         #     start_time = time.time()
         #     processed_samples = 0
         logging.info(f"Total samples processed: {total_samples}")
+

@@ -21,7 +21,29 @@ import torch.utils.benchmark as benchmark
 import pyarrow as pa
 import pyarrow.parquet as pq
 import pandas as pd
+from io import BytesIO
+import boto3
+import s3fs
 
+from botocore.config import Config
+
+boto3.set_stream_logger("boto3", level=logging.WARNING)
+boto3.set_stream_logger("botocore", level=logging.WARNING)
+logging.getLogger("s3fs").setLevel(logging.WARNING)
+
+config = Config(
+    retries={"max_attempts": 10, "mode": "adaptive"},
+    max_pool_connections=200,  # Increase pool size (default is 10)
+)
+S3KEY = "AKIA47CRZU7STC4XUXER"
+S3SECRET = "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"
+s3 = boto3.client(
+    "s3",
+    aws_access_key_id=S3KEY,
+    aws_secret_access_key=S3SECRET,
+    region_name="us-east-1",
+    config=config,
+)
 logger = logging.getLogger()
 
 
@@ -237,3 +259,38 @@ def save_parquet(
         storage_meter.update(total_size_bytes, 1)
     logger.warning(f"Saved data to {parquet_path}")
     return parquet_path
+
+
+def upload_parquet(
+    data: Dict[str, Any],
+    output_dir: str,
+    prefix: str = "data",
+    save_meter: AverageMeter = None,
+):
+    start_time = time.time()
+    fs = s3fs.S3FileSystem(key=S3KEY, secret=S3SECRET)
+    # Convert the dictionary to a PyArrow Table
+    df = pd.DataFrame(data)
+
+    # Define the output file path
+    parquet_path = f"{output_dir}/{prefix}.parquet"
+    with fs.open(parquet_path, "wb") as f:
+        df.to_parquet(f, engine="pyarrow", compression="snappy", index=False)
+    save_time = time.time() - start_time
+    if save_meter:
+        save_meter.update(save_time, 1)
+    logger.warning(f"Saved data to {parquet_path}")
+    return parquet_path
+
+
+if __name__ == "__main__":
+    data = {"column1": [1, 2, 3], "column2": ["a", "b", "c"]}
+    upload_parquet(data, output_dir="s3://haozhe/test", prefix="test_data")
+    df = pd.read_parquet(
+        "s3://haozhe/test/test_data.parquet",
+        storage_options={
+            "key": "AKIA47CRZU7STC4XUXER",
+            "secret": "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",
+        },
+    )
+    print(df.head())

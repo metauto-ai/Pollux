@@ -1,32 +1,5 @@
-"""
-* Installation of COSMOS TVAE
-```
-cd apps/main/modules/Cosmos-Tokenizer
-pip3 install -e .
-```
-* Test
-```
-cd apps/main
-python test_vae.py
-```
-
-
-class LatentVideoVAEArgs:
-    model_name: Literal["Hunyuan", "COSMOS-DV", "COSMOS-CV"] = (
-        "Hunyuan"  # Default value is "Hunyuan"
-    )
-    pretrained_model_name_or_path: str = "tencent/HunyuanVideo"
-    revision: Optional[str] = None
-    variant: Optional[str] = None
-    model_dtype: str = "bf16"
-    enable_tiling: bool = True
-    enable_slicing: bool = True
-    
-"""
-
 import torch
-from modules.vae import LatentVideoVAE, LatentVideoVAEArgs
-
+from apps.main.modules.vae import build_vae, LatentVideoVAEArgs
 
 # Test Hunyuan VAE
 
@@ -36,7 +9,7 @@ from modules.vae import LatentVideoVAE, LatentVideoVAEArgs
 #     pretrained_model_name_or_path="/jfs/checkpoints/models--tencent--HunyuanVideo/snapshots/2a15b5574ee77888e51ae6f593b2ceed8ce813e5/vae",
 
 # )
-# hunyuan_vae = LatentVideoVAE(hunyuan_config).cuda()
+# hunyuan_vae = build_vae(hunyuan_config).cuda()
 input_tensor = torch.randn(64, 3, 256, 256).cuda()
 # print("Testing Hunyuan VAE", hunyuan_config.pretrained_model_name_or_path)
 # print("Input Shape:", input_tensor.shape)
@@ -46,8 +19,8 @@ input_tensor = torch.randn(64, 3, 256, 256).cuda()
 # print("Reconstructed Shape:", hunyuan_reconstructed.shape)
 # hunyuan_output = hunyuan_vae.forward(input_tensor)
 # print("Output Shape (Forward Method):", hunyuan_output.shape)
-# print("Encoder structure (Hunyuan):\n", hunyuan_vae.vae.encoder)
-# print("Decoder structure (Hunyuan):\n", hunyuan_vae.vae.decoder)
+# print("Encoder structure (Hunyuan):\n", hunyuan_vae.encoder)
+# print("Decoder structure (Hunyuan):\n", hunyuan_vae.decoder)
 # print("==============================\n\n\n")
 
 # Test COSMOS-DV VAE
@@ -56,7 +29,7 @@ cosmos_dv_config = LatentVideoVAEArgs(
     pretrained_model_name_or_path="/jfs/checkpoints/cosmos/Cosmos-Tokenizer-DV8x16x16",
     model_dtype="float32",
 )
-cosmos_dv_vae = LatentVideoVAE(cosmos_dv_config).cuda()
+cosmos_dv_vae = build_vae(cosmos_dv_config).cuda()
 print("Testing COSMOS-DV VAE", cosmos_dv_config.pretrained_model_name_or_path)
 print("Input Shape:", input_tensor.shape)
 cosmos_dv_encoded_indices, cosmos_dv_encoded_codes = cosmos_dv_vae.encode(input_tensor)
@@ -72,15 +45,11 @@ print("Reconstructed Shape:", cosmos_dv_reconstructed.shape)
 # print("Output Shape (Forward Method):", cosmos_dv_output.shape)
 
 
-print("Encoder structure (COSMOS-DV):\n", cosmos_dv_vae.vae.encoder)
-# print("Decoder structure (COSMOS-DV):\n", cosmos_dv_vae.vae.decoder)
-print("==============================\n\n\n")
+# print("Encoder structure (COSMOS-DV):\n", cosmos_dv_vae.encoder)
 
-
-# for name, module in cosmos_dv_vae.vae.encoder._enc_model.encoder.down.named_children():
+# for name, module in cosmos_dv_vae._enc_model.encoder.down.named_children():
 #     print(name, "->", module)
-# print(cosmos_dv_vae.vae.encoder.)
-# print("Decoder structure (COSMOS-DV):\n", cosmos_dv_vae.vae.decoder)
+# print("Decoder structure (COSMOS-DV):\n", cosmos_dv_vae.decoder)
 # print("==============================\n\n\n")
 submodule = getattr(cosmos_dv_vae.vae._enc_model.encoder.down, "0")
 print(submodule)
@@ -91,22 +60,21 @@ print(submodule)
 print(cosmos_dv_vae.vae._enc_model.encoder.mid.block_1)
 print(cosmos_dv_vae.vae._enc_model.encoder.mid.attn_1)
 print(cosmos_dv_vae.vae._enc_model.encoder.mid.block_2)
+
 # Test COSMOS-CV VAE
-
-# cosmos_cv_config = LatentVideoVAEArgs(
-#     model_name="COSMOS-CV",
-#     pretrained_model_name_or_path="/jfs/checkpoints/cosmos/Cosmos-Tokenizer-CV8x16x16",
-# )
-# cosmos_cv_vae = LatentVideoVAE(cosmos_cv_config).cuda()
-# print("Testing COSMOS-CV VAE", cosmos_cv_config.pretrained_model_name_or_path)
-# print("Input Shape:", input_tensor.shape)
-# cosmos_cv_encoded = cosmos_cv_vae.encode(input_tensor)
-# print("Latent Shape:", cosmos_cv_encoded.shape)
-# cosmos_cv_reconstructed = cosmos_cv_vae.decode(cosmos_cv_encoded)
-# print("Reconstructed Shape:", cosmos_cv_reconstructed.shape)
-# cosmos_cv_output = cosmos_cv_vae.forward(input_tensor)
-# print("Output Shape (Forward Method):", cosmos_cv_output.shape)
-# print("Encoder structure (COSMOS-CV):\n", cosmos_cv_vae.vae.encoder)
-# print("Decoder structure (COSMOS-CV):\n", cosmos_cv_vae.vae.decoder)
-# print("==============================")
-
+cosmos_cv_config = LatentVideoVAEArgs(
+    model_name="COSMOS-CV",
+    pretrained_model_name_or_path="/jfs/checkpoints/cosmos/Cosmos-Tokenizer-CV8x16x16",
+    model_dtype="float32",
+)
+cosmos_cv_vae = build_vae(cosmos_cv_config).cuda()
+print("Testing COSMOS-CV VAE", cosmos_cv_config.pretrained_model_name_or_path)
+print("Input Shape:", input_tensor.shape)
+cosmos_cv_encoded = cosmos_cv_vae.encode(input_tensor)
+print("Latent Shape:", cosmos_cv_encoded.shape)
+cosmos_cv_reconstructed = cosmos_cv_vae.decode(cosmos_cv_encoded)
+print("Reconstructed Shape:", cosmos_cv_reconstructed.shape)
+cosmos_cv_output = cosmos_cv_vae.forward(input_tensor)
+print("Output Shape (Forward Method):", cosmos_cv_output.shape)
+print("Network structure (COSMOS-CV):\n", cosmos_cv_vae)
+print("==============================")
