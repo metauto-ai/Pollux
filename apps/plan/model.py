@@ -323,12 +323,12 @@ class Pollux(nn.Module):
         # apply masking
         original_vae_embs = vae_embs.clone()
         if self.args.random_rate is None:
-            random_rate = random.random()
+            self.args.random_rate = random.random()
         vae_embs, freqs_cis_img, ids_restore = self.process_mask(
             vae_embs,
             freqs_cis_img,
             mask_strategy=mask_strategy,
-            random_rate=random_rate,
+            random_rate=self.args.random_rate,
         )
 
         # Text Embedding
