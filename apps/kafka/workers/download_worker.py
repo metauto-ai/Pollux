@@ -100,7 +100,12 @@ def download_image_worker(rank, config, counter):
 if __name__ == "__main__":
     mp.set_start_method('spawn', force=True)
 
-    config = load_yaml_config("configs/example_config.yaml")
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--config', type=str, default="configs/diffusion_config.yaml", help='Path to config file')
+    args = parser.parse_args()
+
+    config = load_yaml_config(args.config)
 
     topic = config["stages"]["download_images"]["consumer"]
     N_PROCESSES = config["kafka_topics"][topic]["partitions"]

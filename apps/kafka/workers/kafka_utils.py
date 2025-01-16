@@ -1,4 +1,5 @@
 import time
+from typing import List, Union
 from kafka import KafkaProducer, KafkaConsumer, TopicPartition
 from confluent_kafka.admin import AdminClient, NewPartitions, NewTopic
 from loguru import logger
@@ -18,13 +19,14 @@ class NumpyEncoder(json.JSONEncoder):
         return super().default(obj)
 
 class Consumer:
-    def __init__(self, topic, group_id=None, partition_id=0):
+    def __init__(self, topic, group_id=None, partition_ids: List[int]=0):
         self.group_id = group_id
-        self.partition_id = partition_id
+        self.partition_ids = partition_ids
         self.consumer = self._create_consumer()
-        if topic:
-            logger.info(f"Assigning partition {self.partition_id} to topic {topic}")
-            self.consumer.assign([TopicPartition(topic, self.partition_id)])
+        
+        logger.info(f"Assigning partition {self.partition_ids} to topic {topic}")
+        partitions = [TopicPartition(topic, partition_id) for partition_id in self.partition_ids]
+        self.consumer.assign(partitions)
     
     def json_decode(self, x):
         return json.loads(x.decode('utf-8'))
@@ -32,7 +34,7 @@ class Consumer:
     def _create_consumer(self):
         return KafkaConsumer(
             bootstrap_servers=BOOTSTRAP_SERVERS,
-            api_version=(2, 0, 2),
+            api_version=(3, 9, 0),
             group_id=self.group_id,
             auto_offset_reset='latest',
             enable_auto_commit=False,
@@ -41,7 +43,7 @@ class Consumer:
             fetch_max_bytes=524288000,
             session_timeout_ms=30000,
             heartbeat_interval_ms=10000,
-            max_poll_interval_ms=300000,
+            max_poll_interval_ms=10000,
             request_timeout_ms=305000,
             value_deserializer=self.json_decode
         )
@@ -56,7 +58,7 @@ class Producer:
     def _create_producer(self):
         return KafkaProducer(
             bootstrap_servers=BOOTSTRAP_SERVERS,
-            api_version=(2, 0, 2),
+            api_version=(3, 9, 0),
             acks='all',
             retries=3,
             compression_type='gzip',

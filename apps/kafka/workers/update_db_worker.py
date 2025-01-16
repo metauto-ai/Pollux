@@ -4,8 +4,8 @@ import time
 from bson import ObjectId
 from pymongo import UpdateOne
 from workers.kafka_utils import Consumer
-from workers.mongo_utils import PD12MDataset, DiffusionDataset, CC12MDataset
-from workers.common import load_yaml_config, print_counter
+from workers.mongo_utils import MidJourneyV6Dataset, PD12MDataset, DiffusionDataset, CC12MDataset
+from workers.common import load_yaml_config, print_counter, init_wandb
 import torch.multiprocessing as mp
 from loguru import logger
 
@@ -21,7 +21,7 @@ class UpdateWorker:
         logger.info(f"Config: {self.stage_config}")
 
         consumer_topic = self.stage_config["consumer"]
-        self.consumer = Consumer(consumer_topic, partition_id=rank).consumer
+        self.consumer = Consumer(consumer_topic, partition_ids=[rank]).consumer
 
         dataset_name = self.stage_config["dataset"]
         if dataset_name == "pd12m":
@@ -30,6 +30,8 @@ class UpdateWorker:
             self.dataset_cls = DiffusionDataset
         elif dataset_name == "cc12m":
             self.dataset_cls = CC12MDataset
+        elif dataset_name == "midjourneyv6":
+            self.dataset_cls = MidJourneyV6Dataset
         else:
             raise ValueError(f"Invalid dataset name: {dataset_name}")
 
@@ -92,6 +94,11 @@ if __name__ == "__main__":
     consumer_topic = config["stages"][STAGE]["consumer"]
     N_PROCESSES = config["kafka_topics"][consumer_topic]["partitions"]
 
+    dataset_name = config["stages"][STAGE]["dataset"]
+
+    # Initialize wandb
+    init_wandb(config, run_name=dataset_name)
+    
     counter = print_counter()
 
     mp.spawn(

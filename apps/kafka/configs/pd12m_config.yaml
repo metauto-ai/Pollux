@@ -1,14 +1,14 @@
 kafka_topics:
   databasePD12M:
-    partitions: 96
+    partitions: 64
   downloadedImagesPD12M:
-    partitions: 8
+    partitions: 32
   aestheticScoredImagesPD12M:
     partitions: 16
 
 stages:
   read_database:
-    batch_size: 256
+    batch_size: 128
     num_shards: 1
     shard_idx: 0
     dataset: pd12m
@@ -16,7 +16,7 @@ stages:
       - databasePD12M
 
   download_images:
-    batch_size: 64    # per database partition
+    batch_size: 128    # per database partition
     consumer: databasePD12M
     producer_list:
       - downloadedImagesPD12M

@@ -1,4 +1,5 @@
 import os
+import time
 from dotenv import load_dotenv
 from torch.utils.data import IterableDataset
 from typing import Final
@@ -69,11 +70,13 @@ class CC12MDataset(MongoDataset, IterableDataset):
                 self.IMAGE_URL_FIELD: 1,
             }
         ).batch_size(128 * 1024)):
-            logger.info(f"Processing document: {doc[self.DOC_ID_FIELD]}")
+            # logger.info(f"Processing document: {doc[self.DOC_ID_FIELD]}")
             yield {
                 "document_ids":  str(doc[self.DOC_ID_FIELD]), 
                 "image_urls": str(doc[self.IMAGE_URL_FIELD])
             }
+            time.sleep(0.001)
+
 
 
 class PD12MDataset(MongoDataset, IterableDataset):
@@ -102,6 +105,7 @@ class PD12MDataset(MongoDataset, IterableDataset):
                 "document_ids": str(doc[self.DOC_ID_FIELD]), 
                 "image_urls": str(doc[self.IMAGE_URL_FIELD])
             }
+            time.sleep(0.003)
 
 
 class DiffusionDataset(MongoDataset, IterableDataset):
@@ -130,6 +134,38 @@ class DiffusionDataset(MongoDataset, IterableDataset):
                 "document_ids": str(doc[self.DOC_ID_FIELD]), 
                 "image_urls": str(doc[self.IMAGE_URL_FIELD])
             }
+
+
+class MidJourneyV6Dataset(MongoDataset, IterableDataset):
+    """
+    Dataset for MidJourney dataset
+    """
+    COLLECTION_NAME = "midjourneyv6"
+    IMAGE_URL_FIELD = "azure_url"
+
+    def __init__(self, num_shards=1, shard_idx = 0):
+        super().__init__(self.COLLECTION_NAME, num_shards, shard_idx)
+
+    def __iter__(self):
+        self.set_collection()
+        # self.collection.create_index([("aesthetic_score", 1)])
+        logger.info("Starting to iterate over documents")
+        # self.query.update({"aesthetic_score": {"$exists": False}})
+        for doc in self.collection.find(
+            self.query,
+            projection={
+                self.DOC_ID_FIELD: 1,
+                self.IMAGE_URL_FIELD: 1,
+            }
+        ).batch_size(128 * 1024):
+            # logger.info(f"Processing document: {doc[self.DOC_ID_FIELD]}")
+            if "aesthetic_score" not in doc or isinstance(doc["aesthetic_score"], list):
+                yield {
+                    "document_ids": str(doc[self.DOC_ID_FIELD]), 
+                    "image_urls": str(doc[self.IMAGE_URL_FIELD])
+                }
+                # rate limiting
+                time.sleep(0.001)
 
 
 if __name__ == "__main__":

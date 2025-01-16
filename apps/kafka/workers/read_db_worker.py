@@ -1,6 +1,7 @@
 from multiprocessing import Value
+import time
 from workers.kafka_utils import Producer, create_kafka_partitions
-from workers.mongo_utils import PD12MDataset, DiffusionDataset, CC12MDataset
+from workers.mongo_utils import MidJourneyV6Dataset, PD12MDataset, DiffusionDataset, CC12MDataset
 from workers.common import load_yaml_config, print_counter
 from torch.utils.data import DataLoader
 from loguru import logger
@@ -30,6 +31,8 @@ class MainWorker:
             self.dataset_cls = DiffusionDataset
         elif dataset_name == "cc12m":
             self.dataset_cls = CC12MDataset
+        elif dataset_name == "midjourneyv6":
+            self.dataset_cls = MidJourneyV6Dataset
         else:
             raise ValueError(f"Invalid dataset name: {dataset_name}")
         
@@ -55,14 +58,16 @@ class MainWorker:
                         self.counter.value += len(batch['document_ids'])
                 
                 # completed processing
-                break
+                # break
             except Exception as e:
                 logger.error(f"Error in MainWorker: {e}")
-                self.dataloader = DataLoader(
-                    self.dataset_cls(), 
-                    batch_size=self.stage_config["batch_size"], 
-                    num_workers=0
-                )
+            
+            time.sleep(300)
+            self.dataloader = DataLoader(
+                self.dataset_cls(), 
+                batch_size=self.stage_config["batch_size"], 
+                num_workers=0
+            )
 
             
 

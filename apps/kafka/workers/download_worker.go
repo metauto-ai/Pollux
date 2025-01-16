@@ -13,7 +13,7 @@ import (
 	"sync"
 	"time"
 
-	"math/rand"
+	"sync/atomic"
 
 	"github.com/IBM/sarama"
 )
@@ -22,12 +22,14 @@ const (
 	TIMEOUT = 80 * time.Second
 )
 
+var counter atomic.Uint32
+
 func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	// Load config
-	config := load_yaml_config("configs/diffusion_config.yaml")
+	config := load_yaml_config("configs/pd12m_config.yaml")
 
 	// Configure Sarama
 	saramaConfig := sarama.NewConfig()
@@ -52,8 +54,8 @@ func main() {
 	}
 	defer consumer.Close()
 
-	consumerTopic := "databaseDiffusion"
-	producerTopic := "downloadedImagesDiffusion"
+	consumerTopic := config.Stages["download_images"].Consumer
+	producerTopic := config.Stages["download_images"].ProducerList[0]
 
 	// Create worker pool
 	numConsumerPartitions := config.KafkaTopics[consumerTopic].Partitions
@@ -72,7 +74,7 @@ func main() {
 
 	log.Printf("Producer Partitions: %d, Consumer Partitions: %d", producerPartitions, numConsumerPartitions)
 	// Start a worker for each partition
-	for partition := range numConsumerPartitions {
+	for partition := 0; partition < numConsumerPartitions; partition++ {
 		wg.Add(1)
 		go func(partition int32) {
 			defer wg.Done()
@@ -98,7 +100,6 @@ func main() {
 
 func worker(ctx context.Context, consumer sarama.PartitionConsumer, consumerPartition int32,
 	producerConfig ProducerConfig, docsChan chan int) {
-	fmt.Printf(" [%d]", consumerPartition)
 	msgChan := make(chan *sarama.ConsumerMessage, 1024)
 
 	// Read messages from Kafka in parallel and push to channel
@@ -137,7 +138,7 @@ func processDocument(ctx context.Context, docsChan chan int) {
 	currProcessedDocuments := 0
 	totalSize := 0
 	// Create a ticker to print processed documents every minute
-	ticker := time.NewTicker(60 * time.Second)
+	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
 
 	for {
@@ -149,8 +150,8 @@ func processDocument(ctx context.Context, docsChan chan int) {
 		case <-ticker.C:
 			// Print and reset the counter for the current interval
 			fmt.Printf("\n---------------------------------------------------------------------------------------------\n")
-			fmt.Printf("Processed %d documents/second of size %s in the last minute. Total processed: %d\n",
-				currProcessedDocuments/60, humanReadableSize(totalSize), totalDocuments)
+			fmt.Printf("Processed %d documents/second of size %s in the last 10 seconds. Total processed: %d\n",
+				currProcessedDocuments/10, humanReadableSize(totalSize), totalDocuments)
 			fmt.Printf("---------------------------------------------------------------------------------------------")
 			totalSize = 0
 			currProcessedDocuments = 0
@@ -264,7 +265,8 @@ func downloadImage(ctx context.Context, producerConfig ProducerConfig, documentI
 		return DownloadResult{URL: url, Success: false, Error: err}
 	}
 
-	partitionNumber := rand.Intn(producerConfig.Partitions)
+	partitionNumber := int(counter.Add(1)) % producerConfig.Partitions
+
 	producerConfig.Producer.Input() <- &sarama.ProducerMessage{
 		Topic:     producerConfig.Name,
 		Key:       sarama.StringEncoder(fmt.Sprintf("partition-%d", partitionNumber)),
