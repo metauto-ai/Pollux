@@ -21,7 +21,7 @@ pip install --requirement requirements.txt
 ```
 
 * Additional Package for Pollux
-```
+```bash
 pip install diffusers
 pip install datasets
 pip install torchvision==0.20.1
@@ -31,26 +31,31 @@ pip install python-dotenv
 ```
 
 * Installation of COSMOS TVAE
-```
+```bash
 cd apps/main/modules/Cosmos-Tokenizer
 pip3 install -e .
 ```
 
 * Test the installation of COSMOS VAE
-```
+```bash
 cd apps/main
 python test_vae.py
 ```
 
 * If you need to run data preprocessing (Optional dependencies)
-```
+```bash
 pip install timm
 pip install torchmetrics
 ```
 
 * If you need to run YOLOv10
-```
+```bash
 pip install ultralytics
+```
+
+* If you need AWS S3 support
+```bash
+pip install s3fs boto3
 ```
 
 ## Preliminary Usages

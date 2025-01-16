@@ -71,7 +71,7 @@ class ModelArgs:
     image_cfg_ratio: float = 0.1
     codebook_size: int = 512
     num_classes: int = 1000
-    random_rate: float = 0.15
+    random_rate: Optional[float] = None
 
 
 class LlamaTransformer(nn.Module):
