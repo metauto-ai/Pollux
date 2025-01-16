@@ -58,6 +58,7 @@ class LlamaArgs:
     condition_seqlen: int = 320
     vocab_size: int = 128256
     pre_trained_path: Optional[str] = None
+    attention_type: str = "full"  # full or causal
 
 
 @dataclass
@@ -80,13 +81,19 @@ class LlamaTransformer(nn.Module):
         self.dim = args.dim
         self.init_base_std = args.init_base_std
         self.init_std_factor = InitStdFactor(args.init_std_factor)
-
+        self.attn_type = args.attention_type
         self.tok_embeddings = nn.Embedding(args.vocab_size, args.dim)
         self.layers = nn.ModuleList()
         for _ in range(args.n_layers):
             self.layers.append(TransformerBlock(args))
 
-    def forward(self, h, freq_cis, mask: str = "causal", attn_impl: str = "sdpa"):
+    def forward(self, h, freq_cis, attn_impl: str = "sdpa"):
+        if self.attn_type == "full":
+            mask = None
+        elif self.attn_type == "causal":
+            mask = "causal"
+        else:
+            raise ValueError(f"Invalid attention type: {self.attn_type}")
         for layer in self.layers:
             h = layer(h, freq_cis, mask=mask, attn_impl=attn_impl)
         return h
