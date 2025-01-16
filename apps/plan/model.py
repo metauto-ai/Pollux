@@ -393,8 +393,8 @@ class Pollux(nn.Module):
         vae_indices = vae_indices.squeeze(1).flatten(1).long()  # [B, H/16*W/16]
         # pred_loss = F.cross_entropy(pred_latent[:, :-1].permute(0, 2, 1), vae_indices[:, 1:])
         pred_loss = cross_entropy(
-            pred_latent[:, :-1].flatten(0, 1),
-            vae_indices[:, 1:].flatten(0, 1),
+            pred_latent[:, :].flatten(0, 1),
+            vae_indices[:, :].flatten(0, 1),
             reduction="mean",
         )
 
