@@ -210,6 +210,11 @@ class COSMOSDiscreteVAE(BaseLatentVideoVAE):
         """
         dtype = next(self.vae.parameters()).dtype
         frames_tensor = frames_tensor.to(dtype)
+
+        # NOTE: MC&HZ add
+        self.vae._enc_model.quantizer.dtype = dtype
+        self.vae._dec_model.inv_quant.quantizer.dtype = dtype
+
         if (
             frames_tensor.ndim == 4
         ):  # Check if the input tensor is 4D, BCHW, image tensor
