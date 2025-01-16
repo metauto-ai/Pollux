@@ -258,6 +258,7 @@ class Pollux(nn.Module):
             ids_restore = torch.argsort(ids_shuffle, dim=1)
             # keep the first subset
             ids_keep = ids_shuffle[:, :len_keep]
+            ids_mask = ids_shuffle[:, len_keep:]
 
             images_embs_keep = torch.gather(
                 images_embs, 1, ids_keep.unsqueeze(-1).repeat(1, 1, D)
