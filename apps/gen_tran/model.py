@@ -26,7 +26,7 @@ from apps.main.modules.gen_transformer import (
 from apps.main.modules.plan_transformer import (
     PlanTransformerArgs,
 )
-from apps.main.modules.vae import LatentVideoVAE, LatentVideoVAEArgs
+from apps.main.modules.vae import build_vae, LatentVideoVAEArgs
 from apps.main.modules.preprocess import random_mask_images
 import os
 from apps.main.modules.embedder import LabelEmbedder, ImageEmbedder, TimestepEmbedder
@@ -314,7 +314,7 @@ class Pollux(nn.Module):
     def __init__(self, args: ModelArgs):
         super().__init__()
 
-        self.compressor = LatentVideoVAE(args.vae)
+        self.compressor = build_vae(args.vae)
         self.scheduler = RectifiedFlow(args.scheduler)
         self.gen_transformer = GenTransformer(args.gen_transformer)
         self.tokenizer = Tokenizer(model_path=args.tokenizer.model_path)

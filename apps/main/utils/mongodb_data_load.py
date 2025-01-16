@@ -24,16 +24,21 @@ import time
 import random
 import numpy as np
 import torch
+import s3fs
+import boto3
 
 logging.getLogger("pymongo").setLevel(logging.WARNING)
-
+boto3.set_stream_logger("boto3", level=logging.WARNING)
+boto3.set_stream_logger("botocore", level=logging.WARNING)
+logging.getLogger("s3fs").setLevel(logging.WARNING)
 
 load_dotenv()
-
 # Iniitialize
 MONGODB_URI: Final[str] = os.environ["MONGODB_URI"]
 MONGODB_USER: Final[str] = os.environ["MONGODB_USER"]
 MONGODB_PASSWORD: Final[str] = os.environ["MONGODB_PASSWORD"]
+S3KEY: Final[str] = os.environ["S3KEY"]
+S3SECRET: Final[str] = os.environ["S3SECRET"]
 encoded_user = quote_plus(MONGODB_USER)
 encoded_password = quote_plus(MONGODB_PASSWORD)
 MONGODB_URI = f"mongodb+srv://{encoded_user}:{encoded_password}@{MONGODB_URI}"
@@ -248,7 +253,6 @@ class MongoDBParquetDataLoad(MongoDBDataLoad):
         self.mapping_field = mapping_field
         self.parallel_parquet = parallel_parquet
         self.batch_size = batch_size
-        self.place_holder_parquet = None
 
     def __len__(self):
         """Return the total number of rows in the dataset."""
@@ -260,16 +264,22 @@ class MongoDBParquetDataLoad(MongoDBDataLoad):
         file = self.data.iloc[idx][self.path_field]
         try:
             # updated to use memory-mapped reading
-            table = pq.read_table(file, memory_map=True)
-            cur_df = table.to_pandas()
-            self.place_holder_parquet = file
-        except Exception as e:
-            logging.warning(f"Error reading parquet file: {file}")
-            if self.place_holder_parquet is not None:
-                table = pq.read_table(self.place_holder_parquet, memory_map=True)
+            if file.startswith("s3://"):
+                cur_df = pd.read_parquet(
+                    file,
+                    storage_options={
+                        "key": S3KEY,
+                        "secret": S3SECRET,
+                    },
+                )
+            elif os.path.exists(file):
+                table = pq.read_table(file, memory_map=True)
                 cur_df = table.to_pandas()
             else:
-                return self.__getitem__(random.choice(range(len(self))))
+                logging.warning(f"Invalid path or file not found: {file}")
+        except Exception as e:
+            logging.warning(f"Error reading parquet file: {file}")
+            return self.__getitem__(random.choice(range(len(self))))
         return_parquet = {}
         for i, sample in cur_df.iterrows():
             sample = sample.to_dict()
