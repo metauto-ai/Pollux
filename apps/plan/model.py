@@ -257,11 +257,19 @@ class Pollux(nn.Module):
             ids_restore = torch.argsort(ids_shuffle, dim=1)
             # keep the first subset
             ids_keep = ids_shuffle[:, :len_keep]
+            ids_mask = ids_shuffle[:, len_keep:]
 
             images_embs_keep = torch.gather(
                 images_embs, 1, ids_keep.unsqueeze(-1).repeat(1, 1, D)
             )
+            images_embs_mask = torch.gather(
+                images_embs, 1, ids_mask.unsqueeze(-1).repeat(1, 1, D)
+            )
 
+            images_embs_masked = torch.cat([images_embs_keep, torch.zeros_like(images_embs_mask)], dim=1) # TODO: add learnable mask token
+            images_embs = torch.gather(images_embs_masked, 1, ids_restore.unsqueeze(-1).repeat(1, 1, D))
+
+            
             _, fsize1, fsize2, fsize3 = freqs_cis_img.size() # [256, 64, 2, 2]
             freqs_cis_img_keep = torch.gather(
                 freqs_cis_img, 0, ids_keep[0].view(-1, 1, 1, 1).repeat(1, fsize1, fsize2, fsize3)
@@ -277,8 +285,6 @@ class Pollux(nn.Module):
             mask[:, :len_keep] = 0
             # unshuffle to get the binary mask
             mask = torch.gather(mask, dim=1, index=ids_restore)
-
-
 
             freqs_cis_img = torch.cat([freqs_cis_img_keep, freqs_cis_img_mask], dim=0)
 
