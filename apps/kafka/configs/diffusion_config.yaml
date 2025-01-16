@@ -1,0 +1,32 @@
+kafka_topics:
+  databaseDiffusion:
+    partitions: 96
+  downloadedImagesDiffusion:
+    partitions: 8
+  aestheticScoredImagesDiffusion:
+    partitions: 16
+
+stages:
+  read_database:
+    batch_size: 256
+    num_shards: 1
+    shard_idx: 0
+    dataset: diffusion
+    producer_list:
+      - databaseDiffusion
+
+  download_images:
+    batch_size: 64    # per database partition
+    consumer: databaseDiffusion
+    producer_list:
+      - downloadedImagesDiffusion
+
+  aesthetic_scoring:
+    batch_size: 128
+    consumer: downloadedImagesDiffusion
+    producer_list:
+      - aestheticScoredImagesDiffusion
+
+  update_database:
+    dataset: diffusion
+    consumer: aestheticScoredImagesDiffusion
