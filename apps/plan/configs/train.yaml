@@ -136,10 +136,10 @@ checkpoint:
         keep: 0 # Don't remove the ckpt
 logging:
     freq: 1000
-    # wandb:
-    #     project: Pollux
-    #     entity: metauto
-    #     name: ''
+    wandb:
+        project: Pollux
+        entity: metauto
+        name: ''
 
 
 env:
