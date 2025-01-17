@@ -10,7 +10,7 @@ version: v0.8.3
 # From now on, start to align train, data, and model setting with train stage (just finish refactor for dara)
 train_stage: preliminary # options: preliminary, pretraining, posttraining; aligned with data setting
 
-name: Pollux_v0.8.3_Local_ImageNet-1k_multimodal_1e-3_r0.2_causal_e2e
+name: Pollux_v0.8.3_Local_ImageNet-1k_multimodal_1e-3_r0.2_causal_e2e_full_attn
 
 output_dir: /jfs/checkpoints/dump
 dump_dir: '' # No need now
@@ -68,7 +68,7 @@ model:
         pre_trained_path: /jfs/checkpoints/Llama-3.2-3B/original/consolidated.00.pth
         gen_seqlen: 256
         condition_seqlen: 320
-        attention_type: 'causal'
+        attention_type: 'full'
     codebook_size: 64000
 
 
