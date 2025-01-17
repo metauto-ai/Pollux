@@ -124,6 +124,22 @@ class LlamaTransformer(nn.Module):
             logger.warning(f"Unexpected keys: {unexpected_keys}")
 
 
+class TVAE:
+    def __init__(self, args: LatentVideoVAEArgs):
+        self.vae = build_vae(args)
+
+    def encode(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        indices, latent = self.vae.encode(x)
+        return indices, latent
+
+    def decode(self, indices: torch.Tensor) -> torch.Tensor:
+        return self.vae.decode(indices)
+
+    def to(self, device=None, dtype=None):
+        self.vae.to(device=device, dtype=dtype)
+        return self
+
+
 class Pollux(nn.Module):
 
     VERSION: str = "v0.8.2"
@@ -136,7 +152,7 @@ class Pollux(nn.Module):
         self.args = args
 
         # self.tvae = LatentVideoVAE(args.vae)
-        self.tvae = build_vae(args.vae)
+        self.tvae = TVAE(args.vae)
         self.patchify_size = args.latent_projector.patchify_size
         assert self.patchify_size == 1, "Patchify size must be 1 for 16x16x8 TVAE."
         self.latent_projector = nn.Linear(
@@ -408,6 +424,12 @@ class Pollux(nn.Module):
         self.vision_cls_emb.eval()
         self.llm.eval()
         self.vision_cls_emb.reset_parameters()
+
+    def to(self, device=None, dtype=None, non_blocking=False):
+        # Override to handle the sub-model explicitly
+        super().to(device, dtype, non_blocking)
+        self.tvae.to(device, dtype)
+        return self
 
 
 # Optional policy for activation checkpointing. With None, we stick to the default (defined distributed.py: default_no_recompute_ops)
