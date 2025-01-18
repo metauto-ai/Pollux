@@ -131,6 +131,22 @@ class LlamaTransformer(nn.Module):
             logger.warning(f"Unexpected keys: {unexpected_keys}")
 
 
+class TVAE:
+    def __init__(self, args: LatentVideoVAEArgs):
+        self.vae = build_vae(args)
+
+    def encode(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        indices, latent = self.vae.encode(x)
+        return indices, latent
+
+    def decode(self, indices: torch.Tensor) -> torch.Tensor:
+        return self.vae.decode(indices)
+
+    def to(self, device=None, dtype=None):
+        self.vae.to(device=device, dtype=dtype)
+        return self
+
+
 class Pollux(nn.Module):
 
     VERSION: str = "v0.8.2"
@@ -143,7 +159,7 @@ class Pollux(nn.Module):
         self.args = args
 
         # self.tvae = LatentVideoVAE(args.vae)
-        self.tvae = build_vae(args.vae)
+        self.tvae = TVAE(args.vae)
         self.patchify_size = args.latent_projector.patchify_size
         assert self.patchify_size == 1, "Patchify size must be 1 for 16x16x8 TVAE."
         self.latent_projector = nn.Linear(
@@ -265,46 +281,38 @@ class Pollux(nn.Module):
             )  # ascend: small is keep, large is remove
             ids_restore = torch.argsort(ids_shuffle, dim=1)
             # keep the first subset
-            ids_keep = ids_shuffle[:, :len_keep]
-            ids_mask = ids_shuffle[:, len_keep:]
+            ids_keep = ids_shuffle[:, :len_keep] # [16, 204]
+            ids_mask = ids_shuffle[:, len_keep:] # [16, 52]
 
             images_embs_keep = torch.gather(
                 images_embs, 1, ids_keep.unsqueeze(-1).repeat(1, 1, D)
-            )
+            ) # [16, 204, 3072]
 
-            _, fsize1, fsize2, fsize3 = freqs_cis_img.size()  # [256, 64, 2, 2]
-            freqs_cis_img_keep = torch.gather(
-                freqs_cis_img,
-                0,
-                ids_keep[0].view(-1, 1, 1, 1).repeat(1, fsize1, fsize2, fsize3),
-            )
+            freqs_cis_img_keep = torch.index_select(freqs_cis_img, 0, ids_keep[0]) # [204, 64, 2, 2]
             # generate the binary mask: 0 is keep, 1 is remove
-            mask = torch.ones([B, L], device=device)
-            mask[:, :len_keep] = 0
+            img_mask = torch.ones([B, L], device=device) 
+            img_mask[:, :len_keep] = 0
             # unshuffle to get the binary mask
-            mask = torch.gather(mask, dim=1, index=ids_restore)
+            img_mask = torch.gather(img_mask, dim=1, index=ids_restore) # [16, 256]
 
             # padded mask tokens
-            images_embs_pad = self.mask_token.expand(B, L - len_keep, D)
-            ids_mask = ids_shuffle[:, len_keep:]
-            freqs_cis_img_mask = torch.gather(
-                freqs_cis_img,
-                0,
-                ids_mask[0].view(-1, 1, 1, 1).repeat(1, fsize1, fsize2, fsize3),
-            )
+            images_embs_pad = self.mask_token.expand(B, L - len_keep, D) # [16, 52, 3072]
+            freqs_cis_img_mask = torch.index_select(freqs_cis_img, 0, ids_mask[0]) # [52, 64, 2, 2]
+
             # concatenate the keep and pad tokens
             images_embs = torch.cat(
                 [images_embs_keep, images_embs_pad], dim=1
-            )  # [B, L, D]
+            )  # [B, L, D] [16, 256, 3072] 
 
-            freqs_cis_img = torch.cat([freqs_cis_img_keep, freqs_cis_img_mask], dim=0)
+            freqs_cis_img = torch.cat([freqs_cis_img_keep, freqs_cis_img_mask], dim=0) # [256, 64, 2, 2]
 
         elif mask_strategy == "full_mask":
             raise NotImplementedError("Full mask is not implemented yet.")
 
         else:
             raise ValueError(f"Invalid mask strategy: {mask_strategy}")
-        return images_embs, freqs_cis_img, ids_restore
+        
+        return images_embs, freqs_cis_img, ids_restore, img_mask
 
     def forward(
         self,
@@ -322,7 +330,8 @@ class Pollux(nn.Module):
 
         # Vision Discrete Latent Codes
         # self.tvae.vae.vae._enc_model.to(images.device)
-        vae_indices, vae_latent = self.tvae.encode(images)
+        vae_indices, vae_latent = self.tvae.encode(images) # [16, 1, 16, 16], [16, 1, 16, 16, 8]
+
         # [B, 1, H/16, W/16], [B, 6, 1, H/16, W/16]
         vae_embs, H_, W_, freqs_cis_img = self.patchify_and_embed(vae_latent.squeeze(2))
         # [B, H/16 * W/16, D]
@@ -331,7 +340,8 @@ class Pollux(nn.Module):
         original_vae_embs = vae_embs.clone()
         if self.args.random_rate is None:
             self.args.random_rate = random.random()
-        vae_embs, freqs_cis_img, ids_restore = self.process_mask(
+
+        vae_embs, freqs_cis_img, ids_restore, img_mask = self.process_mask(
             vae_embs,
             freqs_cis_img,
             mask_strategy=mask_strategy,
@@ -386,24 +396,39 @@ class Pollux(nn.Module):
             index=ids_restore.unsqueeze(-1).repeat(1, 1, pred_latent.shape[2]),
         )
 
+        # vae_embs [16, 256, 3072]   
+        # freq_cis_img [256, 64, 2, 2]
+        # vae_indices.shape [16, 1, 16, 16]
+        # vae_latent.shape [16, 1, 16, 16, 8]
+        # ids_mask.shape [16, 52] 
+        # prede_latent.shape [16, 256, 64000]
+
         # compute loss
         # pred_loss = F.mse_loss(pred_latent, vae_latent.squeeze(2))
         # TODO: either next-token-prediction or reconstruction token prediction
-        # vae_indices: [B, 1, H/16, W/16], pred_latent: [B, M, codebook_size]
         vae_indices = vae_indices.squeeze(1).flatten(1).long()  # [B, H/16*W/16]
+        # vae_indices.shape [16, 1, 16, 16] -> [16, 256]
         # pred_loss = F.cross_entropy(pred_latent[:, :-1].permute(0, 2, 1), vae_indices[:, 1:])
+
+        mask_pred = pred_latent[:, :-1][img_mask[:, :-1] == 1]  # [num_masked, D]
+        mask_target = vae_indices[:, 1:][img_mask[:, :-1] == 1]  # [num_masked]
+        # mask_pred.shape [816, 64000]
+        # mask_target.shape [832]
+
+        mask_accuracy = (mask_pred.argmax(-1) == mask_target).float().mean()
+
+
         pred_loss = cross_entropy(
             pred_latent[:, :].flatten(0, 1),
             vae_indices[:, :].flatten(0, 1),
             reduction="mean",
         )
-
-        accuracy = (pred_latent[:, :-1].argmax(-1) == vae_indices[:, 1:]).float().mean()
-        batch["accuracy"] = accuracy
+        # accuracy = (pred_latent[:, :-1].argmax(-1) == vae_indices[:, 1:]).float().mean()
+        batch["accuracy"] = mask_accuracy
 
         # batch["latent_target"] = latent_target
         # batch["pred_latent"] = pred_latent
-        return batch, pred_loss
+        return batch, pred_loss, mask_accuracy
 
     def set_train(self):
         self.latent_projector.train()
@@ -415,6 +440,12 @@ class Pollux(nn.Module):
         self.vision_cls_emb.eval()
         self.llm.eval()
         self.vision_cls_emb.reset_parameters()
+
+    def to(self, device=None, dtype=None, non_blocking=False):
+        # Override to handle the sub-model explicitly
+        super().to(device, dtype, non_blocking)
+        self.tvae.to(device, dtype)
+        return self
 
 
 # Optional policy for activation checkpointing. With None, we stick to the default (defined distributed.py: default_no_recompute_ops)

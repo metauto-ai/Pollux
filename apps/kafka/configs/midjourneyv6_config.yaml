@@ -1,0 +1,32 @@
+kafka_topics:
+  databaseMidJourneyV6:
+    partitions: 64
+  downloadedImagesMidJourneyV6:
+    partitions: 32
+  aestheticScoredImagesMidJourneyV6:
+    partitions: 16
+
+stages:
+  read_database:
+    batch_size: 128
+    num_shards: 1
+    shard_idx: 0
+    dataset: midjourneyv6
+    producer_list:
+      - databaseMidJourneyV6
+
+  download_images:
+    batch_size: 128    # per database partition
+    consumer: databaseMidJourneyV6
+    producer_list:
+      - downloadedImagesMidJourneyV6
+
+  aesthetic_scoring:
+    batch_size: 128
+    consumer: downloadedImagesMidJourneyV6
+    producer_list:
+      - aestheticScoredImagesMidJourneyV6
+
+  update_database:
+    dataset: midjourneyv6
+    consumer: aestheticScoredImagesMidJourneyV6
