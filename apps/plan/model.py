@@ -281,37 +281,45 @@ class Pollux(nn.Module):
             )  # ascend: small is keep, large is remove
             ids_restore = torch.argsort(ids_shuffle, dim=1)
             # keep the first subset
-            ids_keep = ids_shuffle[:, :len_keep] # [16, 204]
-            ids_mask = ids_shuffle[:, len_keep:] # [16, 52]
+            ids_keep = ids_shuffle[:, :len_keep]  # [16, 204]
+            ids_mask = ids_shuffle[:, len_keep:]  # [16, 52]
 
             images_embs_keep = torch.gather(
                 images_embs, 1, ids_keep.unsqueeze(-1).repeat(1, 1, D)
-            ) # [16, 204, 3072]
+            )  # [16, 204, 3072]
 
-            freqs_cis_img_keep = torch.index_select(freqs_cis_img, 0, ids_keep[0]) # [204, 64, 2, 2]
+            freqs_cis_img_keep = torch.index_select(
+                freqs_cis_img, 0, ids_keep[0]
+            )  # [204, 64, 2, 2]
             # generate the binary mask: 0 is keep, 1 is remove
-            img_mask = torch.ones([B, L], device=device) 
+            img_mask = torch.ones([B, L], device=device)
             img_mask[:, :len_keep] = 0
             # unshuffle to get the binary mask
-            img_mask = torch.gather(img_mask, dim=1, index=ids_restore) # [16, 256]
+            img_mask = torch.gather(img_mask, dim=1, index=ids_restore)  # [16, 256]
 
             # padded mask tokens
-            images_embs_pad = self.mask_token.expand(B, L - len_keep, D) # [16, 52, 3072]
-            freqs_cis_img_mask = torch.index_select(freqs_cis_img, 0, ids_mask[0]) # [52, 64, 2, 2]
+            images_embs_pad = self.mask_token.expand(
+                B, L - len_keep, D
+            )  # [16, 52, 3072]
+            freqs_cis_img_mask = torch.index_select(
+                freqs_cis_img, 0, ids_mask[0]
+            )  # [52, 64, 2, 2]
 
             # concatenate the keep and pad tokens
             images_embs = torch.cat(
                 [images_embs_keep, images_embs_pad], dim=1
-            )  # [B, L, D] [16, 256, 3072] 
+            )  # [B, L, D] [16, 256, 3072]
 
-            freqs_cis_img = torch.cat([freqs_cis_img_keep, freqs_cis_img_mask], dim=0) # [256, 64, 2, 2]
+            freqs_cis_img = torch.cat(
+                [freqs_cis_img_keep, freqs_cis_img_mask], dim=0
+            )  # [256, 64, 2, 2]
 
         elif mask_strategy == "full_mask":
             raise NotImplementedError("Full mask is not implemented yet.")
 
         else:
             raise ValueError(f"Invalid mask strategy: {mask_strategy}")
-        
+
         return images_embs, freqs_cis_img, ids_restore, img_mask
 
     def forward(
@@ -330,7 +338,9 @@ class Pollux(nn.Module):
 
         # Vision Discrete Latent Codes
         # self.tvae.vae.vae._enc_model.to(images.device)
-        vae_indices, vae_latent = self.tvae.encode(images) # [16, 1, 16, 16], [16, 1, 16, 16, 8]
+        vae_indices, vae_latent = self.tvae.encode(
+            images
+        )  # [16, 1, 16, 16], [16, 1, 16, 16, 8]
 
         # [B, 1, H/16, W/16], [B, 6, 1, H/16, W/16]
         vae_embs, H_, W_, freqs_cis_img = self.patchify_and_embed(vae_latent.squeeze(2))
@@ -396,11 +406,11 @@ class Pollux(nn.Module):
             index=ids_restore.unsqueeze(-1).repeat(1, 1, pred_latent.shape[2]),
         )
 
-        # vae_embs [16, 256, 3072]   
+        # vae_embs [16, 256, 3072]
         # freq_cis_img [256, 64, 2, 2]
         # vae_indices.shape [16, 1, 16, 16]
         # vae_latent.shape [16, 1, 16, 16, 8]
-        # ids_mask.shape [16, 52] 
+        # ids_mask.shape [16, 52]
         # prede_latent.shape [16, 256, 64000]
 
         # compute loss
@@ -410,13 +420,12 @@ class Pollux(nn.Module):
         # vae_indices.shape [16, 1, 16, 16] -> [16, 256]
         # pred_loss = F.cross_entropy(pred_latent[:, :-1].permute(0, 2, 1), vae_indices[:, 1:])
 
-        mask_pred = pred_latent[:, :-1][img_mask[:, :-1] == 1]  # [num_masked, D]
-        mask_target = vae_indices[:, 1:][img_mask[:, :-1] == 1]  # [num_masked]
+        mask_pred = pred_latent[:, :][img_mask[:, :] == 1]  # [num_masked, D]
+        mask_target = vae_indices[:, :][img_mask[:, :] == 1]  # [num_masked]
         # mask_pred.shape [816, 64000]
         # mask_target.shape [832]
 
         mask_accuracy = (mask_pred.argmax(-1) == mask_target).float().mean()
-
 
         pred_loss = cross_entropy(
             pred_latent[:, :].flatten(0, 1),
