@@ -197,7 +197,7 @@ class NovaCaption:
 
 
 if __name__ == "__main__":
-    batch_size = 200
+    batch_size = 100
     max_samples_per_min = 500
     nova_caption = NovaCaption(
         collection_name="unsplash_images",
