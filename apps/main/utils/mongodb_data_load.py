@@ -53,7 +53,6 @@ else:
     logging.warning("WANDB_API_KEY not found in environment variables")
 
 
-# TODO: Add the logic of MongoDB data loading here
 class MongoDBDataLoad(Dataset):
     """
     with BaseMongoDBDataset(

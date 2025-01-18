@@ -10,18 +10,18 @@ version: v0.8.3
 # From now on, start to align train, data, and model setting with train stage (just finish refactor for dara)
 train_stage: preliminary # options: preliminary, pretraining, posttraining; aligned with data setting
 
-name: Pollux_v0.8.3_Local_ImageNet-1k_multimodal_1e-3_r0.2_causal_e2e_full_attn
+name: Pollux_v0.8.3_Local_ImageNet-1k_multimodal_1.4e-4_random_drop_e2e_full_attn
 
 output_dir: /jfs/checkpoints/dump
 dump_dir: '' # No need now
 steps: 1000000
 seed: 777
 optim:
-    lr: 1e-3
+    lr: 1.4e-4
     warmup: 2000
     lr_min_ratio: 0.000001
-    clip: 1.0
-    weight_decay: 0.1
+    clip: 10.0
+    weight_decay: 0.01
     
 distributed:
 
@@ -40,7 +40,6 @@ model:
     text_cfg_ratio: 0.1
     image_cfg_ratio: 0.1
     num_classes: 1000
-    random_rate: 0.2
     vae:
         model_name: "COSMOS-DV"
         pretrained_model_name_or_path: '/jfs/checkpoints/cosmos/Cosmos-Tokenizer-DV8x16x16'
