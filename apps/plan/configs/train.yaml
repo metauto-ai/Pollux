@@ -44,7 +44,7 @@ model:
     vae:
         model_name: "COSMOS-DV"
         pretrained_model_name_or_path: '/jfs/checkpoints/cosmos/Cosmos-Tokenizer-DV8x16x16'
-        model_dtype: float32
+        model_dtype: bfloat16 # should be consistent with distributed.model_dtype
         # model_name: "Hunyuan"
         # pretrained_model_name_or_path: '/jfs/checkpoints/models--tencent--HunyuanVideo/snapshots/2a15b5574ee77888e51ae6f593b2ceed8ce813e5/vae'
         enable_tiling: false
@@ -125,7 +125,7 @@ data:
     use: False
 
 profiling:
-    run: true
+    run: false
 
 checkpoint:
     dump:
