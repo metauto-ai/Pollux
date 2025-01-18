@@ -399,7 +399,7 @@ def train(args: TrainArgs):
             end_timer = torch.cuda.Event(enable_timing=True)
             start_timer.record()
 
-            batch, loss = model(batch)
+            batch, loss, accuracy = model(batch)
             # We scale loss with grad_acc_steps so the gradient is the same
             # regardless of grad_acc_steps
             loss = loss / args.grad_acc_steps
@@ -478,6 +478,10 @@ def train(args: TrainArgs):
                             "lr": curr_lr,
                             "total_samples": total_tokens,
                         },
+                        "metrics": {
+                            "loss": loss.item(),
+                            "accuracy": accuracy, 
+                        },
                         "memory": gpu_mem_stats._asdict(),
                     },
                     sep="/",
@@ -498,6 +502,7 @@ def train(args: TrainArgs):
                     f"  acc: {train_state.acc_step}"
                     f"  loss: {round(loss.item(),4):>7}"
                     f"  grad: {grad_norm:.2e}"
+                    f"  mask_accuracy: {accuracy * 100:.2f}%"
                     # f"  flops: {FLOPS:.2e}"
                     f"  wps: {wps:.2e}"
                     f"  iter: {curr_iter_time:>7}"
