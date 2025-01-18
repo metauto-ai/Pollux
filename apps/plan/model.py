@@ -425,7 +425,9 @@ class Pollux(nn.Module):
         # mask_pred.shape [816, 64000]
         # mask_target.shape [832]
 
-        mask_accuracy = (mask_pred.argmax(-1) == mask_target).float().mean()
+        mask_accuracy = (
+            (mask_pred.argmax(-1) == mask_target).float().mean().cpu().item()
+        )
 
         pred_loss = cross_entropy(
             pred_latent[:, :].flatten(0, 1),
