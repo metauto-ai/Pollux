@@ -1,6 +1,6 @@
 # find /jfs/data/imagenet-1k/ -type f -name "*.lock" -exec rm -f {} \;
-# rm -rf /jfs/checkpoints/dump/Pollux_v0.8.3_Local_ImageNet-1k_multimodal_1.4e-4_r0.20
-# torchrun --standalone --nnodes 1 --nproc-per-node 2 -m apps.plan.train config=apps/plan/configs/train.yaml
+# rm -rf /jfs/checkpoints/dump/Pollux_v0.8.2_Local_ImageNet-1k_multimodal/ 
+# torchrun --standalone --nnodes 1 --nproc-per-node 4 -m apps.plan.train config=apps/plan/configs/train.yaml
 # nohup torchrun --standalone --nnodes 1 --nproc-per-node 4 -m apps.plan.train config=apps/plan/configs/train.yaml > output2.log 2>&1 &
 
 
@@ -10,7 +10,7 @@ version: v0.8.3
 # From now on, start to align train, data, and model setting with train stage (just finish refactor for dara)
 train_stage: preliminary # options: preliminary, pretraining, posttraining; aligned with data setting
 
-name: Pollux_v0.8.3_Local_ImageNet-1k_multimodal_1.4e-4_r0.20
+name: Pollux_v0.8.3_Local_ImageNet-1k_multimodal_1.4e-4_random_drop_e2e_causal
 
 output_dir: /jfs/checkpoints/dump
 dump_dir: '' # No need now
@@ -25,9 +25,9 @@ optim:
     
 distributed:
 
-    gpus: 6,7 #,2,3 #0,1,2,3 #4,5,6,7
+    gpus: 4,5,6,7 #6,7 #,2,3 #0,1,2,3 #4,5,6,7
     fsdp_type: full_shard
-    dp_shard: 2
+    dp_shard: 4
     dp_replicate: 1
     compile: false
     model_dtype: bf16 # options: `fb8` is only supported by H100
@@ -40,7 +40,6 @@ model:
     text_cfg_ratio: 0.1
     image_cfg_ratio: 0.1
     num_classes: 1000
-    random_rate: 0.2
     vae:
         model_name: "COSMOS-DV"
         pretrained_model_name_or_path: '/jfs/checkpoints/cosmos/Cosmos-Tokenizer-DV8x16x16'
@@ -68,6 +67,7 @@ model:
         pre_trained_path: /jfs/checkpoints/Llama-3.2-3B/original/consolidated.00.pth
         gen_seqlen: 256
         condition_seqlen: 320
+        attention_type: 'causal'
     codebook_size: 64000
 
 
@@ -135,7 +135,7 @@ checkpoint:
         every: 5000
         keep: 0 # Don't remove the ckpt
 logging:
-    freq: 1000
+    freq: 200
     wandb:
         project: Pollux
         entity: metauto

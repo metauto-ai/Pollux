@@ -26,6 +26,7 @@ import numpy as np
 import torch
 import s3fs
 import boto3
+import wandb
 
 logging.getLogger("pymongo").setLevel(logging.WARNING)
 boto3.set_stream_logger("boto3", level=logging.WARNING)
@@ -44,8 +45,14 @@ encoded_password = quote_plus(MONGODB_PASSWORD)
 MONGODB_URI = f"mongodb+srv://{encoded_user}:{encoded_password}@{MONGODB_URI}"
 LOCAL_TEMP_DIR: Final[str] = "/dev/shm"
 
+wandb_api_key = os.environ.get("WANDB_API_KEY")
+if wandb_api_key:
+    wandb.login(key=wandb_api_key)
+    logging.info("WANDB_API_KEY found in environment variables")
+else:
+    logging.warning("WANDB_API_KEY not found in environment variables")
 
-# TODO: Add the logic of MongoDB data loading here
+
 class MongoDBDataLoad(Dataset):
     """
     with BaseMongoDBDataset(
