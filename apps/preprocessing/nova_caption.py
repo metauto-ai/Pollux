@@ -11,6 +11,7 @@ from apps.main.utils.mongodb_data_load import MONGODB_URI
 from pymongo import MongoClient
 import logging
 import requests
+import apps.preprocessing.wandb_img as wandb_img
 import uuid
 import re
 import time
@@ -25,7 +26,7 @@ logging.basicConfig(
 Image.MAX_IMAGE_PIXELS = None
 config = Config(
     retries={"max_attempts": 10, "mode": "adaptive"},
-    max_pool_connections=100,  # Increase pool size (default is 10)
+    max_pool_connections=200,  # Increase pool size (default is 10)
 )
 
 
@@ -41,7 +42,7 @@ class NovaCaption:
         collection_name,
         image_field: str,
         caption_field: str = "nova_lite_caption",
-        maxTokens: int = 200,
+        maxTokens: int = 100,
         topP: float = 0.1,
         temperature: float = 1.0,
         max_workers: int = 32,
@@ -110,9 +111,10 @@ class NovaCaption:
                     # )
                     caption = response["output"]["message"]["content"][0]["text"]
                     caption = filter_image_caption(caption)
-                    self.update_data(_id, caption)
                     if wandb_logger:
                         wandb_logger.add_image(image_bytes, caption)
+                    else:
+                        self.update_data(_id, caption)
             if wandb_logger:
                 wandb_logger.log_images()
 
@@ -141,14 +143,24 @@ class NovaCaption:
         resized_image = image.resize((new_width, new_height), Image.Resampling.LANCZOS)
         return resized_image
 
-    def download_image(self, s3url):
-        response = requests.get(s3url)
-        image = Image.open(io.BytesIO(response.content)).convert("RGB")
-        image = self.process_image(image)
-        buffer = io.BytesIO()
-        image.save(buffer, format="JPEG", quality=95)
-        buffer.seek(0)
-        image_bytes = buffer.getvalue()
+    def download_image(self, img_path):
+        if img_path.startswith("s3://"):
+            s3url = img_path
+            response = requests.get(s3url)
+            image = Image.open(io.BytesIO(response.content)).convert("RGB")
+            image = self.process_image(image)
+            buffer = io.BytesIO()
+            image.save(buffer, format="JPEG", quality=95)
+            buffer.seek(0)
+            image_bytes = buffer.getvalue()
+        else:
+            with open(img_path, "rb") as f:
+                image = Image.open(f).convert("RGB")
+                image = self.process_image(image)
+                buffer = io.BytesIO()
+                image.save(buffer, format="JPEG", quality=95)
+                buffer.seek(0)
+                image_bytes = buffer.getvalue()
         return image_bytes
 
     def generate_image_caption(self, imagebytes):
@@ -192,8 +204,8 @@ if __name__ == "__main__":
     batch_size = 100
     max_samples_per_min = 500
     nova_caption = NovaCaption(
-        collection_name="unsplash_images",
-        image_field="s3url",
+        collection_name="pexel_images_jfs_nova",
+        image_field="jfs_path",
         caption_field="nova_lite_caption",
         maxTokens=150,
         topP=0.1,
@@ -201,11 +213,17 @@ if __name__ == "__main__":
         max_workers=batch_size,
         batch_size=batch_size,
     )
+    # from apps.preprocessing.wandb_img import WandBLogger
+
+    # wandb_logger = WandBLogger(
+    #     project="pollux", run_name="nova_caption_pexel", entity="metauto"
+    # )
     start_time = time.time()
     processed_samples = 0
     total_samples = 0
     while True:
         nova_caption.run()
+
         elapsed_time = time.time() - start_time
         processed_samples += batch_size
         total_samples += batch_size
