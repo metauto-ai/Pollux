@@ -229,8 +229,8 @@ if __name__ == "__main__":
         total_samples += batch_size
         if processed_samples >= max_samples_per_min:
             if elapsed_time < 60:
-                logging.info(f"Sleeping for {60 - elapsed_time} seconds")
+                logging.warning(f"Sleeping for {60 - elapsed_time} seconds")
                 time.sleep(60 - elapsed_time)
             start_time = time.time()
             processed_samples = 0
-        logging.info(f"Total samples processed: {total_samples}")
+        logging.warning(f"Total samples processed: {total_samples}")
