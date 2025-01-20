@@ -34,7 +34,6 @@ for image_info in collect_images(directory_path):
     image_chunk.append(image_info)
     if len(image_chunk) >= chunk_size:
         upload_to_mongodb(image_chunk)
-        print("Uploaded image number: ", len(image_chunk))
         image_chunk = []
 # Upload any remaining images
 if image_chunk:
