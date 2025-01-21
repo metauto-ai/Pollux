@@ -5,6 +5,7 @@ from confluent_kafka.admin import AdminClient, NewPartitions, NewTopic
 from loguru import logger
 import numpy as np
 import json
+from kafka.client_async import KafkaClient
 
 BOOTSTRAP_SERVERS = ['localhost:9092']
 
@@ -34,9 +35,9 @@ class Consumer:
     def _create_consumer(self):
         return KafkaConsumer(
             bootstrap_servers=BOOTSTRAP_SERVERS,
-            api_version=(3, 9, 0),
+            api_version=get_kafka_api_version(),
             group_id=self.group_id,
-            auto_offset_reset='latest',
+            auto_offset_reset='earliest',
             enable_auto_commit=False,
             max_poll_records=100,
             max_partition_fetch_bytes=524288000,  # 30MB
@@ -58,7 +59,7 @@ class Producer:
     def _create_producer(self):
         return KafkaProducer(
             bootstrap_servers=BOOTSTRAP_SERVERS,
-            api_version=(3, 9, 0),
+            api_version=get_kafka_api_version(),
             acks='all',
             retries=3,
             compression_type='gzip',
@@ -85,16 +86,41 @@ admin_client = AdminClient({"bootstrap.servers" : BOOTSTRAP_SERVERS[0]})
 
 def create_kafka_partitions(kafka_topics):
     logger.info(f"Creating Kafka topics with configurations: {kafka_topics}")
+    # Check if topics already exist with correct partition count
+    existing_topics = admin_client.list_topics().topics
+    
+    topics_to_create = {}
+    for topic, config in kafka_topics.items():
+        if topic not in existing_topics:
+            topics_to_create[topic] = config
+        else:
+            # Check if existing topic has enough partitions
+            topic_info = existing_topics[topic]
+            if len(topic_info.partitions) >= config["partitions"]:
+                logger.info(f"Topic {topic} already exists with {len(topic_info.partitions)} partitions")
+                continue
+            topics_to_create[topic] = config
+    
+    if not topics_to_create:
+        logger.info("All required topics already exist with sufficient partitions")
+        return
+    
     admin_client.create_topics([
-        NewTopic(topic, config["partitions"], replication_factor=1) for topic, config in kafka_topics.items()
+        NewTopic(topic, config["partitions"], replication_factor=1) for topic, config in topics_to_create.items()
     ])
-    logger.info(f"Created Kafka topics: {list(kafka_topics.keys())}")
+    logger.info(f"Created Kafka topics: {list(topics_to_create.keys())}")
 
     topic_partitions = [
         NewPartitions(topic, config["partitions"])
-        for topic, config in kafka_topics.items()
+        for topic, config in topics_to_create.items()
     ]
     admin_client.create_partitions(topic_partitions)
 
     # Wait for topics to be created
     time.sleep(10)
+
+def get_kafka_api_version():
+    client = KafkaClient(bootstrap_servers=BOOTSTRAP_SERVERS)
+    versions = client.check_version()
+    client.close()
+    return versions

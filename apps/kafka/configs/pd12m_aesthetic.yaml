@@ -1,0 +1,40 @@
+mongo_config:
+  collection_name: pd12m
+  url_field: s3url
+  caption_field: caption
+  update_field: aesthetic_score
+  shard_key: hash
+  num_shards: 1
+  shard_idx: 0
+  rate_limit: 100
+
+kafka_topics:
+  databasePD12M:
+    partitions: 64
+  downloadedImagesPD12M:
+    partitions: 32
+  scoredImagesPD12M:
+    partitions: 16
+
+stages:
+  read_database:
+    batch_size: 256
+    producer: databasePD12M
+
+  download_images:
+    batch_size: 64    # per database partition
+    consumer: databasePD12M
+    producer: downloadedImagesPD12M
+
+  aesthetic_scoring:
+    batch_size: 128
+    consumer: downloadedImagesPD12M
+    producer: scoredImagesPD12M
+  
+  clip_scoring:
+    batch_size: 128
+    consumer: downloadedImagesPD12M
+    producer: scoredImagesPD12M
+
+  update_database:
+    consumer: scoredImagesPD12M
