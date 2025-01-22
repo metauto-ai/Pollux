@@ -24,6 +24,7 @@ from apps.preprocessing.wandb_img import WandBLogger
 import random
 import string
 from bson import ObjectId
+import argparse
 
 logging.basicConfig(
     level=logging.INFO,
@@ -105,12 +106,18 @@ class MongoDBFlickrMetaDataLoad(MongoDBDataLoad):
 
 class InternVL_Captioner:
     def __init__(
-        self, num_shard, shard_idx, collection_name, partition_key, caption_field
+        self,
+        num_shard,
+        shard_idx,
+        collection_name,
+        partition_key,
+        caption_field,
+        portal,
     ):
         self.client = OpenAI(
             # defaults to os.environ.get("OPENAI_API_KEY")
             api_key="EMPTY",
-            base_url="http://localhost:8000/v1",
+            base_url=f"http://localhost:{portal}/v1",
         )
 
         models = self.client.models.list()
@@ -142,7 +149,7 @@ class InternVL_Captioner:
         data_loader = DataLoader(
             dataset,
             batch_size=128,
-            num_workers=96,
+            num_workers=16,
             pin_memory=True,
             drop_last=False,
             prefetch_factor=4,
@@ -208,12 +215,51 @@ class InternVL_Captioner:
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(
+        description="Run InternVL_Captioner with custom parameters."
+    )
+    parser.add_argument(
+        "--num_shard",
+        type=int,
+        default=4,
+        help="Number of shards (nodes). Default is 4.",
+    )
+    parser.add_argument(
+        "--shard_idx",
+        type=int,
+        default=0,
+        help="Index of the current shard (node). Default is 0.",
+    )
+    parser.add_argument(
+        "--collection_name",
+        type=str,
+        default="flickr",
+        help="Name of the collection to process. Default is 'flickr'.",
+    )
+    parser.add_argument(
+        "--partition_key",
+        type=str,
+        default="partition_key",
+        help="Partition key for the data. Default is 'partition_key'.",
+    )
+    parser.add_argument(
+        "--caption_field",
+        type=str,
+        default="internVL_caption",
+        help="Field name for storing captions. Default is 'internVL_caption'.",
+    )
+    parser.add_argument(
+        "--portal", type=int, default=8000, help="Portal number. Default is 8000."
+    )
+
+    args = parser.parse_args()
     captioner = InternVL_Captioner(
-        num_shard=1,  # Nodes Number
-        shard_idx=0,  # Node Index
-        collection_name="flickr",
-        partition_key="partition_key",
-        caption_field="internVL_caption",
+        num_shard=args.num_shard,  # global gpu number
+        shard_idx=args.shard_idx,  # global gpu index
+        collection_name=args.collection_name,
+        partition_key=args.partition_key,
+        caption_field=args.caption_field,
+        portal=args.portal,
     )
     while True:
         captioner.run()
