@@ -141,11 +141,11 @@ class InternVL_Captioner:
         self.data_len = len(dataset)
         data_loader = DataLoader(
             dataset,
-            batch_size=256,
-            num_workers=64,
+            batch_size=128,
+            num_workers=96,
             pin_memory=True,
             drop_last=False,
-            prefetch_factor=8,
+            prefetch_factor=4,
         )
         self.data_iterator = iter(data_loader)
         self.count = 0
