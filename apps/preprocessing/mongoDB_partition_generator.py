@@ -67,7 +67,7 @@ class MongoDBPartitionGenerator:
 
 if __name__ == "__main__":
     updater = MongoDBPartitionGenerator(
-        collection_name="big35m_new",
+        collection_name="flickr",
         new_field="partition_key",
         batch_size=10000,
     )
@@ -79,4 +79,4 @@ if __name__ == "__main__":
         except Exception as e:
             logging.warning(f"Error: {e}")
             break
-        logging.info(f"Total Processed: {total_acount}")
+        logging.warning(f"Total Processed: {total_acount}")

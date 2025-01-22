@@ -104,6 +104,7 @@ class MongoDBDataLoad(Dataset):
         collection = db[self.collection_name]
         self.query.update(
             {
+                f"{self.partition_key}": {"$exists": True},
                 "$expr": {
                     "$eq": [
                         {
@@ -114,7 +115,7 @@ class MongoDBDataLoad(Dataset):
                         },
                         self.shard_idx,  # Current shard index
                     ]
-                }
+                },
             }
         )
         logging.info(f"Query: {self.query}")
