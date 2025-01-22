@@ -19,21 +19,26 @@ encoded_password = quote_plus(MONGODB_PASSWORD)
 MONGODB_URI = f"mongodb+srv://{encoded_user}:{encoded_password}@{MONGODB_URI}"
 
 
-class MongoDataset():
+class MongoDataset(IterableDataset):
     DB_NAME = "world_model"
     DOC_ID_FIELD = "_id"
-    IMAGE_URL_FIELD = "s3url"
 
-    def __init__(self, collection_name, num_shards=1, shard_idx = 0):
-        self.collection_name = collection_name
-        self.num_shards = num_shards
-        self.shard_idx = shard_idx
+    def __init__(self, mongo_config):
+        self.collection_name = mongo_config["collection_name"]
+        self.image_url_field = mongo_config["url_field"]
+        self.caption_field = mongo_config["caption_field"]
+        self.num_shards = mongo_config.get("num_shards", 1)
+        self.shard_key = mongo_config.get("shard_key", "hash")
+        self.shard_idx = mongo_config.get("shard_idx", 0)
+        self.rate_limit = mongo_config.get("rate_limit", -1)
+        self.update_field = mongo_config.get("update_field", None)
+
         self.query = {
             "$expr": {
                     "$eq": [
                         {
                             "$mod": [
-                                {"$toLong": f"$seed"},
+                                {"$toLong": f"${self.shard_key}"},
                                 self.num_shards,  # Total number of shards
                             ]
                         },
@@ -48,129 +53,40 @@ class MongoDataset():
     def bulkUpdate(self, operations):
         return self.collection.bulk_write(operations, ordered=False)
 
-
-class CC12MDataset(MongoDataset, IterableDataset):
-    """
-    Dataset for CC12M dataset
-    """
-    COLLECTION_NAME = "cc12m"
-    
-    def __init__(self, num_shards=1, shard_idx = 0):
-        super().__init__(self.COLLECTION_NAME, num_shards, shard_idx)
-
     def __iter__(self):
         self.set_collection()
-        # self.collection.create_index([("aesthetic_score", 1)])
+        # self.collection.create_index([("clip_score", 1)])
         logger.info("Starting to iterate over documents")
-        self.query.update({"aesthetic_score": {"$exists": False}})
-        for doc in tqdm(self.collection.find(
-            self.query,
-            projection={
-                self.DOC_ID_FIELD: 1,
-                self.IMAGE_URL_FIELD: 1,
-            }
-        ).batch_size(128 * 1024)):
-            # logger.info(f"Processing document: {doc[self.DOC_ID_FIELD]}")
-            yield {
-                "document_ids":  str(doc[self.DOC_ID_FIELD]), 
-                "image_urls": str(doc[self.IMAGE_URL_FIELD])
-            }
-            time.sleep(0.001)
+        
+        if self.update_field:
+            self.query.update({self.update_field: {"$exists": False}})
+        
+        projection = {self.DOC_ID_FIELD: 1, self.image_url_field: 1}
+        if self.caption_field:
+            projection[self.caption_field] = 1
+        
+        logger.info(f"Query: {self.query}")
+        logger.info(f"Projection: {projection}")
 
-
-
-class PD12MDataset(MongoDataset, IterableDataset):
-    """
-    Dataset for PD12M dataset
-    """
-    COLLECTION_NAME = "pd12m"
-
-    def __init__(self, num_shards=1, shard_idx = 0):
-        super().__init__(self.COLLECTION_NAME, num_shards, shard_idx)
-
-    def __iter__(self):
-        self.set_collection()
-        # self.collection.create_index([("aesthetic_score", 1)])
-        logger.info("Starting to iterate over documents")
-        self.query.update({"aesthetic_score": {"$exists": False}})
-        for doc in tqdm(self.collection.find(
-            self.query,
-            projection={
-                self.DOC_ID_FIELD: 1,
-                self.IMAGE_URL_FIELD: 1,
-            }
-        ).batch_size(128 * 1024)):
-            # logger.info(f"Processing document: {doc[self.DOC_ID_FIELD]}")
-            yield {
-                "document_ids": str(doc[self.DOC_ID_FIELD]), 
-                "image_urls": str(doc[self.IMAGE_URL_FIELD])
-            }
-            time.sleep(0.003)
-
-
-class DiffusionDataset(MongoDataset, IterableDataset):
-    """
-    Dataset for Diffusion dataset
-    """
-    COLLECTION_NAME = "diffusion"
-
-    def __init__(self, num_shards=1, shard_idx = 0):
-        super().__init__(self.COLLECTION_NAME, num_shards, shard_idx)
-
-    def __iter__(self):
-        self.set_collection()
-        # self.collection.create_index([("aesthetic_score", 1)])
-        logger.info("Starting to iterate over documents")
-        self.query.update({"aesthetic_score": {"$exists": False}})
         for doc in self.collection.find(
             self.query,
-            projection={
-                self.DOC_ID_FIELD: 1,
-                self.IMAGE_URL_FIELD: 1,
-            }
+            projection=projection
         ).batch_size(128 * 1024):
-            # logger.info(f"Processing document: {doc[self.DOC_ID_FIELD]}")
+            if self.image_url_field not in doc or self.caption_field not in doc:
+                logger.info(f"Skipping document: {doc[self.DOC_ID_FIELD]}")
+                continue
             yield {
-                "document_ids": str(doc[self.DOC_ID_FIELD]), 
-                "image_urls": str(doc[self.IMAGE_URL_FIELD])
+                "doc_id": str(doc[self.DOC_ID_FIELD]), 
+                "image_url": str(doc[self.image_url_field]),
+                "caption": str(doc[self.caption_field])
             }
-
-
-class MidJourneyV6Dataset(MongoDataset, IterableDataset):
-    """
-    Dataset for MidJourney dataset
-    """
-    COLLECTION_NAME = "midjourneyv6"
-    IMAGE_URL_FIELD = "azure_url"
-
-    def __init__(self, num_shards=1, shard_idx = 0):
-        super().__init__(self.COLLECTION_NAME, num_shards, shard_idx)
-
-    def __iter__(self):
-        self.set_collection()
-        # self.collection.create_index([("aesthetic_score", 1)])
-        logger.info("Starting to iterate over documents")
-        # self.query.update({"aesthetic_score": {"$exists": False}})
-        for doc in self.collection.find(
-            self.query,
-            projection={
-                self.DOC_ID_FIELD: 1,
-                self.IMAGE_URL_FIELD: 1,
-            }
-        ).batch_size(128 * 1024):
-            # logger.info(f"Processing document: {doc[self.DOC_ID_FIELD]}")
-            if "aesthetic_score" not in doc or isinstance(doc["aesthetic_score"], list):
-                yield {
-                    "document_ids": str(doc[self.DOC_ID_FIELD]), 
-                    "image_urls": str(doc[self.IMAGE_URL_FIELD])
-                }
-                # rate limiting
-                time.sleep(0.001)
+            if self.rate_limit > 0:
+                time.sleep(1 / self.rate_limit)
 
 
 if __name__ == "__main__":
     # test
-    dataset = DiffusionDataset(num_shards=1, shard_idx=0)
+    dataset = MongoDataset(collection_name="laion1b", image_url_field="URL", caption_field="TEXT", num_shards=1, shard_idx=0)
     for doc in tqdm(dataset):
         # print(doc)
         pass

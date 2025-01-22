@@ -1,0 +1,44 @@
+mongo_config:
+  collection_name: laion1b
+  url_field: URL
+  caption_field: TEXT
+  update_field: clip_score
+  shard_key: hash
+  num_shards: 1
+  shard_idx: 0
+  rate_limit: -1
+
+kafka_topics:
+  databaseLaion:
+    partitions: 64
+  downloadedImagesLaion:
+    partitions: 32
+  aestheticScoredImagesLaion:
+    partitions: 16
+
+stages:
+  read_database:
+    batch_size: 128
+    producer: databaseLaion
+
+  download_images:
+    consumer: databaseLaion
+    producer: downloadedImagesLaion
+
+  aesthetic_scoring:
+    batch_size: 128
+    consumer: downloadedImagesLaion
+    producer: aestheticScoredImagesLaion
+
+  clip_scoring:
+    batch_size: 128
+    consumer: downloadedImagesLaion
+    producer: aestheticScoredImagesLaion
+
+  validate_url:
+    batch_size: 128
+    consumer: databaseLaion
+    producer: aestheticScoredImagesLaion
+
+  update_database:
+    consumer: aestheticScoredImagesLaion

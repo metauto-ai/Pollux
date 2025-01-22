@@ -13,11 +13,11 @@ from PIL import Image
 import torch
 import torch.multiprocessing as mp
 from torch.utils.data import IterableDataset, DataLoader
-from aesthetic_predictor_v2_5 import convert_v2_5_from_siglip
-from transformers import SiglipImageProcessor
 
+from models.clip_inference import CLIPInference
+from transformers import CLIPProcessor
 
-STAGE = "aesthetic_scoring"
+STAGE = "clip_scoring"
 
 
 def worker_init_fn(worker_id, gpu_id, num_workers):
@@ -42,28 +42,57 @@ def worker_init_fn(worker_id, gpu_id, num_workers):
 
 
 class ImageDataset(IterableDataset):
-    def __init__(self, gpu_id, consumer_topic, consumer_partitions):
+    def __init__(self, gpu_id, consumer_topic, consumer_partitions, clip_model_name_or_path):
         self.gpu_id = gpu_id
         self.consumer_topic = consumer_topic
         self.consumer_partitions = consumer_partitions
+        self.clip_model_name_or_path = clip_model_name_or_path
 
         logger.info(f"Initialized ImageDataset for gpu {gpu_id}")
         self.consumer = None
     
-    def preprocess_image(self, image_content, preprocessor):
+    def preprocess_image(self, doc_id, image_content, caption, preprocessor: CLIPProcessor):
         try:
             image_data = base64.b64decode(image_content)
             image = Image.open(io.BytesIO(image_data)).convert("RGB")
-            processed = preprocessor(images=image, return_tensors="pt").pixel_values.to(torch.bfloat16).squeeze(0)
-            return processed
+            
+            # Get image dimensions and log them for debugging
+            width, height = image.size
+            # logger.debug(f"Image {doc_id} dimensions: {width}x{height}")
+            
+            # Ensure image is at least 2x2 pixels
+            if width < 2 or height < 2:
+                logger.warning(f"Image {doc_id} is too small: {width}x{height}. Skipping.")
+                return None
+            
+            # Process image and text
+            inputs = preprocessor(
+                images=image,
+                text=caption,
+                return_tensors="pt",
+                max_length=77,
+                padding="max_length",
+                truncation=True,
+                do_resize=True,  # Ensure resizing is enabled
+                size={"height": 224, "width": 224}  # Explicitly set target size
+            )
+            
+            # Remove batch dimension added by processor
+            for key in inputs:
+                inputs[key] = inputs[key].squeeze(0)
+
+            return inputs
         except Exception as e:
-            logger.error(f"Error preprocessing image: {e}")
+            logger.error(f"Error preprocessing image {doc_id}: {e}")
             return None
 
     def collate_fn(self, batch):
         return {
-            'doc_ids': [x['doc_ids'] for x in batch],
-            'images': torch.stack([x['images'] for x in batch]),
+            'doc_id': [x['doc_id'] for x in batch],
+            'pixel_values': torch.stack([x['pixel_values'] for x in batch]),
+            'input_ids': torch.stack([x['input_ids'] for x in batch]),
+            'attention_mask': torch.stack([x['attention_mask'] for x in batch]),
+            'caption': [x['caption'] for x in batch],
         }
 
     def __iter__(self):
@@ -87,14 +116,12 @@ class ImageDataset(IterableDataset):
         partition_ids = [base_partition + i for i in range(num_partitions_per_worker)]
         
         # create consumer
-        group_id = f"aesthetic_scoring_GPU{self.gpu_id}_Worker{worker_id}"
+        group_id = f"clip_scoring_GPU{self.gpu_id}_Worker{worker_id}"
         self.consumer = Consumer(self.consumer_topic, group_id=group_id, partition_ids=partition_ids)
         logger.info(f"GPU {self.gpu_id}, Worker {worker_id}/{num_workers} assigned to partitions {partition_ids}")
         ############################################################
 
-        ############################################################
-        ##################### Preprocessing #######################
-        preprocessor = SiglipImageProcessor.from_pretrained("google/siglip-so400m-patch14-384")
+        preprocessor = CLIPProcessor.from_pretrained(self.clip_model_name_or_path)
 
         last_commit_time = time.time()
         commit_interval = 10  # Commit every 10 seconds
@@ -104,17 +131,19 @@ class ImageDataset(IterableDataset):
 
             doc_id = message_data["doc_id"]
             image_base64 = message_data["image_base64"]
-            
-            # Use existing loop instead of creating new one
-            processed = self.preprocess_image(image_base64, preprocessor)
-        
+            caption = message_data["caption"]
+            encoding = self.preprocess_image(doc_id, image_base64, caption, preprocessor)
+
             # Return one image from the buffer
-            if processed is not None:
+            if encoding is not None: 
                 yield {
-                    "images": processed,
-                    "doc_ids": doc_id
+                    "doc_id": doc_id,
+                    "pixel_values": encoding["pixel_values"],
+                    "input_ids": encoding["input_ids"],
+                    "attention_mask": encoding["attention_mask"],
+                    "caption": caption,
                 }
-            
+
             current_time = time.time()
             if current_time - last_commit_time > commit_interval:
                 # Commit after processing all images in the message
@@ -123,14 +152,14 @@ class ImageDataset(IterableDataset):
                     last_commit_time = current_time
                 except Exception as e:
                     logger.error(f"Error committing offset: {e}")
-                
+
 
     def __del__(self):
         if self.consumer:
             self.consumer.consumer.close()
 
 
-class AestheticScorerWorker:
+class ClipScorer:
     def __init__(self, 
                  gpu_id: int, 
                  batch_size: int,
@@ -138,9 +167,10 @@ class AestheticScorerWorker:
                  consumer_partitions_per_gpu: int, 
                  producer_topic: str, 
                  producer_partitions: int, 
-                 counter):
+                 counter,
+                 clip_model_name_or_path: str = "openai/clip-vit-base-patch16"):
         """
-        Initialize the AestheticScorerWorker
+        Initialize the ClipScorer
 
         Args:
             gpu_id (int): The ID of the GPU to use
@@ -162,24 +192,18 @@ class AestheticScorerWorker:
 
         # create producers
         self.producer = Producer(
-            producer_topic, 
-            producer_partitions
+            self.producer_topic, 
+            self.producer_partitions
         )
 
         # model init
         n_gpus = torch.cuda.device_count()
-        device = torch.device(f"cuda:{gpu_id % n_gpus}")
-        self.model, _ = convert_v2_5_from_siglip(
-            low_cpu_mem_usage=True,
-            trust_remote_code=True,
-            use_flash_attention_2=True
-        )
-        # Move model to device and convert to bfloat16 after initialization
-        self.model = self.model.to(device).to(torch.bfloat16).eval()
+        self.device = torch.device(f"cuda:{gpu_id % n_gpus}")
+        self.clip_model = CLIPInference(model_name=clip_model_name_or_path, device=self.device)
 
-        self.dataset = ImageDataset(gpu_id, consumer_topic, consumer_partitions_per_gpu)
-        self.dataloader = DataLoader(self.dataset, batch_size=self.batch_size, num_workers=self.num_workers, 
-                                     pin_memory=True, prefetch_factor=4, collate_fn=self.dataset.collate_fn)
+        self.dataset = ImageDataset(gpu_id, consumer_topic, consumer_partitions_per_gpu, clip_model_name_or_path)
+        self.dataloader = DataLoader(self.dataset, batch_size=self.batch_size, collate_fn=self.dataset.collate_fn,
+                                     num_workers=self.num_workers, pin_memory=True, prefetch_factor=4)
 
         logger.info(f"GPU {self.gpu_id} initialized model on device cuda:{gpu_id % n_gpus}")
         logger.info(f"GPU {self.gpu_id} ScorerWorker initialization complete")
@@ -188,21 +212,24 @@ class AestheticScorerWorker:
     def run(self):
         logger.info(f"GPU {self.gpu_id} Starting scoring process")
         for idx, batch in enumerate(self.dataloader):
-            logger.info(f"GPU {self.gpu_id} Processing batch {idx} with {len(batch['doc_ids'])} documents")
+            logger.info(f"GPU {self.gpu_id} Processing batch {idx} with {len(batch['doc_id'])} documents")
             try:
-                images = batch["images"].to(self.model.device)
+                doc_ids = batch.pop("doc_id")
+                captions = batch.pop("caption")
                 with torch.no_grad():
-                    scores = self.model(images).logits.squeeze(1).to(torch.float32).cpu().numpy()
+                    clip_scores = self.clip_model.compute_clip_score(batch)
+                    clip_scores = clip_scores.to(torch.float32).cpu().numpy()
                 logger.debug(f"GPU {self.gpu_id} Successfully scored batch {idx}")
                 self.producer.send(idx, {
-                    "doc_ids": batch["doc_ids"],
-                    "aesthetic_score": scores
+                    "doc_ids": doc_ids,
+                    "clip_score": clip_scores,
                 })
                 with self.counter.get_lock():
-                    self.counter.value += len(batch["doc_ids"])
+                    self.counter.value += len(doc_ids)
+                logger.info(f"GPU {self.gpu_id} Successfully processed batch {idx}")
             except Exception as e:
                 logger.error(f"GPU {self.gpu_id} Error processing batch {idx}: {e}")
-        
+
     def __del__(self):
         if self.dataloader is not None:
             self.dataloader._iterator = None  # Force cleanup of iterator
@@ -213,9 +240,11 @@ class AestheticScorerWorker:
             self.producer.close()
 
 
-def score_image(rank, batch_size, consumer_topic, consumer_partitions_per_gpu, producer_topic, producer_partitions, counter):
+def score_image(rank, batch_size, consumer_topic, consumer_partitions_per_gpu, 
+                producer_topic, producer_partitions, counter):
     logger.info(f"GPU {rank} Starting worker process")
-    worker = AestheticScorerWorker(rank, batch_size, consumer_topic, consumer_partitions_per_gpu, producer_topic, producer_partitions, counter)
+    worker = ClipScorer(rank, batch_size, consumer_topic, consumer_partitions_per_gpu, 
+                        producer_topic, producer_partitions, counter)
     worker.run()
 
 
