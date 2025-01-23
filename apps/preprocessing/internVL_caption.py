@@ -1,3 +1,44 @@
+"""
+NUM_SHARD=4
+SHARD_IDX=0
+START_PORT=8000  
+START_CPU=0
+END_CPU=96
+GPU_START=0
+CPU_PER_GPU=16
+
+PORT=$((START_PORT + SHARD_IDX))
+CPU_START=$((START_CPU + SHARD_IDX * CPU_PER_GPU))
+CPU_END=$((CPU_START + CPU_perGPU - 1))
+GPU=$((GPU_START + SHARD_IDX))
+
+docker run --cpuset-cpus="$CPU_START-$CPU_END" --runtime nvidia --gpus device=$GPU \
+    -v ~/.cache/huggingface:/root/.cache/huggingface \
+    --env "HUGGING_FACE_HUB_TOKEN=<secret>" \
+    --env "HF_HOME=/jfs/hf_cache" \
+    -p $PORT:$PORT \
+    --ipc=host \
+    vllm/vllm-openai:latest \
+    --model OpenGVLab/InternVL2_5-8B-MPO \
+    --dtype auto \
+    --api-key EMPTY \
+    --swap-space 16 \
+    --gpu-memory-utilization 0.9 \
+    --num-scheduler-steps  8 \
+    --trust-remote-code \
+    --max-model-len 4096 \
+    --disable-log-requests \
+    --port $PORT \
+    --tensor-parallel-size 1 \
+    --pipeline-parallel-size 1 \
+    --enforce-eager \
+    --max-num-seqs 256
+
+cd lingua_videogen/Pollux/
+source ~/miniconda3/bin/activate pollux
+python -m apps.preprocessing.internVL_caption --num_shard $NUM_SHARD --shard_idx $SHARD_IDX --portal $PORT
+"""
+
 import os
 import glob
 import json
@@ -148,11 +189,11 @@ class InternVL_Captioner:
         self.data_len = len(dataset)
         data_loader = DataLoader(
             dataset,
-            batch_size=128,
+            batch_size=16,
             num_workers=16,
             pin_memory=True,
             drop_last=False,
-            prefetch_factor=4,
+            prefetch_factor=2,
         )
         self.data_iterator = iter(data_loader)
         self.count = 0
