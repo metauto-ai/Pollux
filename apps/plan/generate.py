@@ -170,14 +170,14 @@ def main():
     save_image(
         samples["pred_img_tensor"],
         "pred_sample.png",
-        nrow=3,
+        nrow=4,
         normalize=True,
         value_range=(-1, 1),
     )
     save_image(
         samples["ori_img_tensor"],
         "raw_sample.png",
-        nrow=3,
+        nrow=4,
         normalize=True,
         value_range=(-1, 1),
     )
