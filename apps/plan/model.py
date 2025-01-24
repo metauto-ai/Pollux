@@ -341,7 +341,7 @@ class Pollux(nn.Module):
         vae_indices, vae_latent = self.tvae.encode(
             images
         )  # [16, 1, 16, 16], [16, 1, 16, 16, 8]
-
+        vae_indices_size = vae_indices.size()
         # [B, 1, H/16, W/16], [B, 6, 1, H/16, W/16]
         vae_embs, H_, W_, freqs_cis_img = self.patchify_and_embed(vae_latent.squeeze(2))
         # [B, H/16 * W/16, D]
@@ -437,8 +437,10 @@ class Pollux(nn.Module):
         # accuracy = (pred_latent[:, :-1].argmax(-1) == vae_indices[:, 1:]).float().mean()
         batch["accuracy"] = mask_accuracy
 
-        # batch["latent_target"] = latent_target
-        # batch["pred_latent"] = pred_latent
+        batch["latent_target"] = vae_indices.view(vae_indices_size)
+        batch["pred_latent"] = (
+            torch.argmax(pred_latent, dim=-1).unsqueeze(1).view(vae_indices_size)
+        )
         return batch, pred_loss, mask_accuracy
 
     def set_train(self):
