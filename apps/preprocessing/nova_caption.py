@@ -144,7 +144,7 @@ class NovaCaption:
         return resized_image
 
     def download_image(self, img_path):
-        if img_path.startswith("s3://"):
+        if img_path.startswith("s3://") or img_path.startswith("http"):
             s3url = img_path
             response = requests.get(s3url)
             image = Image.open(io.BytesIO(response.content)).convert("RGB")
@@ -204,8 +204,8 @@ if __name__ == "__main__":
     batch_size = 100
     max_samples_per_min = 500
     nova_caption = NovaCaption(
-        collection_name="pexel_images_jfs_nova",
-        image_field="jfs_path",
+        collection_name="sky_pixel_image",
+        image_field="url",
         caption_field="nova_lite_caption",
         maxTokens=150,
         topP=0.1,
