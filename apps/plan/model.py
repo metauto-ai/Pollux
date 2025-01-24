@@ -38,7 +38,7 @@ class LatentProjecterArgs:
 
 @dataclass
 class TokenizerArgs:
-    model_name: str = "meta-llama/Llama-3.2-3B"
+    model_name: str = "/jfs/checkpoints/Llama-3.2-3B"
 
 
 @dataclass
