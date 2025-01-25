@@ -99,7 +99,7 @@ class NovaCaption:
             for future in as_completed(future_to_id):
                 _id = future_to_id[future]
                 try:
-                    response, image_bytes = future.result()
+                    response, image_bytes = future.result(timeout=30)
                 except Exception as e:
                     logging.warning(f"Erros in handling {_id}:{e}")
                 else:
