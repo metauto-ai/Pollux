@@ -204,8 +204,8 @@ if __name__ == "__main__":
     batch_size = 100
     max_samples_per_min = 500
     nova_caption = NovaCaption(
-        collection_name="sky_pixel_image",
-        image_field="url",
+        collection_name="leonardo",
+        image_field="azure_url",
         caption_field="nova_lite_caption",
         maxTokens=150,
         topP=0.1,
