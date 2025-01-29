@@ -54,6 +54,16 @@ class ImageDataset(IterableDataset):
         try:
             image_data = base64.b64decode(image_content)
             image = Image.open(io.BytesIO(image_data)).convert("RGB")
+
+            # Get image dimensions and log them for debugging
+            width, height = image.size
+            # logger.debug(f"Image {doc_id} dimensions: {width}x{height}")
+            
+            # Ensure image is at least 2x2 pixels
+            if width < 2 or height < 2:
+                logger.warning(f"Image is too small: {width}x{height}. Skipping.")
+                return None
+
             processed = preprocessor(images=image, return_tensors="pt").pixel_values.to(torch.bfloat16).squeeze(0)
             return processed
         except Exception as e:
