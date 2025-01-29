@@ -19,19 +19,17 @@ kafka_topics:
 stages:
   read_database:
     batch_size: 128
-    producer_list:
-      - databaseMidJourneyDiscord
+    producer: databaseMidJourneyDiscord
 
   download_images:
     batch_size: 128    # per database partition
     consumer: databaseMidJourneyDiscord
     producer: downloadedImagesMidJourneyDiscord
 
-  aesthetic_scoring:
+  clip_scoring:
     batch_size: 128
     consumer: downloadedImagesMidJourneyDiscord
-    producer_list:
-      - scoredImagesMidJourneyDiscord
+    producer: scoredImagesMidJourneyDiscord
 
   update_database:
     consumer: scoredImagesMidJourneyDiscord

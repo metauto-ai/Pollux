@@ -20,14 +20,15 @@ class NumpyEncoder(json.JSONEncoder):
         return super().default(obj)
 
 class Consumer:
-    def __init__(self, topic, group_id=None, partition_ids: List[int]=0):
+    def __init__(self, topic, group_id=None, partition_ids: List[int]=None):
         self.group_id = group_id
         self.partition_ids = partition_ids
         self.consumer = self._create_consumer()
         
         logger.info(f"Assigning partition {self.partition_ids} to topic {topic}")
-        partitions = [TopicPartition(topic, partition_id) for partition_id in self.partition_ids]
-        self.consumer.assign(partitions)
+        if self.partition_ids:
+            partitions = [TopicPartition(topic, partition_id) for partition_id in self.partition_ids]
+            self.consumer.assign(partitions)
     
     def json_decode(self, x):
         return json.loads(x.decode('utf-8'))

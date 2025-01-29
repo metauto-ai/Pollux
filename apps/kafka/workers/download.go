@@ -20,26 +20,25 @@ import (
 	"time"
 
 	"image"
-	_ "image/gif"  // Register GIF format
+	_ "image/gif" // Register GIF format
+	"image/jpeg"
 	_ "image/jpeg" // Register JPEG format
-	"image/png"
 
 	"github.com/IBM/sarama"
-	"github.com/nfnt/resize"
 	"gopkg.in/yaml.v2"
 )
 
 // HTTP client pool configuration
 const (
-	maxConcurrentDownloads = 50000 // Maximum number of concurrent downloads (ephemeral port limit)
+	maxConcurrentDownloads = 5000 // Reduced from 50000
 	downloadTimeout        = 30 * time.Second
 	benchmarkDuration      = 10 * time.Second
 	metricsInterval        = 5 * time.Second
-	maxIdleConnsPerHost    = 2000
-	maxIdleConns           = 10000
+	maxIdleConnsPerHost    = 1000 // Reduced from 2000
+	maxIdleConns           = 5000 // Reduced from 10000
 	idleConnTimeout        = 90 * time.Second
-	downloadWorkers        = 2000   // Number of download worker goroutines
-	downloadQueueSize      = 100000 // Size of download queue channel
+	downloadWorkers        = 1000  // Reduced from 2000
+	downloadQueueSize      = 10000 // Reduced from 100000
 )
 
 type Config struct {
@@ -49,6 +48,9 @@ type Config struct {
 			Consumer string `yaml:"consumer"`
 			Producer string `yaml:"producer"`
 		} `yaml:"download_images"`
+		UpdateDatabase struct {
+			Consumer string `yaml:"consumer"`
+		} `yaml:"update_database"`
 	} `yaml:"stages"`
 }
 
@@ -63,9 +65,10 @@ type Message struct {
 }
 
 type ProcessedMessage struct {
-	DocID       string `json:"doc_id"`
-	ImageBase64 string `json:"image_base64"`
-	Caption     string `json:"caption"`
+	DocID          string `json:"doc_id"`
+	ImageBase64    string `json:"image_base64,omitempty"`
+	Caption        string `json:"caption,omitempty"`
+	DownloadFailed *bool  `json:"bad_image,omitempty"`
 }
 
 type Metrics struct {
@@ -188,6 +191,7 @@ type downloadTask struct {
 type ConsumerGroupHandler struct {
 	producer      sarama.SyncProducer
 	producerTopic string
+	failedTopic   string
 	partitions    int
 	benchmark     bool
 	startTime     time.Time
@@ -196,10 +200,11 @@ type ConsumerGroupHandler struct {
 	downloadWg    sync.WaitGroup
 }
 
-func NewConsumerGroupHandler(producer sarama.SyncProducer, producerTopic string, partitions int, benchmark bool) *ConsumerGroupHandler {
+func NewConsumerGroupHandler(producer sarama.SyncProducer, producerTopic string, failedTopic string, partitions int, benchmark bool) *ConsumerGroupHandler {
 	h := &ConsumerGroupHandler{
 		producer:      producer,
 		producerTopic: producerTopic,
+		failedTopic:   failedTopic,
 		partitions:    partitions,
 		benchmark:     benchmark,
 		downloadQueue: make(chan downloadTask, downloadQueueSize),
@@ -218,39 +223,37 @@ func (h *ConsumerGroupHandler) downloadWorker() {
 	defer h.downloadWg.Done()
 
 	for task := range h.downloadQueue {
-		// log.Printf("Starting download for URL: %s", task.msg.ImageURL)
+		processed := ProcessedMessage{
+			DocID: task.msg.DocID,
+		}
 
 		imageData, err := downloadImage(task.msg.ImageURL)
 		if err != nil {
 			// log.Printf("Error downloading image: %v", err)
-			continue
+			failed := true
+			processed.DownloadFailed = &failed
+		} else {
+			base64Data := base64.StdEncoding.EncodeToString(imageData)
+			processed.ImageBase64 = base64Data
+			processed.Caption = task.msg.Caption
 		}
 
-		// log.Printf("Successfully downloaded image for URL: %s (size: %d bytes)", task.msg.ImageURL, len(imageData))
-
-		// Encode image to base64
-		base64Data := base64.StdEncoding.EncodeToString(imageData)
-
-		// Prepare processed message
-		processed := ProcessedMessage{
-			DocID:       task.msg.DocID,
-			ImageBase64: base64Data,
-			Caption:     task.msg.Caption,
-		}
-
-		// Serialize processed message
 		value, err := json.Marshal(processed)
 		if err != nil {
-			// log.Printf("Error marshaling processed message: %v", err)
+			log.Printf("Error marshaling processed message: %v", err)
 			continue
 		}
 
-		// Select partition in round-robin fashion
+		// Select topic based on whether the download failed
+		topic := h.producerTopic
+		if processed.DownloadFailed != nil && *processed.DownloadFailed {
+			topic = h.failedTopic
+		}
+
 		partition := int32(partitionCount.Add(1) % uint32(h.partitions))
 
-		// Produce message
 		_, _, err = h.producer.SendMessage(&sarama.ProducerMessage{
-			Topic:     h.producerTopic,
+			Topic:     topic,
 			Value:     sarama.ByteEncoder(value),
 			Partition: partition,
 		})
@@ -333,8 +336,12 @@ func (h *ConsumerGroupHandler) ConsumeClaim(session sarama.ConsumerGroupSession,
 		}:
 		default:
 			// If queue is full, process in current goroutine
-			log.Printf("Warning: Download queue full, processing in consumer goroutine")
-			h.processDownload(msg, session, message)
+			// log.Printf("Warning: Download queue full, processing in consumer goroutine")
+			// h.processDownload(msg, session, message)
+
+			// log.Printf("Warning: Download queue full, skipping the message")
+			session.MarkMessage(message, "")
+			continue
 		}
 	}
 	return nil
@@ -352,9 +359,10 @@ func (h *ConsumerGroupHandler) processDownload(msg Message, session sarama.Consu
 
 	// Prepare processed message
 	processed := ProcessedMessage{
-		DocID:       msg.DocID,
-		ImageBase64: base64Data,
-		Caption:     msg.Caption,
+		DocID:          msg.DocID,
+		ImageBase64:    base64Data,
+		Caption:        msg.Caption,
+		DownloadFailed: nil,
 	}
 
 	// Serialize processed message
@@ -423,31 +431,13 @@ func downloadImage(url string) ([]byte, error) {
 		return nil, fmt.Errorf("invalid image format: %v", err)
 	}
 
-	// Check if resizing is needed
-	bounds := img.Bounds()
-	width := bounds.Dx()
-	height := bounds.Dy()
-
-	if width > 1024 || height > 1024 {
-		// Calculate new dimensions while maintaining aspect ratio
-		var newWidth, newHeight uint
-		if width > height {
-			newWidth = 320
-			newHeight = uint(float64(height) * (320.0 / float64(width)))
-		} else {
-			newHeight = 320
-			newWidth = uint(float64(width) * (320.0 / float64(height)))
-		}
-
-		// Resize the image
-		img = resize.Resize(newWidth, newHeight, img, resize.Lanczos3)
-	}
-
-	// Encode as PNG
+	// Encode as JPEG instead of PNG
 	buf := new(bytes.Buffer)
-	if err := png.Encode(buf, img); err != nil {
+	if err := jpeg.Encode(buf, img, &jpeg.Options{
+		Quality: 85, // Adjust quality (1-100) as needed. 85 is a good balance between quality and size
+	}); err != nil {
 		metrics.RecordFailure()
-		return nil, fmt.Errorf("error encoding to PNG: %v", err)
+		return nil, fmt.Errorf("error encoding to JPEG: %v", err)
 	}
 
 	return buf.Bytes(), nil
@@ -498,10 +488,11 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Create consumer handler
+	// Create consumer handler with the failed topic
 	handler := NewConsumerGroupHandler(
 		producer,
 		config.Stages.DownloadImages.Producer,
+		config.Stages.UpdateDatabase.Consumer,
 		config.KafkaTopics[config.Stages.DownloadImages.Producer].Partitions,
 		*doBenchmark,
 	)
