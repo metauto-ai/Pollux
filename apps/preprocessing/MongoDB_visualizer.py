@@ -7,6 +7,7 @@ from PIL import Image
 import io
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import logging
+import types
 
 logging.basicConfig(
     level=logging.INFO,
@@ -99,15 +100,27 @@ if __name__ == "__main__":
     #     run_name="big35m_new_visualization",
     # )
     visualizer = MongoDBVisualizer(
-        collection_name="pd12m",
-        media_field="s3url",
+        collection_name="diffusion1b-part-00-of-16",
+        media_field="url",
         other_fields=[
-            "caption",
+            "base_model",
         ],
         batch_size=100,
         max_workers=100,
-        run_name="pd12m_visualization",
+        run_name="diffusion_like_count_larger_than_20_visualization",
     )
+
+    def random_sample(self, n):
+        return list(
+            self.collection.aggregate(
+                [
+                    {"$match": {"like_count": {"$gt": 20}}},  # Filter condition
+                    {"$sample": {"size": n}},
+                ]
+            )
+        )
+
+    visualizer.random_sample = types.MethodType(random_sample, visualizer)
     for _ in range(10):
         visualizer.collect()
         visualizer.visualize()
