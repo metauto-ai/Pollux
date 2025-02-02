@@ -43,11 +43,6 @@ pip install torchmetrics
 pip install ultralytics
 ```
 
-* If you need AWS S3 support
-```bash
-pip install s3fs boto3
-```
-
 ## Preliminary Usages
 
 * Before we develop a MongoDB dataloader, we could first use this to remove `.lock` files for HFDataLoader.
