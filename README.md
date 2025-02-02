@@ -15,19 +15,9 @@ conda activate pollux
 
 * Install packages
 ```
-pip install torch==2.5.1 xformers==0.0.28.post2 --index-url https://download.pytorch.org/whl/cu121
+pip install torch==2.5.0 xformers==0.0.28.post2 torchvision==0.20.0 --index-url https://download.pytorch.org/whl/cu121
 pip install ninja
 pip install --requirement requirements.txt
-```
-
-* Additional Package for Pollux
-```bash
-pip install diffusers
-pip install datasets
-pip install torchvision==0.20.1
-pip install wandb
-pip install pymongo
-pip install python-dotenv
 ```
 
 * Installation of COSMOS TVAE
