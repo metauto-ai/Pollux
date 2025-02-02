@@ -19,3 +19,5 @@ datasets
 wandb
 pymongo
 python-dotenv
+s3fs 
+boto3
