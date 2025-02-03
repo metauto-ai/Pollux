@@ -43,6 +43,19 @@ pip install torchmetrics
 pip install ultralytics
 ```
 
+* If you need mongoexport
+```bash
+wget -qO - https://www.mongodb.org/static/pgp/server-6.0.asc | sudo apt-key add -
+echo "deb [ arch=amd64 ] https://repo.mongodb.org/apt/ubuntu focal/mongodb-org/6.0 multiverse" | sudo tee /etc/apt/sources.list.d/mongodb-org-6.0.list
+sudo apt update
+sudo apt install mongodb-database-tools
+# A sample:
+mongoexport --uri="mongodb+srv://nucleusadmin:eMPF9pgRy2UqJW3@nucleus.mongocluster.cosmos.azure.com/?tls=true&authMechanism=SCRAM-SHA-256&retrywrites=false&maxIdleTimeMS=120000" \
+--db=world_model \
+--collection=pexel_images \
+--out=/mnt/pollux/mongo_db_cache/pexel_images.json --jsonArray
+
+```
 ## Preliminary Usages
 
 * Before we develop a MongoDB dataloader, we could first use this to remove `.lock` files for HFDataLoader.
