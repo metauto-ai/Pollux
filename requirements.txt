@@ -21,4 +21,4 @@ pymongo
 python-dotenv
 s3fs 
 boto3
-dotenv
+python-dotenv
