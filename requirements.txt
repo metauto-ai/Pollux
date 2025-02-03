@@ -14,3 +14,11 @@ scipy
 pynvml
 datatrove
 orjson
+diffusers
+datasets
+wandb
+pymongo
+python-dotenv
+s3fs 
+boto3
+python-dotenv

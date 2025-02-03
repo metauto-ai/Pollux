@@ -15,19 +15,9 @@ conda activate pollux
 
 * Install packages
 ```
-pip install torch==2.5.1 xformers==0.0.28.post2 --index-url https://download.pytorch.org/whl/cu121
+pip install torch==2.5.0 xformers==0.0.28.post2 torchvision==0.20.0 --index-url https://download.pytorch.org/whl/cu121
 pip install ninja
 pip install --requirement requirements.txt
-```
-
-* Additional Package for Pollux
-```bash
-pip install diffusers
-pip install datasets
-pip install torchvision==0.20.1
-pip install wandb
-pip install pymongo
-pip install python-dotenv
 ```
 
 * Installation of COSMOS TVAE
@@ -53,11 +43,19 @@ pip install torchmetrics
 pip install ultralytics
 ```
 
-* If you need AWS S3 support
+* If you need mongoexport
 ```bash
-pip install s3fs boto3
-```
+wget -qO - https://www.mongodb.org/static/pgp/server-6.0.asc | sudo apt-key add -
+echo "deb [ arch=amd64 ] https://repo.mongodb.org/apt/ubuntu focal/mongodb-org/6.0 multiverse" | sudo tee /etc/apt/sources.list.d/mongodb-org-6.0.list
+sudo apt update
+sudo apt install mongodb-database-tools
+# A sample:
+mongoexport --uri="mongodb+srv://nucleusadmin:eMPF9pgRy2UqJW3@nucleus.mongocluster.cosmos.azure.com/?tls=true&authMechanism=SCRAM-SHA-256&retrywrites=false&maxIdleTimeMS=120000" \
+--db=world_model \
+--collection=pexel_images \
+--out=/mnt/pollux/mongo_db_cache/pexel_images.json --jsonArray
 
+```
 ## Preliminary Usages
 
 * Before we develop a MongoDB dataloader, we could first use this to remove `.lock` files for HFDataLoader.

@@ -1,20 +1,24 @@
-# python -m apps.main.generate config=apps/main/configs/eval.yaml
-# torchrun --nnodes 1 --nproc-per-node 4 -m apps.main.eval config=apps/main/configs/eval.yaml
+# python -m apps.plan.generate config=apps/plan/configs/eval.yaml
+# torchrun --nnodes 1 --nproc-per-node 4 -m apps.plan.eval config=apps/main/configs/plan.yaml
 name: "debug_evals"
-ckpt_dir:  /jfs/checkpoints/dump/ImageNet_Pollux_v0.6/checkpoints/0000017500
-dump_dir:  /jfs/checkpoints/dump/ImageNet_Pollux_v0.6/checkpoints/0000017500
+ckpt_dir:  /jfs/checkpoints/dump/Pollux_v0.8.3_Local_ImageNet-1k_multimodal_1.4e-4_random_drop_e2e_full_attn/checkpoints/0000460000
+dump_dir:  /jfs/checkpoints/dump/Pollux_v0.8.3_Local_ImageNet-1k_multimodal_1.4e-4_random_drop_e2e_full_attn/checkpoints/0000460000
 sample_num: 100000
 generator:
-  guidance_scale: 5.0
   dtype: bf16
   resolution: 256
-  show_progress: False
-  inference_steps: 50
 
 data:
-    batch_size: 24
+  - stage: test
+    id: 0
+    task: class_to_image
+    data_name: ILSVRC/imagenet-1k
+    source: huggingface
+    batch_size: 16 # 96
     image_size: 256
     num_workers: 8
-    split: 'validation'
-    data_name: 'ILSVRC/imagenet-1k' # 'dummy' 
-    root_dir: '/jfs/data'
+    split: validation
+    root_dir: /jfs/data
+    cache_dir: /jfs/data/imagenet-1k
+    use: True
+    prefetch_factor: 1

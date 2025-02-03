@@ -17,156 +17,34 @@ from lingua.checkpoint import (
     consolidate_checkpoints,
     CONSOLIDATE_FOLDER,
 )
-
+from apps.plan.data import AutoDataLoader, DataArgs
 
 logger = logging.getLogger()
 
 
 @dataclass
 class GeneratorArgs:
-    guidance_scale: float = 2.0
     resolution: int = 256
     in_channel: int = 3
-    show_progress: bool = False
     dtype: Optional[str] = "bf16"
     device: Optional[str] = "cuda"
-    sigma: Optional[float] = None
-    inference_steps: int = 25
 
 
 class LatentGenerator(nn.Module):
     def __init__(self, cfg: GeneratorArgs, model: nn.Module):
         super().__init__()
         self.model = model
-        self.vae_scale_factor = (
-            2 ** (len(self.model.compressor.vae.config.block_out_channels) - 1)
-            if hasattr(self, "vae") and self.vae is not None
-            else 8
-        )
-        self.resolution = cfg.resolution // self.vae_scale_factor
         self.device = cfg.device
-        self.guidance_scale = cfg.guidance_scale
-        self.show_progress = cfg.show_progress
         self.dtype = dict(fp32=torch.float32, bf16=torch.bfloat16)[cfg.dtype]
-        self.in_channel = model.gen_transformer.in_channels
-        self.sigma = cfg.sigma
-        self.scheduler = model.scheduler.scheduler
-        self.num_inference_steps = cfg.inference_steps
-
-    def prepare_latent(self, context, device, dtype):
-        bsz = len(context["caption"])
-        latent_size = (bsz, self.in_channel, self.resolution, self.resolution)
-        latents = randn_tensor(latent_size, device=device, dtype=dtype)
-        return latents
 
     @torch.no_grad()
-    def prepare_negative_context(self, context, device, dtype):
-        bsz = len(context["caption"])
-        context["masked_latent"] = torch.cat(
-            [
-                torch.zeros((bsz, self.in_channel, self.resolution, self.resolution)),
-                torch.ones((bsz, self.in_channel, self.resolution, self.resolution)),
-            ],
-            dim=1,
-        ).to(
-            device=device,
-            dtype=dtype,
-        )
-        context = self.model.cap_neg_tokenize(context)
-        return self.model.plan_transformer(context)
-
-    @torch.no_grad()
-    def prepare_positive_context(self, context, device, dtype):
-        if "image" in context and "mask" in context:
-            image = context["image"]
-            latent_masked_code = self.compressor.encode(image)
-            _, c, h, w = latent_masked_code.size()
-            mask = context["mask"]
-            resized_mask = F.interpolate(mask, size=(h, w), mode="nearest")
-            resized_mask = torch.cat([resized_mask] * c, dim=1)
-            context["masked_latent"] = torch.cat(
-                [latent_masked_code, resized_mask], dim=1
-            ).to(
-                device=device,
-                dtype=dtype,
-            )
-        else:
-            bsz = len(context["caption"])
-            context["masked_latent"] = torch.cat(
-                [
-                    torch.zeros(
-                        (bsz, self.in_channel, self.resolution, self.resolution)
-                    ),
-                    torch.ones(
-                        (bsz, self.in_channel, self.resolution, self.resolution)
-                    ),
-                ],
-                dim=1,
-            ).to(
-                device=device,
-                dtype=dtype,
-            )
-        context = self.model.cap_pos_tokenize(context)
-        return self.model.plan_transformer(context)
-
-    def return_seq_len(self):
-        return (self.resolution // self.model.gen_transformer.patch_size) ** 2
-
-    @torch.no_grad()
-    def forward(self, context: Dict[str, Any]) -> torch.Tensor:
-        assert "caption" in context
+    def forward(self, data: Dict[str, Any]) -> torch.Tensor:
         cur_device = next(self.model.parameters()).device
         cur_type = next(self.model.parameters()).dtype
-        image_seq_len = self.return_seq_len()
-        mu = calculate_shift(
-            image_seq_len,
-            self.scheduler.config.base_image_seq_len,
-            self.scheduler.config.max_image_seq_len,
-            self.scheduler.config.base_shift,
-            self.scheduler.config.max_shift,
-        )
-        sigmas = (
-            np.linspace(1.0, 1 / self.num_inference_steps, self.num_inference_steps)
-            if self.sigma is None
-            else self.sigma
-        )
-        timesteps, _ = retrieve_timesteps(
-            self.scheduler,
-            self.num_inference_steps,
-            cur_device,
-            sigmas=sigmas,
-            mu=mu,
-        )
-        latent = self.prepare_latent(context, device=cur_device, dtype=cur_type)
-        pos_conditional_signal, _ = self.prepare_positive_context(
-            context, device=cur_device, dtype=cur_type
-        )
-        pos_conditional_signal = self.model.token_proj(pos_conditional_signal)
-        negative_conditional_signal, layout = self.prepare_negative_context(
-            context, device=cur_device, dtype=cur_type
-        )
-        negative_conditional_signal = self.model.token_proj(negative_conditional_signal)
-        context = torch.cat([pos_conditional_signal, negative_conditional_signal])
-        for i, t in enumerate(timesteps):
-            latent_model_input = torch.cat([latent] * 2)
-            timestep = t.expand(latent_model_input.shape[0])
-            noise_pred = self.model.gen_transformer(
-                x=latent_model_input,
-                time_steps=timestep,
-                condition=context,
-                layout=layout,
-            )
-            noise_pred_text, noise_pred_uncond = noise_pred.chunk(2)
-            noise_pred = noise_pred_uncond + self.guidance_scale * (
-                noise_pred_text - noise_pred_uncond
-            )
-            latent = self.scheduler.step(noise_pred, t, latent, return_dict=False)[0]
-
-        latent = (
-            latent / self.model.compressor.vae.config.scaling_factor
-        ) + self.model.compressor.vae.config.shift_factor
-        image = self.model.compressor.decode(latent)
-        return image
+        batch, _, _ = self.model.forward(data)
+        batch["pred_img_tensor"] = self.model.tvae.decode(batch["pred_latent"])
+        batch["ori_img_tensor"] = data["image"]
+        return batch
 
 
 def randn_tensor(
@@ -256,6 +134,7 @@ def load_consolidated_model(
 
 def main():
     # Load CLI arguments (overrides) and combine with a YAML config
+
     cfg = OmegaConf.from_cli()
     cfg = OmegaConf.load(cfg.config)
     gen_cfg = dataclass_from_dict(GeneratorArgs, cfg, strict=False)
@@ -266,24 +145,42 @@ def main():
     )
 
     generator = LatentGenerator(gen_cfg, model)
+    active_data = [d for d in cfg.data if d.stage == "test" and d.use]
+    logger.info(f"Actively using dataset: {active_data}")
+    data_loader_factory = AutoDataLoader(
+        shard_id=0,
+        num_shards=1,
+        train_stage="test",
+        # init_signal_handler=get_local_rank() == 0,
+        data_config=active_data,  # Pass the filtered data configuration
+    )
 
-    context = {
-        "caption": [
-            "goldfish, Carassius auratus",
-            "kit fox, Vulpes macrotis",
-            "ice bear, polar bear, Ursus Maritimus, Thalarctos maritimus",
-            "Egyptian cat",
-            "zebra",
-        ]
-    }
+    data_loader, sampler = data_loader_factory.create_dataloader()
+    dataloader_iterator = iter(data_loader)
 
     # Start generation
+    data = next(dataloader_iterator)
+    data["image"] = data["image"].cuda()
+    data["label"] = data["label"].cuda()
     start_time = time.time()
-    samples = generator(context)
+    samples = generator(data)
     end_time = time.time()
 
     # Calculate tokens per second
-    save_image(samples, "sample.png", nrow=3, normalize=True, value_range=(-1, 1))
+    save_image(
+        samples["pred_img_tensor"],
+        "pred_sample.png",
+        nrow=4,
+        normalize=True,
+        value_range=(-1, 1),
+    )
+    save_image(
+        samples["ori_img_tensor"],
+        "raw_sample.png",
+        nrow=4,
+        normalize=True,
+        value_range=(-1, 1),
+    )
     logger.info(f"inference time is {end_time-start_time} seconds")
 
 

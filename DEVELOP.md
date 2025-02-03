@@ -22,11 +22,18 @@ sudo adduser mczhuge
 sudo usermod -aG sudo mczhuge
 ```
 
+### Mount JFS
+
+```bash
+sudo curl -L https://juicefs.com/static/juicefs -o /usr/local/bin/juicefs && sudo chmod +x /usr/local/bin/juicefs && sudo /usr/local/bin/juicefs mount world-model /jfs
+# ef3ae0faf9b984bd8a8350a95ec395590b811514
+```
+
 ### For Conda Installation
 
 ```bash
 su - mczhuge
-udo chmod -R u+w $Pollux
+sudo chmod -R u+w $Pollux
 sudo chown -R mczhuge $Pollux
 ```
 

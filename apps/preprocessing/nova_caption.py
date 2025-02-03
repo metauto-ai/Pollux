@@ -18,7 +18,6 @@ import time
 from botocore.config import Config
 
 
-
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -37,14 +36,13 @@ def filter_image_caption(text):
     return re.sub(pattern, "", text)
 
 
-
 class NovaCaption:
     def __init__(
         self,
         collection_name,
         image_field: str,
         caption_field: str = "nova_lite_caption",
-        maxTokens: int = 200,
+        maxTokens: int = 100,
         topP: float = 0.1,
         temperature: float = 1.0,
         max_workers: int = 32,
@@ -56,9 +54,7 @@ class NovaCaption:
             aws_access_key_id="AKIA47CRZU7STC4XUXER",
             aws_secret_access_key="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",
             region_name="us-east-1",
-
             config=config,
-
         )
         # -------- MongoDB --------
         mongodb_client = MongoClient(MONGODB_URI, tlsCAFile=certifi.where())
@@ -103,11 +99,10 @@ class NovaCaption:
             for future in as_completed(future_to_id):
                 _id = future_to_id[future]
                 try:
-                    response, image_bytes = future.result()
+                    response, image_bytes = future.result(timeout=30)
                 except Exception as e:
                     logging.warning(f"Erros in handling {_id}:{e}")
                 else:
-
 
                     # logging.info(f"\n[Full Response for {_id}]")
                     # logging.info(f"\n[Response Content Text for {_id}]")
@@ -116,12 +111,12 @@ class NovaCaption:
                     # )
                     caption = response["output"]["message"]["content"][0]["text"]
                     caption = filter_image_caption(caption)
-                    self.update_data(_id, caption)
                     if wandb_logger:
                         wandb_logger.add_image(image_bytes, caption)
+                    else:
+                        self.update_data(_id, caption)
             if wandb_logger:
                 wandb_logger.log_images()
-
 
     def read_data_from_mongoDB(self):
         query = {f"{self.caption_field}": {"$exists": False}}
@@ -148,14 +143,24 @@ class NovaCaption:
         resized_image = image.resize((new_width, new_height), Image.Resampling.LANCZOS)
         return resized_image
 
-    def download_image(self, s3url):
-        response = requests.get(s3url)
-        image = Image.open(io.BytesIO(response.content)).convert("RGB")
-        image = self.process_image(image)
-        buffer = io.BytesIO()
-        image.save(buffer, format="JPEG", quality=95)
-        buffer.seek(0)
-        image_bytes = buffer.getvalue()
+    def download_image(self, img_path):
+        if img_path.startswith("s3://") or img_path.startswith("http"):
+            s3url = img_path
+            response = requests.get(s3url)
+            image = Image.open(io.BytesIO(response.content)).convert("RGB")
+            image = self.process_image(image)
+            buffer = io.BytesIO()
+            image.save(buffer, format="JPEG", quality=95)
+            buffer.seek(0)
+            image_bytes = buffer.getvalue()
+        else:
+            with open(img_path, "rb") as f:
+                image = Image.open(f).convert("RGB")
+                image = self.process_image(image)
+                buffer = io.BytesIO()
+                image.save(buffer, format="JPEG", quality=95)
+                buffer.seek(0)
+                image_bytes = buffer.getvalue()
         return image_bytes
 
     def generate_image_caption(self, imagebytes):
@@ -189,7 +194,6 @@ class NovaCaption:
         response = self.generate_image_caption(image_bytes)
         return response, image_bytes
 
-
     def update_data(self, _id, caption):
         query = {"_id": _id}
         update = {"$set": {f"{self.caption_field}": caption}}
@@ -197,12 +201,11 @@ class NovaCaption:
 
 
 if __name__ == "__main__":
-    batch_size = 200
+    batch_size = 100
     max_samples_per_min = 500
     nova_caption = NovaCaption(
-        collection_name="unsplash_images",
-
-        image_field="s3url",
+        collection_name="leonardo",
+        image_field="azure_url",
         caption_field="nova_lite_caption",
         maxTokens=150,
         topP=0.1,
@@ -210,19 +213,24 @@ if __name__ == "__main__":
         max_workers=batch_size,
         batch_size=batch_size,
     )
+    # from apps.preprocessing.wandb_img import WandBLogger
+
+    # wandb_logger = WandBLogger(
+    #     project="pollux", run_name="nova_caption_pexel", entity="metauto"
+    # )
     start_time = time.time()
     processed_samples = 0
     total_samples = 0
     while True:
         nova_caption.run()
+
         elapsed_time = time.time() - start_time
         processed_samples += batch_size
         total_samples += batch_size
-        # if processed_samples >= max_samples_per_min:
-        #     if elapsed_time < 60:
-        #         logging.info(f"Sleeping for {60 - elapsed_time} seconds")
-        #         time.sleep(60 - elapsed_time)
-        #     start_time = time.time()
-        #     processed_samples = 0
-        logging.info(f"Total samples processed: {total_samples}")
-
+        if processed_samples >= max_samples_per_min:
+            if elapsed_time < 60:
+                logging.warning(f"Sleeping for {60 - elapsed_time} seconds")
+                time.sleep(60 - elapsed_time)
+            start_time = time.time()
+            processed_samples = 0
+        logging.warning(f"Total samples processed: {total_samples}")
