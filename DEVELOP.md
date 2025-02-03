@@ -26,7 +26,7 @@ sudo usermod -aG sudo mczhuge
 
 ```bash
 su - mczhuge
-udo chmod -R u+w $Pollux
+sudo chmod -R u+w $Pollux
 sudo chown -R mczhuge $Pollux
 ```
 
