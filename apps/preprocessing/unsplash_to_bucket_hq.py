@@ -6,10 +6,10 @@
 # --db=world_model \
 # --collection=unsplash_images \
 # --out=/mnt/pollux/mongo_db_cache/unsplash_images.json --jsonArray
-# mongoimport --uri="mongodb+srv://nucleusadmin:eMPF9pgRy2UqJW3@nucleus.mongocluster.cosmos.azure.com/?tls=true&authMechanism=SCRAM-SHA-256&retrywrites=false&maxIdleTimeMS=120000" \
+# mongoimport --uri="mongodb+srv://nucleusadmin:eMPF9pgRy2UqJW3@imagedata.global.mongocluster.cosmos.azure.com/?tls=true&authMechanism=SCRAM-SHA-256&retrywrites=false&maxIdleTimeMS=120000" \
 # --db=world_model \
 # --collection=bucket-hq \
-# --file=/mnt/pollux/mongo_db_cache/pexel_images_processed.json --jsonArray
+# --file=/mnt/pollux/mongo_db_cache/unsplash_images_processed.json --jsonArray
 
 import json
 import requests
@@ -22,7 +22,7 @@ from tqdm_joblib import tqdm_joblib
 from pymongo import MongoClient
 from bson import ObjectId
 
-file_path = "/mnt/pollux/mongo_db_cache/pexel_images.json"
+file_path = "/mnt/pollux/mongo_db_cache/unsplash_images.json"
 
 
 def update_doc(doc):
@@ -39,59 +39,35 @@ def update_doc(doc):
                 doc_return["caption"] = value
             if key == "partition_key":
                 doc_return["partition_key"] = value
-            if key == "url":
-                doc_return["media"] = value
-                response = requests.get(value)
-                image = Image.open(io.BytesIO(response.content)).convert("RGB")
-                width, height = image.size
-                doc_return["width"] = width
-                doc_return["height"] = height
-        doc_return["source"] = "pexel_images"
+            if key == "s3url":
+                doc_return["media_path"] = value
+            if key == "width":
+                doc_return["width"] = value
+            if key == "height":
+                doc_return["height"] = value
+        doc_return["source"] = "unsplash_images"
         return doc_return
     except Exception as e:
         print(f"Error processing element {doc['_id']}: {e}")
         return None  # Return None or some default value in case of error
 
 
-URI = "mongodb+srv://nucleusadmin:eMPF9pgRy2UqJW3@nucleus.mongocluster.cosmos.azure.com/?tls=true&authMechanism=SCRAM-SHA-256&retrywrites=false&maxIdleTimeMS=120000"
-mongodb_client = MongoClient(URI)
-db = mongodb_client["world_model"]
-collection = db["pexel_images"]
-
-
-def submit_doc(doc):
-    update_data = {}
-    if "nova_lite_caption" not in doc:
-        return 0
-    if "partition_key" not in doc:
-        partition_key = random.randint(0, 10000)
-        update_data = {"partition_key": partition_key}
-    try:
-        response = requests.get(doc["url"])
-        image = Image.open(io.BytesIO(response.content)).convert("RGB")
-        width, height = image.size
-        update_data["width"] = width
-        update_data["height"] = height
-
-        update_query = {"$set": update_data}
-        filter_query = {"_id": ObjectId(doc["_id"]["$oid"])}
-        collection.update_one(filter_query, update_query)
-        return 1
-    except Exception as e:
-        print(f"Error processing element {doc['_id']}: {e}")
-        return 0  # Return None or some default value in case of error
+# URI = "mongodb+srv://nucleusadmin:eMPF9pgRy2UqJW3@nucleus.mongocluster.cosmos.azure.com/?tls=true&authMechanism=SCRAM-SHA-256&retrywrites=false&maxIdleTimeMS=120000"
+# mongodb_client = MongoClient(URI)
+# db = mongodb_client["world_model"]
+# collection = db["pexel_images"]
 
 
 with open(file_path, "r", encoding="utf-8") as f:
     data = json.load(f)  # Load JSON array
-    with tqdm_joblib(tqdm(desc="Processing", total=len(data))):
-        with parallel_backend("threading"):
-            processed_results = Parallel(n_jobs=32)(
-                delayed(submit_doc)(el) for el in data
-            )
+process_res = []
+for doc in tqdm(data):
+    doc = update_doc(doc)
+    if doc != None:
+        process_res.append(doc)
     # processed_results = [res for res in processed_results if res is not None]
-    # with open(
-    #     "/mnt/pollux/mongo_db_cache/pexel_images_processed.json", "w", encoding="utf-8"
-    # ) as f:
-    #     json.dump(processed_results, f, indent=4)
+with open(
+    "/mnt/pollux/mongo_db_cache/unsplash_images_processed.json", "w", encoding="utf-8"
+) as f:
+    json.dump(process_res, f, indent=4)
 print("Processing finished")
