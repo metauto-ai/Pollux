@@ -53,8 +53,9 @@ def update_doc(doc):
 
 with open(file_path, "r", encoding="utf-8") as f:
     data = json.load(f)  # Load JSON array
+
     with tqdm_joblib(tqdm(desc="Processing", total=len(data))):
-        processed_results = Parallel(n_jobs=64)(delayed(update_doc)(el) for el in data)
+        processed_results = Parallel(n_jobs=32)(delayed(update_doc)(el) for el in data)
     processed_results = [res for res in processed_results if res is not None]
     with open(
         "/mnt/pollux/mongo_db_cache/pexel_images_processed.json", "w", encoding="utf-8"
