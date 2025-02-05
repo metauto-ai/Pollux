@@ -1,27 +1,27 @@
 # CUDA_VISIBLE_DEVICES=4,5,6,7 torchrun --nnodes 1 --nproc-per-node 4 --rdzv_endpoint=localhost:29400 -m apps.offline_inf.inference config=apps/offline_inf/configs/inference.yaml
 name: "inference"
 stage: inference # preliminary for test normal usage: inference 
-dump_dir:  /jfs/data/cc12m_r256_l3b128_s3/ # change dir
-s3_path: s3://t2i-parquet/cc12m_r256_l3b128_s3/ # change dir
+dump_dir: "/mnt/pollux/parquet_cache_0/bucket-hq" # change dir
+# s3://t2i-parquet/cc12m_r256_l3b128_s3/ # Not use s3
 parque_size: 1024
 prefix_mapping:
+  "caption": "caption"
   "text_embedding": "LLAMA3_3B_text_embedding"
-  "latent_code": "HunyuanVideo_latent_code"
-
+  "gen_latent_code": "HunyuanVideo_latent_code"
+  "plan_latent_code": "Cosmos_latent_code"
+  "plan_latent_code_indices": "Cosmos_latent_code_indices"
 source_data:
   - stage: inference
     id: 1
-    data_name: cc12m
+    data_name: bucket-256-1
     task: text_to_image
     source: mongodb
     image_size: 256
-    partition_key: 'key'
+    partition_key: 'partition_key'
     retries: 3
     extract_field:
-        "s3url": "image"
+        "media_path": "image"
     use: true
-    query:
-        aesthetic_score: {"$exists": True, "$gt": 6.5}
     dataloader:
         prefetch_factor: 2
         batch_size: 64
@@ -32,12 +32,18 @@ source_data:
         drop_last: False
 
 model:
-    vae:
+    gen_vae:
         model_name: Hunyuan
         pretrained_model_name_or_path: '/jfs/checkpoints/models--tencent--HunyuanVideo/snapshots/2a15b5574ee77888e51ae6f593b2ceed8ce813e5/vae'
-        enable_tiling: true
-        enable_slicing: true
-    plan_transformer:
+        enable_tiling: false
+        enable_slicing: false
+    plan_vae:
+        model_name: "COSMOS-DV"
+        pretrained_model_name_or_path: '/jfs/checkpoints/cosmos/Cosmos-Tokenizer-DV8x16x16'
+        model_dtype: bfloat16 # should be consistent with distributed.model_dtype
+        enable_tiling: false
+        enable_slicing: false    
+    text_encoder:
         dim: 3072
         ffn_dim_multiplier: 1.0
         multiple_of: 256
