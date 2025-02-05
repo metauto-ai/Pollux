@@ -16,7 +16,7 @@ import uuid
 import re
 import time
 from botocore.config import Config
-
+import types
 
 logging.basicConfig(
     level=logging.INFO,
@@ -204,14 +204,27 @@ if __name__ == "__main__":
     batch_size = 100
     max_samples_per_min = 500
     nova_caption = NovaCaption(
-        collection_name="leonardo",
-        image_field="azure_url",
+        collection_name="flickr-part-02-of-08",
+        image_field="AZURE_URL",
         caption_field="nova_lite_caption",
         maxTokens=150,
         topP=0.1,
         temperature=1.0,
         max_workers=batch_size,
         batch_size=batch_size,
+    )
+
+    def read_data_from_mongoDB(self):
+        query = {
+            f"{self.caption_field}": {"$exists": False},
+            "AZURE_URL": {"$exists": True},
+            "aesthetic_score": {"$gt": 6.8},
+        }
+        cursor = self.collection.find(query).limit(self.batch_size)
+        return list(cursor)
+
+    nova_caption.read_data_from_mongoDB = types.MethodType(
+        read_data_from_mongoDB, nova_caption
     )
     # from apps.preprocessing.wandb_img import WandBLogger
 
