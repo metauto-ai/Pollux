@@ -399,7 +399,7 @@ def train(args: TrainArgs):
             end_timer = torch.cuda.Event(enable_timing=True)
             start_timer.record()
 
-            batch, loss, accuracy = model(batch)
+            batch, loss, image_mask_accuracy, text_mask_accuracy = model(batch)
             # We scale loss with grad_acc_steps so the gradient is the same
             # regardless of grad_acc_steps
             loss = loss / args.grad_acc_steps
@@ -480,7 +480,8 @@ def train(args: TrainArgs):
                         },
                         "metrics": {
                             "loss": loss.item(),
-                            "accuracy": accuracy, 
+                            "image_mask_accuracy": image_mask_accuracy,
+                            "text_mask_accuracy": text_mask_accuracy,
                         },
                         "memory": gpu_mem_stats._asdict(),
                     },
@@ -502,7 +503,8 @@ def train(args: TrainArgs):
                     f"  acc: {train_state.acc_step}"
                     f"  loss: {round(loss.item(),4):>7}"
                     f"  grad: {grad_norm:.2e}"
-                    f"  mask_accuracy: {accuracy * 100:.2f}%"
+                    f"  image_mask_accuracy: {image_mask_accuracy * 100:.2f}%"
+                    f"  text_mask_accuracy: {text_mask_accuracy * 100:.2f}%"
                     # f"  flops: {FLOPS:.2e}"
                     f"  wps: {wps:.2e}"
                     f"  iter: {curr_iter_time:>7}"

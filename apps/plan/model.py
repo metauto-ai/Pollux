@@ -368,14 +368,36 @@ class Pollux(nn.Module):
         text_input_ids = tokenizer_output["input_ids"].to(vae_embs.device)  # [B, L]
         text_embs = self.llm.tok_embeddings(text_input_ids)  # [B, L, D]
 
+        # apply masking to captions
+        text_mask = torch.ones_like(text_input_ids, device=vae_embs.device)
+        text_len = text_input_ids.size(1)
+        text_keep = int(text_len * (1 - self.args.random_rate))
+        text_noise = torch.rand(B, text_len, device=vae_embs.device)
+        text_ids_shuffle = torch.argsort(text_noise, dim=1)
+        text_ids_restore = torch.argsort(text_ids_shuffle, dim=1)
+        text_ids_keep = text_ids_shuffle[:, :text_keep]
+        text_ids_mask = text_ids_shuffle[:, text_keep:]
+
+        text_embs_keep = torch.gather(
+            text_embs, 1, text_ids_keep.unsqueeze(-1).expand(-1, -1, text_embs.size(-1))
+        )
+        text_embs_pad = self.mask_token.expand(B, text_len - text_keep, self.dim)
+
+        text_mask[:, :text_keep] = 0
+        text_mask = torch.gather(text_mask, dim=1, index=text_ids_restore)
+
+        text_embs = torch.cat([text_embs_keep, text_embs_pad], dim=1)
+
         # Concat
         boi_emb = self.vision_boi_emb.unsqueeze(0).expand(vae_embs.size(0), -1, -1)
+        # eoi_emb = self.vision_eoi_emb.unsqueeze(0).expand(vae_embs.size(0), -1, -1)
         mm_embs = torch.cat(
             [
                 text_embs,
                 cls_emb,
                 boi_emb,
                 vae_embs,
+                # eoi_emb,
             ],
             dim=1,
         )
@@ -393,6 +415,7 @@ class Pollux(nn.Module):
         # Latent Head
         latent_hidden = h[:, vae_start_idx : vae_start_idx + vae_embs.size(1), :]
         pred_latent = self.latent_head(self.norm(latent_hidden))  # [B,M,D]
+        # pred_latent = self.unpatchify_image(pred_latent, H_, W_)
 
         # restore the order of the latent codes
         pred_latent = torch.gather(
@@ -401,38 +424,55 @@ class Pollux(nn.Module):
             index=ids_restore.unsqueeze(-1).repeat(1, 1, pred_latent.shape[2]),
         )
 
-        # compute loss for VAE
+        # vae_embs [16, 256, 3072]
+        # freq_cis_img [256, 64, 2, 2]
+        # vae_indices.shape [16, 1, 16, 16]
+        # vae_latent.shape [16, 1, 16, 16, 8]
+        # ids_mask.shape [16, 52]
+        # prede_latent.shape [16, 256, 64000]
+
+        # compute loss
+        # pred_loss = F.mse_loss(pred_latent, vae_latent.squeeze(2))
+        # TODO: either next-token-prediction or reconstruction token prediction
         vae_indices = vae_indices.squeeze(1).flatten(1).long()  # [B, H/16*W/16]
+        # vae_indices.shape [16, 1, 16, 16] -> [16, 256]
+        # pred_loss = F.cross_entropy(pred_latent[:, :-1].permute(0, 2, 1), vae_indices[:, 1:])
+
+        mask_pred = pred_latent[:, :][img_mask[:, :] == 1]  # [num_masked, D]
+        mask_target = vae_indices[:, :][img_mask[:, :] == 1]  # [num_masked]
+        # mask_pred.shape [816, 64000]
+        # mask_target.shape [832]
+
+        image_mask_accuracy = (
+            (mask_pred.argmax(-1) == mask_target).float().mean().cpu().item()
+        )
+
+        # Compute cross-entropy loss for masked captions
+        text_mask_pred = text_embs[:, :][text_mask[:, :] == 1]  # [num_masked, D]
+        text_mask_target = text_input_ids[:, :][text_mask[:, :] == 1]  # [num_masked]
+        text_mask_accuracy = (
+            (text_mask_pred.argmax(-1) == text_mask_target).float().mean().cpu().item()
+        )
+
         pred_loss = cross_entropy(
             pred_latent[:, :].flatten(0, 1),
             vae_indices[:, :].flatten(0, 1),
             reduction="mean",
+        ) + cross_entropy(
+            text_embs[:, :].flatten(0, 1),
+            text_input_ids[:, :].flatten(0, 1),
+            reduction="mean",
         )
 
-        # compute loss for captions
-        caption_loss = F.cross_entropy(
-            h[:, :text_embs.size(1), :].reshape(-1, self.dim),
-            text_input_ids[:, 1:].reshape(-1),
-            ignore_index=self.llm_tokenizer.pad_token_id,
-        )
+        # accuracy = (pred_latent[:, :-1].argmax(-1) == vae_indices[:, 1:]).float().mean()
+        batch["image_mask_accuracy"] = image_mask_accuracy
+        batch["text_mask_accuracy"] = text_mask_accuracy
 
-        # Combine losses
-        total_loss = pred_loss + caption_loss
-
-        # Accuracy for masked predictions
-        mask_pred = pred_latent[:, :][img_mask[:, :] == 1]  # [num_masked, D]
-        mask_target = vae_indices[:, :][img_mask[:, :] == 1]  # [num_masked]
-        mask_accuracy = (
-            (mask_pred.argmax(-1) == mask_target).float().mean().cpu().item()
-        )
-
-        batch["accuracy"] = mask_accuracy
         batch["latent_target"] = vae_indices.view(vae_indices_size)
         batch["pred_latent"] = (
             torch.argmax(pred_latent, dim=-1).unsqueeze(1).view(vae_indices_size)
         )
-        batch["caption_loss"] = caption_loss  # Add caption loss to the batch
-        return batch, total_loss, mask_accuracy
+        return batch, pred_loss, image_mask_accuracy, text_mask_accuracy
 
     def set_train(self):
         self.latent_projector.train()
@@ -468,6 +508,29 @@ def build_fsdp_grouping_plan(model_args: ModelArgs, model: nn.Module):
         group_plan.append((f"llm.layers.{i}", False))
 
     group_plan.append(("latent_head", True))
+
+    # llama_model = getattr(model, "llm", None)
+    # if llama_model and hasattr(llama_model, "model"):
+    #     logger.info("LlamaForCausalLM has `model` attribute. Building group plan...")
+    #     for idx, block in enumerate(llama_model.model.layers):
+    #         group_plan.append((f"llm.model.layers.{idx}", False))
+
+    # NOTE: Hunyuan
+    # vae_encoder = getattr(model.vae.vae.encoder, "down_blocks", None)
+    # if vae_encoder:
+    #     for i in range(len(vae_encoder)):
+    #         group_plan.append((f"vae.vae.encoder.down_blocks.{i}", False))
+    # else:
+    #     logger.warning("VAE encoder does not have `down_blocks` attribute.")
+    # COSMOS
+    # vae_encoder = getattr(model.vae.vae.vae._enc_model, "encoder", None)
+    # if vae_encoder and hasattr(vae_encoder, "down"):
+    #     for i in range(len(vae_encoder.down)):
+    #         group_plan.append((f"vae.vae.vae._enc_model.encoder.down.{i}", False))
+    # elif vae_encoder and hasattr(vae_encoder, "mid"):
+    #     group_plan.append((f"vae.vae.vae._enc_model.encoder.mid.block_1", False))
+    #     group_plan.append((f"vae.vae.vae._enc_model.encoder.mid.attn_1", False))
+    #     group_plan.append((f"vae.vae.vae._enc_model.encoder.mid.block_2", False))
 
     logger.info(f"The `group_plan` for FSDP (layer-level granularity):\n{group_plan}")
     return group_plan
