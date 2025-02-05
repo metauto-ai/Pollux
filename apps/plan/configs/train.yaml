@@ -10,14 +10,14 @@ version: v0.8.3
 # From now on, start to align train, data, and model setting with train stage (just finish refactor for dara)
 train_stage: preliminary # options: preliminary, pretraining, posttraining; aligned with data setting
 
-name: Pollux_v0.8.3_Local_ImageNet-1k_multimodal_1e-3_random_drop_e2e_causal
+name: Pollux_v0.8.3_Local_ImageNet-1k_multimodal_1e-3_random_drop_e2e_causal_mctest1
 
 output_dir: /jfs/checkpoints/dump
 dump_dir: '' # No need now
 steps: 1000000
 seed: 777
 optim:
-    lr: 1.0e-3
+    lr: 1.4e-4
     weight_decay: 0.1
     warmup: 2000
     lr_min_ratio: 0.000001
