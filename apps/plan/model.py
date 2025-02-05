@@ -198,15 +198,24 @@ class Pollux(nn.Module):
             max_seqlen=args.llm.gen_seqlen,
         )
 
+        self.llm = LlamaTransformer(args.llm)
+        self.llm.init_weights(args.llm.pre_trained_path)
+
         # llama model
         self.llm_tokenizer = LlamaTokenizerFast.from_pretrained(
             args.tokenizer.model_name
         )
         if self.llm_tokenizer.pad_token is None:
             self.llm_tokenizer.pad_token = self.llm_tokenizer.eos_token
-
-        self.llm = LlamaTransformer(args.llm)
-        self.llm.init_weights(args.llm.pre_trained_path)
+        # Add mask token for MLM task
+        if self.llm_tokenizer.mask_token is None:
+            self.llm_tokenizer.add_special_tokens({'mask_token': '[MASK]'})
+            # Resize token embeddings to account for new special token
+            self.llm.tok_embeddings = nn.Embedding(
+                len(self.llm_tokenizer), 
+                args.llm.dim, 
+                padding_idx=self.llm_tokenizer.pad_token_id
+            )
 
         # head
         self.dim = args.llm.dim
@@ -258,13 +267,13 @@ class Pollux(nn.Module):
         x = x.permute(0, 5, 1, 3, 2, 4).flatten(4, 5).flatten(2, 3)  # [B,16,H/8,W/8]
         return x
 
-    def process_mask(
+    def process_image_mask(
         self,
         images_embs: torch.Tensor,
         freqs_cis_img: torch.Tensor,
         mask_strategy: str,
         random_rate: float = 0.15,
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Generates attention masks, masked indices, and reordered embeddings.
         """
@@ -322,12 +331,46 @@ class Pollux(nn.Module):
 
         return images_embs, freqs_cis_img, ids_restore, img_mask
 
+    def process_text_mask(
+        self,
+        text_input_ids: torch.Tensor,
+        text_embs: torch.Tensor,
+        random_rate: float = 0.15,
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """
+        Generates masked text embeddings similar to BERT-style masking.
+        """
+        device = text_embs.device
+        B, L, D = text_embs.shape
+        
+        # Create mask indices
+        probability_matrix = torch.full((B, L), random_rate, device=device)
+        # Don't mask special tokens
+        special_tokens_mask = torch.full((B, L), False, device=device)
+        for special_token_id in [self.llm_tokenizer.pad_token_id, self.llm_tokenizer.bos_token_id, self.llm_tokenizer.eos_token_id]:
+            special_tokens_mask |= (text_input_ids == special_token_id)
+        probability_matrix.masked_fill_(special_tokens_mask, value=0.0)
+        
+        # Create masks
+        text_mask = torch.bernoulli(probability_matrix).bool()
+        
+        # Store original tokens for loss calculation
+        labels = text_input_ids.clone()
+        # Mask tokens with [MASK] token id
+        masked_input_ids = text_input_ids.clone()
+        masked_input_ids[text_mask] = self.llm_tokenizer.mask_token_id
+        
+        # Get new embeddings
+        masked_text_embs = self.llm.tok_embeddings(masked_input_ids)
+        
+        return masked_text_embs, text_mask, labels
+
     def forward(
         self,
         batch: dict[str, any],
         mask_strategy: str = "random_mask",
         attn_impl: str = "sdpa",
-    ) -> Tuple[dict[str, any], torch.Tensor]:
+    ) -> Tuple[dict[str, any], torch.Tensor, float, float]:
 
         images = batch["image"]
         labels = batch["label"]
@@ -351,7 +394,7 @@ class Pollux(nn.Module):
         if self.args.random_rate is None:
             self.args.random_rate = random.random()
 
-        vae_embs, freqs_cis_img, ids_restore, img_mask = self.process_mask(
+        vae_embs, freqs_cis_img, ids_restore, img_mask = self.process_image_mask(
             vae_embs,
             freqs_cis_img,
             mask_strategy=mask_strategy,
@@ -367,26 +410,15 @@ class Pollux(nn.Module):
         )
         text_input_ids = tokenizer_output["input_ids"].to(vae_embs.device)  # [B, L]
         text_embs = self.llm.tok_embeddings(text_input_ids)  # [B, L, D]
+        # attn_mask = tokenizer_output["attention_mask"].to(vae_embs.device)  # [B, L]
+        # attn_mask: left padding, invalid is 0, valid is 1. we do not need it now.
 
-        # apply masking to captions
-        text_mask = torch.ones_like(text_input_ids, device=vae_embs.device)
-        text_len = text_input_ids.size(1)
-        text_keep = int(text_len * (1 - self.args.random_rate))
-        text_noise = torch.rand(B, text_len, device=vae_embs.device)
-        text_ids_shuffle = torch.argsort(text_noise, dim=1)
-        text_ids_restore = torch.argsort(text_ids_shuffle, dim=1)
-        text_ids_keep = text_ids_shuffle[:, :text_keep]
-        text_ids_mask = text_ids_shuffle[:, text_keep:]
-
-        text_embs_keep = torch.gather(
-            text_embs, 1, text_ids_keep.unsqueeze(-1).expand(-1, -1, text_embs.size(-1))
+        # Text Masking
+        text_embs, text_mask, text_labels = self.process_text_mask(
+            text_input_ids, 
+            text_embs,
+            random_rate=self.args.random_rate
         )
-        text_embs_pad = self.mask_token.expand(B, text_len - text_keep, self.dim)
-
-        text_mask[:, :text_keep] = 0
-        text_mask = torch.gather(text_mask, dim=1, index=text_ids_restore)
-
-        text_embs = torch.cat([text_embs_keep, text_embs_pad], dim=1)
 
         # Concat
         boi_emb = self.vision_boi_emb.unsqueeze(0).expand(vae_embs.size(0), -1, -1)
@@ -412,12 +444,16 @@ class Pollux(nn.Module):
         # LLM Forward
         h = self.llm(mm_embs, freqs_cis, attn_impl=attn_impl)
 
-        # Latent Head
-        latent_hidden = h[:, vae_start_idx : vae_start_idx + vae_embs.size(1), :]
-        pred_latent = self.latent_head(self.norm(latent_hidden))  # [B,M,D]
-        # pred_latent = self.unpatchify_image(pred_latent, H_, W_)
+        # Split predictions for image and text
+        text_hidden = h[:, :text_embs.size(1), :]
+        latent_hidden = h[:, vae_start_idx:vae_start_idx + vae_embs.size(1), :]
 
-        # restore the order of the latent codes
+        # Text predictions
+        text_logits = self.llm.tok_embeddings.weight @ self.norm(text_hidden).transpose(1, 2)
+        text_logits = text_logits.transpose(1, 2)  # [B, L, vocab_size]
+
+        # Image predictions
+        pred_latent = self.latent_head(self.norm(latent_hidden))
         pred_latent = torch.gather(
             pred_latent,
             dim=1,
@@ -431,48 +467,34 @@ class Pollux(nn.Module):
         # ids_mask.shape [16, 52]
         # prede_latent.shape [16, 256, 64000]
 
-        # compute loss
-        # pred_loss = F.mse_loss(pred_latent, vae_latent.squeeze(2))
-        # TODO: either next-token-prediction or reconstruction token prediction
-        vae_indices = vae_indices.squeeze(1).flatten(1).long()  # [B, H/16*W/16]
-        # vae_indices.shape [16, 1, 16, 16] -> [16, 256]
-        # pred_loss = F.cross_entropy(pred_latent[:, :-1].permute(0, 2, 1), vae_indices[:, 1:])
 
-        mask_pred = pred_latent[:, :][img_mask[:, :] == 1]  # [num_masked, D]
-        mask_target = vae_indices[:, :][img_mask[:, :] == 1]  # [num_masked]
-        # mask_pred.shape [816, 64000]
-        # mask_target.shape [832]
+        # Calculate separate losses
+        # Text loss
+        text_pred = text_logits[text_mask]
+        text_target = text_labels[text_mask].long()
+        text_loss = cross_entropy(text_pred, text_target, reduction="mean")
+        text_accuracy = (text_pred.argmax(-1) == text_target).float().mean().cpu().item()
 
-        image_mask_accuracy = (
-            (mask_pred.argmax(-1) == mask_target).float().mean().cpu().item()
-        )
+        # Image loss
+        mask_pred = pred_latent[img_mask == 1]
+        mask_target = vae_indices.flatten(1)[:, :][img_mask == 1].long()
+        image_loss = cross_entropy(mask_pred, mask_target, reduction="mean")
+        image_accuracy = (mask_pred.argmax(-1) == mask_target).float().mean().cpu().item()
 
-        # Compute cross-entropy loss for masked captions
-        text_mask_pred = text_embs[:, :][text_mask[:, :] == 1]  # [num_masked, D]
-        text_mask_target = text_input_ids[:, :][text_mask[:, :] == 1]  # [num_masked]
-        text_mask_accuracy = (
-            (text_mask_pred.argmax(-1) == text_mask_target).float().mean().cpu().item()
-        )
+        # Combined loss (you can adjust weights if needed)
+        total_loss = image_loss + text_loss
 
-        pred_loss = cross_entropy(
-            pred_latent[:, :].flatten(0, 1),
-            vae_indices[:, :].flatten(0, 1),
-            reduction="mean",
-        ) + cross_entropy(
-            text_embs[:, :].flatten(0, 1),
-            text_input_ids[:, :].flatten(0, 1),
-            reduction="mean",
-        )
+        # Update batch with metrics
+        batch.update({
+            "text_accuracy": text_accuracy,
+            "image_accuracy": image_accuracy,
+            "text_loss": text_loss.item(),
+            "image_loss": image_loss.item(),
+            "latent_target": vae_indices.view(vae_indices_size),
+            "pred_latent": torch.argmax(pred_latent, dim=-1).unsqueeze(1).view(vae_indices_size)
+        })
 
-        # accuracy = (pred_latent[:, :-1].argmax(-1) == vae_indices[:, 1:]).float().mean()
-        batch["image_mask_accuracy"] = image_mask_accuracy
-        batch["text_mask_accuracy"] = text_mask_accuracy
-
-        batch["latent_target"] = vae_indices.view(vae_indices_size)
-        batch["pred_latent"] = (
-            torch.argmax(pred_latent, dim=-1).unsqueeze(1).view(vae_indices_size)
-        )
-        return batch, pred_loss, image_mask_accuracy, text_mask_accuracy
+        return batch, total_loss, image_accuracy, text_accuracy
 
     def set_train(self):
         self.latent_projector.train()
