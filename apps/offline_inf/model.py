@@ -165,9 +165,16 @@ class OfflineInference(nn.Module):
         self.plan_compressor = build_vae(args.plan_vae)
 
     def cap_pos_tokenize(self, batch: dict[str:any]) -> dict[str:any]:
-        batch["cap_token"] = [
-            self.tokenizer.encode(x, bos=True, eos=False) for x in batch["caption"]
-        ]
+        batch["cap_token"] = []
+        for x in batch["caption"]:
+            if not isinstance(x, str):
+                logger.warning(f"Expected string but got {type(x)}: {x}")
+                batch["cap_token"].append(
+                    self.tokenizer.encode("", bos=True, eos=False)
+                )
+            else:
+                batch["cap_token"].append(self.tokenizer.encode(x, bos=True, eos=False))
+
         pad_id = self.tokenizer.pad_id
         bsz = len(batch["cap_token"])
         tokens = torch.full(
