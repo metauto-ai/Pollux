@@ -249,7 +249,7 @@ def save_parquet(
     parquet_path = os.path.join(output_dir, f"{prefix}.parquet")
 
     # Save the table as a Parquet file
-    df.to_parquet(parquet_path, engine="pyarrow", index=False)
+    df.to_parquet(parquet_path, engine="pyarrow", compression="snappy", index=False)
 
     save_time = time.time() - start_time
     if save_meter:
@@ -283,14 +283,8 @@ def upload_parquet(
     return parquet_path
 
 
-if __name__ == "__main__":
-    data = {"column1": [1, 2, 3], "column2": ["a", "b", "c"]}
-    upload_parquet(data, output_dir="s3://haozhe/test", prefix="test_data")
-    df = pd.read_parquet(
-        "s3://haozhe/test/test_data.parquet",
-        storage_options={
-            "key": "AKIA47CRZU7STC4XUXER",
-            "secret": "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",
-        },
-    )
-    print(df.head())
+# if __name__ == "__main__":
+#     df = pd.read_parquet(
+#         "/mnt/pollux/parquet_cache_0/bucket-hq/4_3_4.parquet",
+#     )
+#     print(df.shape[0])

@@ -32,6 +32,7 @@ logging.getLogger("pymongo").setLevel(logging.WARNING)
 boto3.set_stream_logger("boto3", level=logging.WARNING)
 boto3.set_stream_logger("botocore", level=logging.WARNING)
 logging.getLogger("s3fs").setLevel(logging.WARNING)
+Image.MAX_IMAGE_PIXELS = None
 
 load_dotenv()
 # Iniitialize
@@ -178,7 +179,7 @@ class MongoDBImageNetDataLoad(MongoDBDataLoad):
         }
 
 
-class MongoDBCC12MDataLoad(MongoDBDataLoad):
+class MongoDBImageDataLoad(MongoDBDataLoad):
     def __init__(
         self,
         num_shards,

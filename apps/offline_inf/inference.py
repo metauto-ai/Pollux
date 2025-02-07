@@ -56,7 +56,6 @@ class InferenceArgs:
     parque_size: int = 32768  # Number of samples to save in a single parquet file
     # * whether do profiling
     profile: Optional[bool] = False
-    s3_path: Optional[str] = None  # note the path should without the final '/'
     max_save_attempt: int = 3  # max number of attempts to save a parquet file
     delay: int = 5  # seconds
 
@@ -76,9 +75,9 @@ def launch_inference(cfg: InferenceArgs):
     model = OfflineInference(cfg.model)
     model.init_weights(cfg.model)
     logger.info("Model loaded")
-    is_s3 = cfg.s3_path is not None
+    is_s3 = cfg.dump_dir.startswith("s3:")
     if is_s3:
-        s3_path = cfg.s3_path.rstrip("/")
+        s3_path = cfg.dump_dir.rstrip("/")
         logger.info(f"Uploading to S3 path: {s3_path}")
     model.cuda().eval()
 
@@ -110,7 +109,7 @@ def launch_inference(cfg: InferenceArgs):
     # * == stateful inference, if s3_path is not none means saving to dump_dir ==
     # saving to s3_path
     if is_s3:
-        logger.warning(f"saving to s3 cloud: {cfg.s3_path}")
+        logger.warning(f"saving to s3 cloud: {s3_path}")
         if os.path.exists(
             os.path.join(cfg.dump_dir, f"{world_size}_{global_rank}_metadata.csv")
         ):
@@ -134,7 +133,7 @@ def launch_inference(cfg: InferenceArgs):
             saved_parquet_num = 0
             index_to_start = 0
     # support resume if dump_dir is the same
-    elif cfg.dump_dir is not None:
+    else:
         logger.warning(f"s3_path not found, saving to local {cfg.dump_dir}")
         saved_parquet = list(
             glob.glob(
@@ -163,9 +162,6 @@ def launch_inference(cfg: InferenceArgs):
             # set sampler state and counter
             sampler.load_state_dict({"start_index": index_to_start})
 
-    else:
-        raise ValueError("You must select s3url or local inference, no config found !")
-
     count = saved_parquet_num
 
     # * == start inference ==
@@ -181,12 +177,13 @@ def launch_inference(cfg: InferenceArgs):
         if len(save_batch) == 0 or in_parquet_num < cfg.parque_size:
             for key, prefix in cfg.prefix_mapping.items():
                 if isinstance(batch[key], torch.Tensor):
-                    data = batch[key].detach().cpu().numpy()
+                    data = batch[key].detach().cpu().to(torch.float32).numpy()
                     batch[key] = [d.reshape(-1) for d in data]
                     batch[f"{key}_raw_shape"] = [d.shape for d in data]
+
                 if prefix not in save_batch:
                     save_batch[prefix] = batch[key]
-                    if f"{prefix}_raw_shape" not in batch:
+                    if f"{key}_raw_shape" in batch:
                         save_batch[f"{prefix}_raw_shape"] = batch[f"{key}_raw_shape"]
                 else:
                     save_batch[prefix].extend(batch[key])
@@ -195,7 +192,6 @@ def launch_inference(cfg: InferenceArgs):
                             batch[f"{key}_raw_shape"]
                         )
             in_parquet_num += len(batch[key])
-
         if in_parquet_num >= cfg.parque_size:
             for attempt in range(cfg.max_save_attempt):
                 try:
@@ -230,7 +226,7 @@ def launch_inference(cfg: InferenceArgs):
                         "timestamp": [datetime.now()],
                         "data_source": [active_data[0].data_name],
                         "resolution": [active_data[0].image_size],
-                        "token_length": [cfg.model.plan_transformer.text_seqlen],
+                        "token_length": [cfg.model.text_encoder.text_seqlen],
                     }
                     batch_df = pd.DataFrame(batch_df)
                     if csv_path.exists():
@@ -241,8 +237,6 @@ def launch_inference(cfg: InferenceArgs):
             save_batch = {}
             in_parquet_num = 0
         # Jinjie: if we need profile, early break here
-        # if idx > 10000:
-        #     break
     # Conclude profiling
     for name, meter in inference_meters.items():
         meter.conclude(f"Inference ({name})")

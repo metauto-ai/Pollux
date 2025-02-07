@@ -9,45 +9,54 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 from apps.main.modules.vae import build_vae, LatentVideoVAEArgs
-from apps.main.modules.plan_transformer import (
-    BasePlanTransformer,
+from apps.main.modules.ops import (
     RotaryEmbedding1D,
-    RMSNorm,
 )
 from apps.main.modules.tokenizer import Tokenizer, TokenizerArgs
 from apps.main.modules.ops import create_causal_mask
 from lingua.transformer import (
     RMSNorm,
     BaseTransformerArgs,
+    TransformerBlock,
+    InitStdFactor,
 )
 from apps.offline_inf.data import AverageMeter
+
+import os
 
 logger = logging.getLogger()
 
 
 @dataclass
-class PlanTransformerArgs(BaseTransformerArgs):
+class LLAMATransformerArgs(BaseTransformerArgs):
 
     seed: int = 42
     patch_size: int = 16
     in_channels: int = 3
     pre_trained_path: Optional[str] = None
     text_seqlen: int = 256
+    gen_seqlen: int = 256
     vocab_size: int = -1
-    attn_type: str = "causal"
-    text_only: bool = True
 
 
 @dataclass
 class ModelArgs:
-    plan_transformer: PlanTransformerArgs = field(default_factory=PlanTransformerArgs)
-    vae: LatentVideoVAEArgs = field(default_factory=LatentVideoVAEArgs)
+    plan_vae: LatentVideoVAEArgs = field(default_factory=LatentVideoVAEArgs)
+    gen_vae: LatentVideoVAEArgs = field(default_factory=LatentVideoVAEArgs)
     tokenizer: TokenizerArgs = field(default_factory=TokenizerArgs)
+    text_encoder: LLAMATransformerArgs = field(default_factory=LLAMATransformerArgs)
 
 
-class BaseLanguageTransformer(BasePlanTransformer):
-    def __init__(self, args: PlanTransformerArgs):
-        super().__init__(args)
+class BaseTransformer(nn.Module):
+    def __init__(self, args: LLAMATransformerArgs):
+        super().__init__()
+        self.dim = args.dim
+        self.init_base_std = args.init_base_std
+        self.init_std_factor = InitStdFactor(args.init_std_factor)
+        self.layers = nn.ModuleList()
+        assert not (args.n_layers % 2 != 0)
+        for _ in range(args.n_layers):
+            self.layers.append(TransformerBlock(args))
 
     def forward(
         self,
@@ -61,11 +70,45 @@ class BaseLanguageTransformer(BasePlanTransformer):
             h = layer(h, freqs_cis, mask=mask, attn_impl=attn_impl)
         return h
 
+    def reset_parameters(self):
+        # Either use fixed base std or sqrt model dim
+        pass
 
-class PlanTransformer(
-    BaseLanguageTransformer
-):  # TODO As planning model is not finished, we use a pure LLAMA model here, we will update this with the latest planning  model
-    def __init__(self, args: PlanTransformerArgs):
+    def init_weights(self, pre_trained_path: Optional[str] = None):
+        self.reset_parameters()
+        for depth, layer in enumerate(self.layers):
+            factor = {
+                InitStdFactor.CURRENT_DEPTH: (2 * (depth + 1)) ** 0.5,
+                InitStdFactor.GLOBAL_DEPTH: (2 * (len(self.layers) + 1)) ** 0.5,
+                InitStdFactor.DIM_RATIO: self.dim / 4096,
+                InitStdFactor.DISABLED: 1.0,
+            }[self.init_std_factor]
+
+            layer.init_weights(self.init_base_std, factor)
+        if pre_trained_path:
+            assert os.path.exists(pre_trained_path)
+            ckpt_state_dict = torch.load(pre_trained_path, map_location="cpu")
+            target_state_dict = self.state_dict()
+            filtered_state_dict = {
+                k: v
+                for k, v in ckpt_state_dict.items()
+                if k in target_state_dict and v.shape == target_state_dict[k].shape
+            }
+            target_state_dict.update(filtered_state_dict)
+            self.load_state_dict(target_state_dict)
+            missing_keys = set(target_state_dict.keys()) - set(
+                filtered_state_dict.keys()
+            )
+            unexpected_keys = set(ckpt_state_dict.keys()) - set(
+                target_state_dict.keys()
+            )
+            logger.info(f"Load the checkpoints from {pre_trained_path}")
+            logger.warning(f"Missing keys: {missing_keys}")
+            logger.warning(f"Unexpected keys: {unexpected_keys}")
+
+
+class LLAMA3(BaseTransformer):
+    def __init__(self, args: LLAMATransformerArgs):
         super().__init__(args)
         self.patch_size = args.patch_size
         self.text_seqlen = args.text_seqlen
@@ -111,23 +154,31 @@ class OfflineInference(nn.Module):
     This model integrates a VAE for latent compression
     """
 
-    VERSION: str = "v0.1"
+    VERSION: str = "v1.0"
 
     def __init__(self, args: ModelArgs):
         super().__init__()
 
-        self.compressor = build_vae(args.vae)
+        self.gen_compressor = build_vae(args.gen_vae)
         self.tokenizer = Tokenizer(model_path=args.tokenizer.model_path)
-        self.plan_transformer = PlanTransformer(args.plan_transformer)
+        self.text_encoder = LLAMA3(args.text_encoder)
+        self.plan_compressor = build_vae(args.plan_vae)
 
     def cap_pos_tokenize(self, batch: dict[str:any]) -> dict[str:any]:
-        batch["cap_token"] = [
-            self.tokenizer.encode(x, bos=True, eos=False) for x in batch["caption"]
-        ]
+        batch["cap_token"] = []
+        for x in batch["caption"]:
+            if not isinstance(x, str):
+                logger.warning(f"Expected string but got {type(x)}: {x}")
+                batch["cap_token"].append(
+                    self.tokenizer.encode("", bos=True, eos=False)
+                )
+            else:
+                batch["cap_token"].append(self.tokenizer.encode(x, bos=True, eos=False))
+
         pad_id = self.tokenizer.pad_id
         bsz = len(batch["cap_token"])
         tokens = torch.full(
-            (bsz, self.plan_transformer.text_seqlen),
+            (bsz, self.text_encoder.text_seqlen),
             pad_id,
             dtype=torch.long,
         ).cuda()
@@ -150,7 +201,7 @@ class OfflineInference(nn.Module):
         # Process text embedding
         start_time = time.time()
         batch = self.cap_pos_tokenize(batch)
-        batch["text_embedding"] = self.plan_transformer(batch)
+        batch["text_embedding"] = self.text_encoder(batch)
         inference_time = time.time() - start_time
         inference_meters["text_embedding"].update(
             inference_time, len(batch["text_embedding"])
@@ -159,12 +210,20 @@ class OfflineInference(nn.Module):
         # Process latent code
         image = batch["image"].cuda()
         start_time = time.time()
-        latent_code = self.compressor.encode(image)
+        gen_latent_code = self.gen_compressor.encode(image)
         inference_time = time.time() - start_time
-        inference_meters["latent_code"].update(inference_time, len(latent_code))
-        batch["latent_code"] = latent_code
+        inference_meters["gen_latent_code"].update(inference_time, len(gen_latent_code))
+        batch["gen_latent_code"] = gen_latent_code
 
+        start_time = time.time()
+        plan_vae_indices, plan_vae_latent = self.plan_compressor.encode(image)
+        inference_time = time.time() - start_time
+        inference_meters["plan_latent_code"].update(
+            inference_time, len(plan_vae_latent)
+        )
+        batch["plan_latent_code"] = plan_vae_latent
+        batch["plan_latent_code_indices"] = plan_vae_indices
         return batch
 
     def init_weights(self, args: ModelArgs):
-        self.plan_transformer.init_weights(args.plan_transformer.pre_trained_path)
+        self.text_encoder.init_weights(args.text_encoder.pre_trained_path)
