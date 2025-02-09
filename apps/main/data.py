@@ -23,7 +23,7 @@ from apps.main.utils.dummy_data_load import DummyDataLoad
 from apps.main.utils.mongodb_data_load import (
     MongoDBDataLoad,
     MongoDBImageNetDataLoad,
-    MongoDBCC12MDataLoad,
+    MongoDBImageDataLoad,
     MongoDBParquetDataLoad,
 )
 from apps.main.utils.sampler import StatefulDistributedSampler
@@ -160,8 +160,8 @@ class AutoDataLoader:
                 partition_key=args.partition_key,
                 args=args,
             )
-        elif args.data_name == "cc12m":
-            dataset = MongoDBCC12MDataLoad(
+        elif args.data_name in ["cc12m", "bucket-256-1"]:
+            dataset = MongoDBImageDataLoad(
                 collection_name=args.data_name,
                 query=args.query,
                 shard_idx=self.shard_id,
@@ -173,6 +173,7 @@ class AutoDataLoader:
         elif args.data_name in [
             "cc12m_l3bf128_hr256",
             "cc12m_aethetics_6_5_llama3bf128_hunyuanr256_s3",
+            "bucket-256-parquet",
         ]:
             dataset = MongoDBParquetDataLoad(
                 collection_name=args.data_name,
