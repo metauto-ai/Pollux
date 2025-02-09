@@ -4,12 +4,12 @@
 # sudo apt install mongodb-database-tools
 # mongoexport --uri="mongodb+srv://nucleusadmin:eMPF9pgRy2UqJW3@nucleus.mongocluster.cosmos.azure.com/?tls=true&authMechanism=SCRAM-SHA-256&retrywrites=false&maxIdleTimeMS=120000" \
 # --db=world_model \
-# --collection=cc12m \
-# --out=/mnt/pollux/mongo_db_cache/cc12m.json --jsonArray
+# --collection=pd12m \
+# --out=/mnt/pollux/mongo_db_cache/pd12m.json --jsonArray
 # mongoimport --uri="mongodb+srv://nucleusadmin:eMPF9pgRy2UqJW3@imagedata.global.mongocluster.cosmos.azure.com/?tls=true&authMechanism=SCRAM-SHA-256&retrywrites=false&maxIdleTimeMS=120000" \
 # --db=world_model \
 # --collection=bucket-256-1 \
-# --file=/mnt/pollux/mongo_db_cache/cc12m_processed.json --jsonArray
+# --file=/mnt/pollux/mongo_db_cache/big35m_processed.json --jsonArray
 
 import json
 import requests
@@ -22,38 +22,39 @@ from tqdm_joblib import tqdm_joblib
 from pymongo import MongoClient
 from bson import ObjectId
 
-file_path = "/mnt/pollux/mongo_db_cache/cc12m.json"
+file_path = "/mnt/pollux/mongo_db_cache/big35m.json"
 
 
 def update_doc(doc):
     doc_return = {}
-    if "caption" not in doc:
-        return None
-    if "width" not in doc:
-        return None
-    if "height" not in doc:
+    if "text" not in doc:
         return None
     if "partition_key" not in doc:
         doc_return["partition_key"] = random.randint(0, 10000)
-    if "aesthetic_score" not in doc or (not isinstance(doc["aesthetic_score"], float)):
+    if "aesthetic_score" not in doc:
         return None
-    if doc["aesthetic_score"] < 5.5:
+    elif isinstance(doc["aesthetic_score"], float):
+        if doc["aesthetic_score"] < 5.5:
+            return None
+    elif isinstance(doc["aesthetic_score"], list):
+        if isinstance(doc["aesthetic_score"][0], float):
+            if doc["aesthetic_score"][0] < 5.5:
+                return None
+        else:
+            return None
+    else:
         return None
     try:
         for key, value in doc.items():
             if key == "_id":
                 doc_return["source_id"] = value["$oid"]
-            if key == "caption":
+            if key == "text":
                 doc_return["caption"] = value
             if key == "partition_key":
                 doc_return["partition_key"] = value
-            if key == "s3url":
+            if key == "azure_url":
                 doc_return["media_path"] = value
-            if key == "width":
-                doc_return["width"] = value
-            if key == "height":
-                doc_return["height"] = value
-        doc_return["source"] = "cc12m"
+        doc_return["source"] = "big35m"
         return doc_return
     except Exception as e:
         print(f"Error processing element {doc['_id']}: {e}")
@@ -71,7 +72,7 @@ for doc in tqdm(data):
 print(f"Processed {len(processed_results)} elements")
 print(f"[:10] {processed_results[:10]}")
 with open(
-    "/mnt/pollux/mongo_db_cache/cc12m_processed.json", "w", encoding="utf-8"
+    "/mnt/pollux/mongo_db_cache/big35m_processed.json", "w", encoding="utf-8"
 ) as f:
     json.dump(processed_results, f, indent=4)
 print("Processing finished")
