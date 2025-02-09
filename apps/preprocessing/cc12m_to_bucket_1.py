@@ -4,11 +4,11 @@
 # sudo apt install mongodb-database-tools
 # mongoexport --uri="mongodb+srv://nucleusadmin:eMPF9pgRy2UqJW3@nucleus.mongocluster.cosmos.azure.com/?tls=true&authMechanism=SCRAM-SHA-256&retrywrites=false&maxIdleTimeMS=120000" \
 # --db=world_model \
-# --collection=pexel_images \
-# --out=/mnt/pollux/mongo_db_cache/pexel_images.json --jsonArray
+# --collection=cc12m \
+# --out=/mnt/pollux/mongo_db_cache/cc12m.json --jsonArray
 # mongoimport --uri="mongodb+srv://nucleusadmin:eMPF9pgRy2UqJW3@imagedata.global.mongocluster.cosmos.azure.com/?tls=true&authMechanism=SCRAM-SHA-256&retrywrites=false&maxIdleTimeMS=120000" \
 # --db=world_model \
-# --collection=bucket-hq \
+# --collection=bucket-256-1 \
 # --file=/mnt/pollux/mongo_db_cache/pexel_images_processed.json --jsonArray
 
 import json
@@ -22,12 +22,12 @@ from tqdm_joblib import tqdm_joblib
 from pymongo import MongoClient
 from bson import ObjectId
 
-file_path = "/mnt/pollux/mongo_db_cache/pexel_images.json"
+file_path = "/mnt/pollux/mongo_db_cache/cc12m.json"
 
 
 def update_doc(doc):
     doc_return = {}
-    if "nova_lite_caption" not in doc:
+    if "caption" not in doc:
         return None
     if "width" not in doc:
         return None
@@ -35,6 +35,9 @@ def update_doc(doc):
         return None
     if "partition_key" not in doc:
         doc_return["partition_key"] = random.randint(0, 10000)
+    if "aesthetic_score" not in doc and doc["aesthetic_score"] < 5.5:
+        return None
+
     try:
         for key, value in doc.items():
             if key == "_id":
@@ -43,7 +46,7 @@ def update_doc(doc):
                 doc_return["caption"] = value
             if key == "partition_key":
                 doc_return["partition_key"] = value
-            if key == "url":
+            if key == "s3url":
                 doc_return["media_path"] = value
             if key == "width":
                 doc_return["width"] = value
@@ -58,14 +61,16 @@ def update_doc(doc):
 
 with open(file_path, "r", encoding="utf-8") as f:
     data = json.load(f)  # Load JSON array
-with tqdm_joblib(tqdm(desc="Processing", total=len(data))):
-    with parallel_backend("threading"):
-        processed_results = Parallel(n_jobs=32)(delayed(update_doc)(el) for el in data)
-processed_results = [res for res in processed_results if res is not None]
+processed_results = []
+for doc in data:
+    doc = update_doc(doc)
+    if doc is not None:
+        processed_results.append(doc)
+
 print(f"Processed {len(processed_results)} elements")
 print(f"[:10] {processed_results[:10]}")
 with open(
-    "/mnt/pollux/mongo_db_cache/pexel_images_processed.json", "w", encoding="utf-8"
+    "/mnt/pollux/mongo_db_cache/cc12m_processed.json", "w", encoding="utf-8"
 ) as f:
     json.dump(processed_results, f, indent=4)
 print("Processing finished")
