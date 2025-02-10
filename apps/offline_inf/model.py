@@ -1,25 +1,13 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 
 from dataclasses import dataclass, field
-from typing import Optional, Tuple, List, Dict, Any
+from typing import Dict, Any
 import logging
-import random
 import time
 import torch
 from torch import nn
-import torch.nn.functional as F
 from apps.main.modules.vae import build_vae, LatentVideoVAEArgs
-from apps.main.modules.ops import (
-    RotaryEmbedding1D,
-)
 from apps.main.modules.tokenizer import Tokenizer, TokenizerArgs
-from apps.main.modules.ops import create_causal_mask
-from lingua.transformer import (
-    RMSNorm,
-    BaseTransformerArgs,
-    TransformerBlock,
-    InitStdFactor,
-)
 from apps.offline_inf.data import AverageMeter
 from apps.main.modules.text_encoder import LLAMATransformerArgs, LLAMA3
 import os
