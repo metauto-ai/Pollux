@@ -6,7 +6,7 @@ from torch import nn
 from torch.nn import functional as F
 from torchvision.utils import save_image
 import numpy as np
-from apps.gen_tran.model import Pollux, ModelArgs
+from apps.gen_tran.model import Pollux, LatentPollux, ModelArgs
 from typing import List, Optional, Tuple, Union, Dict, Any
 from apps.main.modules.schedulers import retrieve_timesteps, calculate_shift
 from lingua.args import dataclass_from_dict
@@ -35,7 +35,13 @@ class GeneratorArgs:
 
 
 class LatentGenerator(nn.Module):
-    def __init__(self, cfg: GeneratorArgs, model: nn.Module):
+    def __init__(
+        self,
+        cfg: GeneratorArgs,
+        model: nn.Module,
+        text_encoder: nn.Module,
+        tvae: nn.Module,
+    ):
         super().__init__()
         self.model = model
         self.vae_scale_factor = (
@@ -224,23 +230,20 @@ def main():
     gen_cfg = dataclass_from_dict(GeneratorArgs, cfg, strict=False)
     print(cfg)
 
-    model, _ = load_consolidated_model(
-        cfg.ckpt_dir, model_cls=Pollux, model_args_cls=ModelArgs
+    diffusion_model, _ = load_consolidated_model(
+        cfg.ckpt_dir, model_cls=LatentPollux, model_args_cls=ModelArgs
     )
-
-    generator = LatentGenerator(gen_cfg, model)
+    text_encoder = 
+    generator = LatentGenerator(gen_cfg, diffusion_model, tokenizer, text_encoder, tvae)
 
     context = {
-        # "caption": [
-        #     "goldfish, Carassius auratus",
-        #     "kit fox, Vulpes macrotis",
-        #     "ice bear, polar bear, Ursus Maritimus, Thalarctos maritimus",
-        #     "Egyptian cat",
-        #     "zebra",
-        # ]
-        "label": torch.tensor(
-            [1, 2, 3, 4, 324, 532, 123, 456, 239], dtype=torch.long
-        ).cuda()
+        "caption": [
+            "goldfish, Carassius auratus",
+            "kit fox, Vulpes macrotis",
+            "ice bear, polar bear, Ursus Maritimus, Thalarctos maritimus",
+            "Egyptian cat",
+            "zebra",
+        ]
     }
 
     # Start generation
