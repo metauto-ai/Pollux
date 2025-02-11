@@ -186,7 +186,7 @@ def launch_inference(cfg: InferenceArgs):
         if in_parquet_num >= cfg.parque_size:
             for attempt in range(cfg.max_save_attempt):
                 try:
-                    file_name = f"{world_size}_{global_rank}_{uuid.uuid4()}"
+                    file_name = f"{world_size}_{global_rank}_{count}_{uuid.uuid4()}"
                     if is_s3:
                         parquet_path = upload_parquet(
                             save_batch,
