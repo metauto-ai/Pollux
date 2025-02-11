@@ -7,9 +7,9 @@ import time
 import torch
 from torch import nn
 from apps.main.modules.vae import build_vae, LatentVideoVAEArgs
-from apps.main.modules.tokenizer import Tokenizer, TokenizerArgs
 from apps.offline_inf.data import AverageMeter
-from apps.main.modules.text_encoder import LLAMATransformerArgs, LLAMA3
+from apps.main.modules.text_encoder import LLAMATransformerArgs
+from apps.main.modules.text_encoder import CLIP, CLIPArgs
 import os
 
 logger = logging.getLogger()
@@ -19,8 +19,7 @@ logger = logging.getLogger()
 class ModelArgs:
     plan_vae: LatentVideoVAEArgs = field(default_factory=LatentVideoVAEArgs)
     gen_vae: LatentVideoVAEArgs = field(default_factory=LatentVideoVAEArgs)
-    tokenizer: TokenizerArgs = field(default_factory=TokenizerArgs)
-    text_encoder: LLAMATransformerArgs = field(default_factory=LLAMATransformerArgs)
+    text_encoder: CLIPArgs = field(default_factory=CLIPArgs)
 
 
 class OfflineInference(nn.Module):
@@ -35,39 +34,8 @@ class OfflineInference(nn.Module):
         super().__init__()
 
         self.gen_compressor = build_vae(args.gen_vae)
-        self.tokenizer = Tokenizer(model_path=args.tokenizer.model_path)
-        self.text_encoder = LLAMA3(args.text_encoder)
+        self.text_encoder = CLIP(args.text_encoder)
         self.plan_compressor = build_vae(args.plan_vae)
-
-    def cap_pos_tokenize(self, batch: dict[str:any]) -> dict[str:any]:
-        batch["cap_token"] = []
-        for x in batch["caption"]:
-            if not isinstance(x, str):
-                logger.warning(f"Expected string but got {type(x)}: {x}")
-                batch["cap_token"].append(
-                    self.tokenizer.encode("", bos=True, eos=False)
-                )
-            else:
-                batch["cap_token"].append(self.tokenizer.encode(x, bos=True, eos=False))
-
-        pad_id = self.tokenizer.pad_id
-        bsz = len(batch["cap_token"])
-        tokens = torch.full(
-            (bsz, self.text_encoder.text_seqlen),
-            pad_id,
-            dtype=torch.long,
-        ).cuda()
-        for k, t in enumerate(batch["cap_token"]):
-            if len(t) < tokens.size(1):
-                tokens[k, : len(t)] = torch.tensor(
-                    t[:], dtype=torch.long, device="cuda"
-                )
-            else:
-                tokens[k, :] = torch.tensor(
-                    t[: tokens.size(1)], dtype=torch.long, device="cuda"
-                )
-        batch["cap_token"] = tokens.cuda()
-        return batch
 
     @torch.no_grad()
     def forward(
@@ -75,7 +43,6 @@ class OfflineInference(nn.Module):
     ) -> dict[str, Any]:
         # Process text embedding
         start_time = time.time()
-        batch = self.cap_pos_tokenize(batch)
         batch["text_embedding"] = self.text_encoder(batch)
         inference_time = time.time() - start_time
         inference_meters["text_embedding"].update(
@@ -99,6 +66,3 @@ class OfflineInference(nn.Module):
         batch["plan_latent_code"] = plan_vae_latent
         batch["plan_latent_code_indices"] = plan_vae_indices
         return batch
-
-    def init_weights(self, args: ModelArgs):
-        self.text_encoder.init_weights(args.text_encoder.pre_trained_path)
