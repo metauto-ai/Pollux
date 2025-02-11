@@ -29,15 +29,7 @@ distributed:
     compile_cache_size_limit: 64
 
 model:
-    type: "latent_pollux"
     text_cfg_ratio: 0.1
-    image_cfg_ratio: 0.1
-    mask_patch: 16
-    num_classes: 1000
-    vae:
-        pretrained_model_name_or_path: '/jfs/checkpoints/models--tencent--HunyuanVideo/snapshots/2a15b5574ee77888e51ae6f593b2ceed8ce813e5/vae'
-        enable_tiling: false
-        enable_slicing: false
     scheduler:
         num_train_timesteps: 1000
         base_image_seq_len: 256
@@ -69,10 +61,6 @@ model:
         attn_type: 'full'
     plan_transformer:
         dim: 512
-    tokenizer:
-        model_path: /jfs/checkpoints/Llama-3.2-3B/original/tokenizer.model
-    text_encoder:
-        config_name: "ViT-B/32"
 data:  
   - stage: stage-1
     id: 1

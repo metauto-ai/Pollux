@@ -81,7 +81,7 @@ logger = logging.getLogger()
 class TrainArgs:
 
     name: str = "Pollux"
-    version: str = "v0.7"
+    version: str = "v1.0"
     train_stage: str = "preliminary"  # Align with `data` configuration
     output_dir: str = "/mnt/data/dump"
     dump_dir: str = ""
