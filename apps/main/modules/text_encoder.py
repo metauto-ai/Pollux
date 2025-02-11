@@ -41,6 +41,7 @@ class LLAMATransformerArgs(BaseTransformerArgs):
 class CLIPArgs:
     config_name: str = "ViT-B/32"
     dtype: str = "bf16"
+    text_seqlen: int = 77
 
 
 class BaseTransformer(nn.Module):

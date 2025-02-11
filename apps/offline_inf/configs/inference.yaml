@@ -49,3 +49,4 @@ model:
     text_encoder:
         config_name: "ViT-B/32"
         dtype: "fp32"
+        text_seqlen: 77
