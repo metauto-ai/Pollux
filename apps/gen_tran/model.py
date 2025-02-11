@@ -1,7 +1,7 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 
 from dataclasses import dataclass, field
-from typing import Optional, Tuple, List, Dict
+from typing import Optional, Tuple
 import logging
 import random
 import torch
@@ -15,7 +15,6 @@ from torch.distributed.tensor.parallel import (
     PrepareModuleInput,
     parallelize_module,
 )
-from apps.main.modules.tokenizer import Tokenizer, TokenizerArgs
 from apps.main.modules.schedulers import RectifiedFlow, SchedulerArgs
 from apps.main.modules.gen_transformer import (
     BaseDiffusionTransformer,
@@ -26,44 +25,26 @@ from apps.main.modules.gen_transformer import (
 from apps.main.modules.plan_transformer import (
     PlanTransformerArgs,
 )
-from apps.main.modules.vae import build_vae, LatentVideoVAEArgs
-from apps.main.modules.preprocess import random_mask_images
 import os
-from apps.main.modules.embedder import LabelEmbedder, ImageEmbedder, TimestepEmbedder
-from apps.main.modules.ops import AdaLN as AdaLNModulation, modulate
+from apps.main.modules.embedder import ImageEmbedder, TimestepEmbedder
 from lingua.transformer import (
-    BaseTransformerArgs,
     RMSNorm,
 )
-from apps.main.modules.ops import create_causal_mask
-from apps.main.modules.text_encoder import CLIPArgs, CLIP
 
 logger = logging.getLogger()
 
 
 @dataclass
-class PlanTransformerArgs(BaseTransformerArgs):
-
-    seed: int = 42
-    in_channels: int = 3
-    pre_trained_path: Optional[str] = None
-    text_seqlen: int = 256
-    vocab_size: int = -1
+class PlanTransformerArgs:
+    dim: int = 512
 
 
 @dataclass
 class ModelArgs:
-    type: str = "pollux"  # "pollux" or "latent_pollux"
     gen_transformer: GenTransformerArgs = field(default_factory=GenTransformerArgs)
     plan_transformer: PlanTransformerArgs = field(default_factory=PlanTransformerArgs)
-    vae: LatentVideoVAEArgs = field(default_factory=LatentVideoVAEArgs)
     scheduler: SchedulerArgs = field(default_factory=SchedulerArgs)
-    tokenizer: TokenizerArgs = field(default_factory=TokenizerArgs)
-    text_encoder: CLIPArgs = field(default_factory=CLIPArgs)
     text_cfg_ratio: float = 0.1
-    image_cfg_ratio: float = 0.1
-    mask_patch: int = 16
-    num_classes: int = 1
 
 
 class GenTransformer(BaseDiffusionTransformer):
@@ -197,113 +178,6 @@ class GenTransformer(BaseDiffusionTransformer):
         nn.init.normal_(self.coe_token, std=0.02)
 
 
-class Pollux(nn.Module):
-    """
-    Latent Diffusion Transformer Model.
-    This model integrates a VAE for latent compression, a transformer for temporal and spatial token mixing,
-    and a custom scheduler for diffusion steps.
-    """
-
-    VERSION: str = "v0.7"
-    DESCRIPTION: str = (
-        "Latent Diffusion Transformer for VideoGen: (1) currently we only support class conditional image generation for debugging."
-    )
-
-    def __init__(self, args: ModelArgs):
-        super().__init__()
-
-        self.compressor = build_vae(args.vae)
-        self.scheduler = RectifiedFlow(args.scheduler)
-        self.gen_transformer = GenTransformer(args.gen_transformer)
-        self.tokenizer = Tokenizer(model_path=args.tokenizer.model_path)
-
-        assert args.plan_transformer.vocab_size == self.tokenizer.n_words
-
-        self.plan_transformer = PlanTransformer(args.plan_transformer)
-        self.text_seqlen = self.plan_transformer.text_seqlen
-        self.text_cfg_ratio = args.text_cfg_ratio
-        self.token_proj = nn.Linear(
-            in_features=args.plan_transformer.dim,
-            out_features=args.gen_transformer.dim,
-            bias=False,
-        )
-        self.negative_token = nn.Parameter(torch.zeros(1, 1, args.plan_transformer.dim))
-        init_std = self.gen_transformer.dim ** (-0.5)
-        nn.init.trunc_normal_(
-            self.token_proj.weight,
-            mean=0.0,
-            std=init_std,
-            a=-3 * init_std,
-            b=3 * init_std,
-        )
-        nn.init.normal_(self.negative_token, std=0.02)
-
-    def cap_tokenize(self, batch: dict[str:any]) -> dict[str:any]:
-        batch["cap_token"] = [
-            self.tokenizer.encode(x, bos=True, eos=False) for x in batch["caption"]
-        ]
-        pad_id = self.tokenizer.pad_id
-        bsz = len(batch["cap_token"])
-        tokens = torch.full(
-            (bsz, self.plan_transformer.text_seqlen),
-            pad_id,
-            dtype=torch.long,
-        ).cuda()
-        for k, t in enumerate(batch["cap_token"]):
-            if len(t) < tokens.size(1):
-                tokens[k, : len(t)] = torch.tensor(
-                    t[:], dtype=torch.long, device="cuda"
-                )
-            else:
-                tokens[k, :] = torch.tensor(
-                    t[: tokens.size(1)], dtype=torch.long, device="cuda"
-                )
-        batch["cap_token"] = tokens
-        return batch
-
-    def prepare_negative_context(self, batch: dict[str:any]) -> dict[str:any]:
-        batch["negative_token"] = self.negative_token.repeat(
-            batch["text_embedding"].size(0), batch["text_embedding"].size(1), 1
-        )
-        return batch["negative_token"]
-
-    def forward(self, batch: dict[str:any]) -> dict[str:any]:
-
-        image = batch["image"]
-        batch = self.cap_tokenize(batch)
-        with torch.no_grad():
-            batch["text_embedding"] = self.plan_transformer(batch)
-        if random.random() > self.text_cfg_ratio:
-            conditional_signal = batch["text_embedding"]
-        else:
-            conditional_signal = self.prepare_negative_context(batch)
-        with torch.no_grad():
-            latent_code = self.compressor.encode(image)
-        conditional_signal = self.token_proj(conditional_signal)
-        noised_x, t, target = self.scheduler.sample_noised_input(latent_code)
-        output = self.gen_transformer(
-            x=noised_x, time_steps=t, condition=conditional_signal
-        )
-        batch["prediction"] = output
-        batch["target"] = target
-        target = target.to(output.dtype)
-        loss = F.mse_loss(output, target)
-
-        return batch, loss
-
-    def set_train(self):
-        self.gen_transformer.train()
-
-    def set_eval(self):
-        self.gen_transformer.eval()
-
-    def init_weights(self, args: ModelArgs):
-        self.gen_transformer.init_weights(args.gen_transformer.pre_trained_path)
-        self.plan_transformer.init_weights(args.plan_transformer.pre_trained_path)
-        self.plan_transformer = self.plan_transformer.requires_grad_(False)
-        self.plan_transformer.eval()
-
-
 class LatentPollux(nn.Module):
     """
     Latent Diffusion Transformer Model.
@@ -311,10 +185,8 @@ class LatentPollux(nn.Module):
     and a custom scheduler for diffusion steps.
     """
 
-    VERSION: str = "v0.7"
-    DESCRIPTION: str = (
-        "Latent Diffusion Transformer for VideoGen: (1) currently we only support class conditional image generation for debugging."
-    )
+    VERSION: str = "v1.0"
+    DESCRIPTION: str = "Latent Diffusion Transformer for ImageGen"
 
     def __init__(self, args: ModelArgs):
         super().__init__()
@@ -326,7 +198,6 @@ class LatentPollux(nn.Module):
             out_features=args.gen_transformer.dim,
             bias=False,
         )
-        self.text_encoder = CLIP(args.text_encoder)
         init_std = self.gen_transformer.dim ** (-0.5)
         nn.init.trunc_normal_(
             self.token_proj.weight,
@@ -339,7 +210,6 @@ class LatentPollux(nn.Module):
         nn.init.normal_(self.negative_token, std=0.02)
 
     def forward(self, batch: dict[str:any]) -> dict[str:any]:
-        batch["text_embedding"] = self.text_encoder(batch)
         if random.random() > self.text_cfg_ratio:
             conditional_signal = batch["text_embedding"]
         else:
@@ -374,25 +244,6 @@ def get_no_recompute_ops():
     return None
 
 
-# Optional and only used for fully shard options (fsdp) is choose. Highly recommanded for large models
-def build_fsdp_grouping_plan_pollux(model_args: ModelArgs, vae_config: dict):
-    group_plan: Tuple[int, bool] = []
-
-    for i in range(len(vae_config.down_block_types)):
-        group_plan.append((f"compressor.vae.encoder.down_blocks.{i}", False))
-
-    for i in range(model_args.plan_transformer.n_layers):
-        group_plan.append((f"plan_transformer.layers.{i}", False))
-
-    for i in range(model_args.gen_transformer.n_layers):
-        group_plan.append((f"gen_transformer.layers.{i}", False))
-
-    group_plan.append(("gen_transformer.img_output", True))
-    logger.info(f"The `group_plan` for fsdp is:\n{group_plan}")
-
-    return group_plan
-
-
 def build_fsdp_grouping_plan_latent_pollux(model_args: ModelArgs):
     group_plan: Tuple[int, bool] = []
 
@@ -406,12 +257,6 @@ def build_fsdp_grouping_plan_latent_pollux(model_args: ModelArgs):
 
 
 def tp_parallelize(model, tp_mesh, model_args: ModelArgs, distributed_args):
-
-    # assert model_args.plan_transformer.dim % distributed_args.tp_size == 0
-    # assert model_args.plan_transformer.vocab_size % distributed_args.tp_size == 0
-    # assert model_args.plan_transformer.n_heads % distributed_args.tp_size == 0
-    # assert (model_args.plan_transformer.n_kv_heads or 0) % distributed_args.tp_size == 0
-    # assert model_args.plan_transformer.n_heads % (model_args.n_kv_heads or 1) == 0
 
     assert model_args.gen_transformer.dim % distributed_args.tp_size == 0
     assert model_args.gen_transformer.vocab_size % distributed_args.tp_size == 0

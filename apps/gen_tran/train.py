@@ -25,14 +25,14 @@ from torch.optim import lr_scheduler
 from torch.distributed.checkpoint.stateful import Stateful
 from torch.distributed._tensor import DTensor
 from contextlib import ExitStack
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from pathlib import Path
 from timeit import default_timer as timer
 from typing import Any, Dict, List, Optional
 
 from apps.main.utils.sampler import StatefulDistributedSampler
 from lingua.args import dump_config, flatten_dict, dataclass_from_dict
-from lingua.checkpoint import CheckpointArgs, CheckpointManager, load_from_checkpoint
+from lingua.checkpoint import CheckpointArgs, CheckpointManager
 from lingua.distributed import (
     DistributedArgs,
     EnvironmentArgs,
@@ -61,11 +61,9 @@ from apps.main.data import AutoDataLoader, DataArgs
 from apps.main.modules.schedulers import SchedulerArgs
 from apps.main.utils.cal_flops import get_num_flop_per_token
 from apps.gen_tran.model import (
-    Pollux,
     LatentPollux,
     ModelArgs,
     build_fsdp_grouping_plan_latent_pollux,
-    build_fsdp_grouping_plan_pollux,
     tp_parallelize,
     get_no_recompute_ops,
 )
@@ -278,16 +276,8 @@ def train(args: TrainArgs):
 
         torch.manual_seed(args.seed)
         logger.info("Building model")
-        if args.model.type == "latent_pollux":
-            model = LatentPollux(args.model)
-            fsdp_plan = build_fsdp_grouping_plan_latent_pollux(args.model)
-        elif args.model.type == "pollux":
-            model = Pollux(args.model)
-            fsdp_plan = build_fsdp_grouping_plan_pollux(
-                args.model, model.compressor.vae.config
-            )
-        else:
-            raise ValueError(f"Unsupported model type: {args.model.type}")
+        model = LatentPollux(args.model)
+        fsdp_plan = build_fsdp_grouping_plan_latent_pollux(args.model)
         logger.info("Model is built !")
 
         model_param_count = get_num_params(model)
@@ -365,31 +355,9 @@ def train(args: TrainArgs):
             # get batch
             curr_lr = float(optimizer.param_groups[0]["lr"])
             data_load_start = timer()
-            if args.model.type == "latent_pollux":
-                try:
-                    batch = next(parquet_iterator)
-                except:
-                    try:
-                        batch = next(dataloader_iterator)
-                    except:
-                        logger.info("New Epoch!")
-                        sampler.reset()
-                        dataloader_iterator = iter(data_loader)
-                        batch = next(dataloader_iterator)
-                    parquet_iterator = DictTensorBatchIterator(
-                        batch, active_data[0].dataloader.batch_size
-                    )
-                    batch = next(parquet_iterator)
-                # if every_n_steps(train_state, args.gc_collect_freq, acc_step=0):
-                #     logger.info("garbage collection")
-                #     # we do garbage collection manually otherwise different processes
-                #     # run the GC at different times so they slow down the whole pipeline
-                #     gc.collect()
-                batch["latent_code"] = batch["latent_code"].cuda()
-                batch["text_embedding"] = batch["text_embedding"].cuda()
-                data_load_time = round(timer() - data_load_start, 4)
-                nwords_since_last_log += batch["latent_code"].numel()
-            elif args.model.type == "pollux":
+            try:
+                batch = next(parquet_iterator)
+            except:
                 try:
                     batch = next(dataloader_iterator)
                 except:
@@ -397,11 +365,14 @@ def train(args: TrainArgs):
                     sampler.reset()
                     dataloader_iterator = iter(data_loader)
                     batch = next(dataloader_iterator)
-                batch["image"] = batch["image"].cuda()
-                data_load_time = round(timer() - data_load_start, 4)
-                nwords_since_last_log += batch["image"].numel()
-            else:
-                raise ValueError(f"Unsupported model type: {args.model.type}")
+                parquet_iterator = DictTensorBatchIterator(
+                    batch, active_data[0].dataloader.batch_size
+                )
+                batch = next(parquet_iterator)
+            batch["latent_code"] = batch["latent_code"].cuda()
+            batch["text_embedding"] = batch["text_embedding"].cuda()
+            data_load_time = round(timer() - data_load_start, 4)
+            nwords_since_last_log += batch["latent_code"].numel()
             # forward
             start_timer = torch.cuda.Event(enable_timing=True)
             end_timer = torch.cuda.Event(enable_timing=True)
