@@ -18,7 +18,7 @@ from lingua.checkpoint import (
     CONSOLIDATE_FOLDER,
 )
 from apps.main.modules.tokenizer import Tokenizer, TokenizerArgs
-from apps.main.modules.text_encoder import LLAMATransformerArgs, LLAMA3
+from apps.main.modules.text_encoder import CLIPArgs, CLIP
 from apps.main.modules.vae import BaseLatentVideoVAE, build_vae, LatentVideoVAEArgs
 
 logger = logging.getLogger()
@@ -36,7 +36,7 @@ class GeneratorArgs:
     inference_steps: int = 25
     vae_scale_factor: float = 8.0
     tokenizer: TokenizerArgs = field(default_factory=TokenizerArgs)
-    text_encoder: LLAMATransformerArgs = field(default_factory=LLAMATransformerArgs)
+    text_encoder: CLIPArgs = field(default_factory=CLIPArgs)
     tvae: LatentVideoVAEArgs = field(default_factory=LatentVideoVAEArgs)
 
 
@@ -45,8 +45,7 @@ class LatentGenerator(nn.Module):
         self,
         cfg: GeneratorArgs,
         model: nn.Module,
-        tokenizer: Tokenizer,
-        text_encoder: LLAMA3,
+        text_encoder: CLIP,
         tvae: BaseLatentVideoVAE,
     ):
         super().__init__()
@@ -62,7 +61,6 @@ class LatentGenerator(nn.Module):
         self.scheduler = model.scheduler.scheduler
         self.num_inference_steps = cfg.inference_steps
         self.tvae = tvae
-        self.tokenizer = tokenizer
         self.text_encoder = text_encoder
 
     def prepare_latent(self, context, device):
@@ -83,35 +81,6 @@ class LatentGenerator(nn.Module):
 
     @torch.no_grad()
     def prepare_positive_context(self, context):
-        context["cap_token"] = []
-        for x in context["caption"]:
-            if not isinstance(x, str):
-                logger.warning(f"Expected string but got {type(x)}: {x}")
-                context["cap_token"].append(
-                    self.tokenizer.encode("", bos=True, eos=False)
-                )
-            else:
-                context["cap_token"].append(
-                    self.tokenizer.encode(x, bos=True, eos=False)
-                )
-
-        pad_id = self.tokenizer.pad_id
-        bsz = len(context["cap_token"])
-        tokens = torch.full(
-            (bsz, self.text_encoder.text_seqlen),
-            pad_id,
-            dtype=torch.long,
-        ).cuda()
-        for k, t in enumerate(context["cap_token"]):
-            if len(t) < tokens.size(1):
-                tokens[k, : len(t)] = torch.tensor(
-                    t[:], dtype=torch.long, device="cuda"
-                )
-            else:
-                tokens[k, :] = torch.tensor(
-                    t[: tokens.size(1)], dtype=torch.long, device="cuda"
-                )
-        context["cap_token"] = tokens.cuda()
         context["positive_text_embedding"] = self.text_encoder(context).to(self.dtype)
         return context
 
@@ -262,26 +231,18 @@ def main():
     cfg = OmegaConf.load(cfg.config)
     gen_cfg = dataclass_from_dict(GeneratorArgs, cfg.generator, strict=False)
     print(gen_cfg)
-    text_encoder = LLAMA3(gen_cfg.text_encoder)
+    text_encoder = CLIP(gen_cfg.text_encoder)
     diffusion_model, _ = load_consolidated_model(
         cfg.ckpt_dir, model_cls=LatentPollux, model_args_cls=ModelArgs
     )
-    tokenizer = Tokenizer(model_path=gen_cfg.tokenizer.model_path)
     tvae = build_vae(gen_cfg.tvae)
-    generator = LatentGenerator(
-        gen_cfg, diffusion_model, tokenizer, text_encoder, tvae
-    ).cuda()
-    # param_dtype = dict(fp32=torch.float32, fp16=torch.float16, bf16=torch.bfloat16)[
-    #     gen_cfg.dtype
-    # ]
-    # for param in generator.parameters():
-    #     param.data = param.data.to(dtype=param_dtype)
+    generator = LatentGenerator(gen_cfg, diffusion_model, text_encoder, tvae).cuda()
     print("Model loaded successfully")
     context = {
         "caption": [
             "In a modern urban setting, a large blue planter box with the words MediaCityUK prominently displayed on its sides stands as a focal point in a paved outdoor area. The planter box is filled with lush green foliage, adding a touch of nature to the otherwise concrete and steel environment. Behind the planter, a row of bicycles is neatly parked, indicating a possible bike-sharing scheme. The scene is set against a backdrop of high-rise buildings with glass facades, reflecting the cloudy sky above. The overall mood is one of contemporary urbanity, with a hint of tranquility provided by the greenery and the peaceful atmosphere of the area.",
-            "In a modern urban setting, a large blue planter box with the words MediaCityUK prominently displayed on its sides stands as a focal point in a paved outdoor area. The planter box is filled with lush green foliage, adding a touch of nature to the otherwise concrete and steel environment. Behind the planter, a row of bicycles is neatly parked, indicating a possible bike-sharing scheme. The scene is set against a backdrop of high-rise buildings with glass facades, reflecting the cloudy sky above. The overall mood is one of contemporary urbanity, with a hint of tranquility provided by the greenery and the peaceful atmosphere of the area.",
-            "In a modern urban setting, a large blue planter box with the words MediaCityUK prominently displayed on its sides stands as a focal point in a paved outdoor area. The planter box is filled with lush green foliage, adding a touch of nature to the otherwise concrete and steel environment. Behind the planter, a row of bicycles is neatly parked, indicating a possible bike-sharing scheme. The scene is set against a backdrop of high-rise buildings with glass facades, reflecting the cloudy sky above. The overall mood is one of contemporary urbanity, with a hint of tranquility provided by the greenery and the peaceful atmosphere of the area.",
+            "",
+            "In a modern urban setting, a large blue planter box with the words MediaCityUK prominently displayed on its sides stands as a focal point in a paved outdoor area.",
         ]
     }
     # Start generation

@@ -300,7 +300,7 @@ class MongoDBParquetDataLoad(MongoDBDataLoad):
                     k_ = k
                 if isinstance(v, ObjectId):
                     return_sample[k_] = [str(v)]
-                if isinstance(v, np.ndarray) and "raw_shape" not in k:
+                elif isinstance(v, np.ndarray) and "raw_shape" not in k:
                     raw_shape_key = f"{k}_raw_shape"
                     if raw_shape_key in sample:
                         return_sample[k_] = v.reshape(sample[raw_shape_key])
@@ -312,6 +312,8 @@ class MongoDBParquetDataLoad(MongoDBDataLoad):
                         return_sample[k_] = [torch.Tensor(np.copy(return_sample[k_]))]
                     else:
                         return_sample[k_] = [torch.Tensor(np.copy(v))]
+                else:
+                    return_sample[k_] = [v]
             if i == 0:
                 return_parquet = return_sample
             else:

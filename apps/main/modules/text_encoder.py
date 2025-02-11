@@ -11,6 +11,7 @@ import torch.nn.functional as F
 from apps.main.modules.ops import (
     RotaryEmbedding1D,
 )
+import clip
 from apps.main.modules.ops import create_causal_mask
 from lingua.transformer import (
     RMSNorm,
@@ -34,6 +35,12 @@ class LLAMATransformerArgs(BaseTransformerArgs):
     text_seqlen: int = 256
     gen_seqlen: int = 256
     vocab_size: int = -1
+
+
+@dataclass
+class CLIPArgs:
+    config_name: str = "ViT-B/32"
+    dtype: str = "bf16"
 
 
 class BaseTransformer(nn.Module):
@@ -135,3 +142,25 @@ class LLAMA3(BaseTransformer):
             a=-3 * init_std,
             b=3 * init_std,
         )
+
+
+class CLIP:
+    def __init__(self, args: CLIPArgs):
+        super().__init__()
+        self.clip_model, _ = clip.load(args.config_name, jit=False)
+        self.clip_model = self.clip_model.to(torch.float32).cuda()
+        self.clip_model.eval()
+        self.clip_model.requires_grad_(False)
+        self.dtype = dict(fp32=torch.float32, bf16=torch.bfloat16)[args.dtype]
+
+    def __call__(self, batch: dict[str:any]) -> torch.Tensor:
+        assert "caption" in batch
+        if isinstance(batch["caption"][0], tuple):
+            batch["caption"] = [x[0] for x in batch["caption"]]
+        text_tokens = clip.tokenize(batch["caption"], truncate=True).cuda()
+        x = self.clip_model.token_embedding(text_tokens)
+        x = x + self.clip_model.positional_embedding
+        x = x.permute(1, 0, 2)
+        x = self.clip_model.transformer(x)
+        x = x.permute(1, 0, 2)
+        return x.to(self.dtype)
