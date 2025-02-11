@@ -290,8 +290,6 @@ def tp_parallelize(model, tp_mesh, model_args: ModelArgs, distributed_args):
         layer_plan["attention.wv"] = ColwiseParallel()
         layer_plan["attention.wo"] = RowwiseParallel(output_layouts=Shard(1))
 
-        # Feedforward layers TP
-        # Feedforward layers TP
         layer_plan["feed_forward"] = PrepareModuleInput(
             input_layouts=(Shard(1),),
             desired_input_layouts=(Replicate(),),
