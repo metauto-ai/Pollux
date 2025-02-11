@@ -36,6 +36,7 @@ from lingua.transformer import (
     RMSNorm,
 )
 from apps.main.modules.ops import create_causal_mask
+from apps.main.modules.text_encoder import CLIPArgs, CLIP
 
 logger = logging.getLogger()
 
@@ -58,6 +59,7 @@ class ModelArgs:
     vae: LatentVideoVAEArgs = field(default_factory=LatentVideoVAEArgs)
     scheduler: SchedulerArgs = field(default_factory=SchedulerArgs)
     tokenizer: TokenizerArgs = field(default_factory=TokenizerArgs)
+    text_encoder: CLIPArgs = field(default_factory=CLIPArgs)
     text_cfg_ratio: float = 0.1
     image_cfg_ratio: float = 0.1
     mask_patch: int = 16
@@ -324,6 +326,7 @@ class LatentPollux(nn.Module):
             out_features=args.gen_transformer.dim,
             bias=False,
         )
+        self.text_encoder = CLIP(args.text_encoder)
         init_std = self.gen_transformer.dim ** (-0.5)
         nn.init.trunc_normal_(
             self.token_proj.weight,
@@ -336,6 +339,7 @@ class LatentPollux(nn.Module):
         nn.init.normal_(self.negative_token, std=0.02)
 
     def forward(self, batch: dict[str:any]) -> dict[str:any]:
+        batch["text_embedding"] = self.text_encoder(batch)
         if random.random() > self.text_cfg_ratio:
             conditional_signal = batch["text_embedding"]
         else:
