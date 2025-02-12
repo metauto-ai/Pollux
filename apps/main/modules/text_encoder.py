@@ -158,6 +158,10 @@ class CLIP:
         assert "caption" in batch
         if isinstance(batch["caption"][0], tuple):
             batch["caption"] = [x[0] for x in batch["caption"]]
+        for idx, x in enumerate(batch["caption"]):
+            if not isinstance(x, str):
+                logger.warning(f"Expected string but got {type(x)}: {x}")
+                batch["caption"][idx] = ""
         text_tokens = clip.tokenize(batch["caption"], truncate=True).cuda()
         x = self.clip_model.token_embedding(text_tokens)
         x = x + self.clip_model.positional_embedding
