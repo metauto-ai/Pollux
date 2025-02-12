@@ -31,6 +31,10 @@ from lingua.transformer import (
     FeedForward,
     BlockMask,
     AttentionBias,
+    fmha,
+    flex_attention_comp,
+    repeat_kv,
+    apply_rotary_emb,
     cross_entropy,
 )
 import random
@@ -145,33 +149,130 @@ class PlanTransformerBlock(nn.Module):
         assert text_l + visual_l == x.size(1)
         text_x = x[:, :text_l]
         visual_x = x[:, text_l:]
-        text_h = self.text_op_before_attention(text_x)
-        visual_h = self.visual_op_before_attention(visual_x)
-
-        h = x + self.attention(
-            torch.cat([text_h, visual_h], dim=1),
-            freq_cis,
+        text_xq, text_xk, text_xv = self.text_op_before_attention(text_x)
+        visual_xq, visual_xk, visual_xv = self.visual_op_before_attention(visual_x)
+        xq = torch.cat([text_xq, visual_xq], dim=1)
+        xk = torch.cat([text_xk, visual_xk], dim=1)
+        xv = torch.cat([text_xv, visual_xv], dim=1)
+        x_out = self.fused_attention(
+            x=x,
+            freq_cis=freq_cis,
+            xq=xq,
+            xk=xk,
+            xv=xv,
             tok_idx=tok_idx,
             mask=mask,
             attn_impl=attn_impl,
         )
-        text_h = self.text_op_after_attention(h[:, :text_l])
-        visual_h = self.visual_after_attention(h[:, text_l:])
+
+        text_h = self.text_op_after_attention(pre_x=text_x, h=x_out[:, :text_l])
+        visual_h = self.visual_op_after_attention(pre_x=visual_x, h=x_out[:, text_l:])
         return torch.cat([text_h, visual_h], dim=1)
 
-    @torch.no_grad()
-    def text_op_before_attention(self, x: torch.Tensor) -> torch.Tensor:
-        return self.attention_norm_text(x)
+    def fused_attention(
+        self,
+        x: torch.Tensor,
+        freq_cis: torch.Tensor,
+        xq: torch.Tensor,
+        xk: torch.Tensor,
+        xv: torch.Tensor,
+        tok_idx: Optional[torch.Tensor] = None,
+        mask: Optional[Union[BlockMask, AttentionBias, str]] = None,
+        attn_impl: str = "sdpa",
+    ):
+        assert self.attention_text.n_heads == self.attention_visual.n_heads
+        assert self.attention_text.n_kv_heads == self.attention_visual.n_kv_heads
+        assert self.attention_text.head_dim == self.attention_visual.head_dim
+        assert (
+            self.attention_text.heads_per_group == self.attention_visual.heads_per_group
+        )
+        bsz, seq_len, dim = x.shape
+        output_shape = xq.shape
+        # B S D -> B S H D
+        xq = xq.view(
+            bsz, seq_len, self.attention_text.n_heads, self.attention_text.head_dim
+        )
+        xk = xk.view(
+            bsz, seq_len, self.attention_text.n_kv_heads, self.attention_text.head_dim
+        )
+        xv = xv.view(
+            bsz, seq_len, self.attention_text.n_kv_heads, self.attention_text.head_dim
+        )
+
+        xq, xk = apply_rotary_emb(xq, xk, 1, freq_cis[0:seq_len])
+
+        # This condition helps us be easily compatible
+        # with inference by adding a pluggable KVCache
+        if hasattr(self, "kv_cache"):  # Don't support visual branch kv cache
+            xk, xv = self.attention_text.kv_cache.update(xk, xv, tok_idx)
+
+        xk = repeat_kv(xk, self.attention_text.heads_per_group, dim=2)
+        xv = repeat_kv(xv, self.attention_text.heads_per_group, dim=2)
+
+        if attn_impl == "flex_attention":
+            assert mask is None or isinstance(mask, BlockMask)
+            xq, xk, xv = map(lambda e: e.transpose(1, 2), (xq, xk, xv))
+            output = flex_attention_comp(xq, xk, xv, block_mask=mask)
+            output = output.transpose(1, 2).contiguous()  # B H S D -> B S H D
+
+        elif attn_impl == "fmha":
+            assert mask is None or isinstance(mask, AttentionBias)
+            output = fmha.memory_efficient_attention(xq, xk, xv, attn_bias=mask)
+            # This uses B S H D instead of B H S D of pytorch
+
+        elif attn_impl == "sdpa":
+            xq, xk, xv = map(lambda e: e.transpose(1, 2), (xq, xk, xv))
+            assert mask is None or isinstance(mask, (str, torch.Tensor))
+            is_causal = (mask == "causal") if isinstance(mask, str) else False
+            mask = mask if isinstance(mask, torch.Tensor) else None
+            output = F.scaled_dot_product_attention(
+                xq,
+                xk,
+                xv,
+                is_causal=is_causal,
+                attn_mask=mask,
+            )
+            output = output.transpose(1, 2).contiguous()  # B H S D -> B S H D
+        else:
+            raise NotImplementedError(
+                f"Attention implementation {attn_impl} not supported"
+            )
+
+        return output.reshape(output_shape)
 
     @torch.no_grad()
-    def text_op_after_attention(self, h: torch.Tensor) -> torch.Tensor:
+    def text_op_before_attention(
+        self,
+        x: torch.Tensor,
+    ) -> torch.Tensor:
+        x = self.attention_norm_text(x)
+        xq = self.attention_text.wq(x.view_as(x))
+        xk = self.attention_text.wk(x.view_as(x))
+        xv = self.attention_text.wv(x.view_as(x))
+        return xq, xk, xv
+
+    @torch.no_grad()
+    def text_op_after_attention(
+        self, pre_x: torch.Tensor, h: torch.Tensor
+    ) -> torch.Tensor:
+        h = pre_x + self.attention_text.wo(h)
         out = h + self.feed_forward_text(self.ffn_norm_text(h))
         return out
 
-    def visual_op_before_attention(self, x: torch.Tensor) -> torch.Tensor:
-        return self.attention_norm_visual(x)
+    def visual_op_before_attention(
+        self,
+        x: torch.Tensor,
+    ) -> torch.Tensor:
+        x = self.attention_norm_visual(x)
+        xq = self.attention_visual.wq(x.view_as(x))
+        xk = self.attention_visual.wk(x.view_as(x))
+        xv = self.attention_visual.wv(x.view_as(x))
+        return xq, xk, xv
 
-    def visual_after_attention(self, h: torch.Tensor) -> torch.Tensor:
+    def visual_op_after_attention(
+        self, pre_x: torch.Tensor, h: torch.Tensor
+    ) -> torch.Tensor:
+        h = pre_x + self.attention_visual.wo(h)
         out = h + self.feed_forward_visual(self.ffn_norm_visual(h))
         return out
 
@@ -234,9 +335,16 @@ class PlanTransformer(nn.Module):
 
     def forward(self, h, text_l, visual_l, freq_cis, attn_impl: str = "sdpa"):
         assert text_l + visual_l == h.size(1)
-        mask = self.get_attention_mask(h.size(1), text_l)
+        mask = self.get_attention_mask(h.size(1), text_l).to(h.device)
         for layer in self.layers:
-            h = layer(h, freq_cis, mask=mask, attn_impl=attn_impl)
+            h = layer(
+                h,
+                text_l=text_l,
+                visual_l=visual_l,
+                freq_cis=freq_cis,
+                mask=mask,
+                attn_impl=attn_impl,
+            )
         return h
 
     def init_weights(self, pre_trained_path: Optional[str] = None, from_llama=False):
@@ -397,7 +505,7 @@ class Pollux(nn.Module):
         nn.init.xavier_uniform_(self.latent_projector.weight)
         nn.init.xavier_uniform_(self.latent_head.weight)
         # nn.init.zeros_(self.latent_head.bias)
-        self.vision_cls_emb.reset_parameters()
+        # self.vision_cls_emb.reset_parameters()
 
     def patchify_and_embed(
         self, x: torch.Tensor
@@ -608,14 +716,14 @@ class Pollux(nn.Module):
 
     def set_train(self):
         self.latent_projector.train()
-        self.vision_cls_emb.train()
+        # self.vision_cls_emb.train()
         self.llm.train()
 
     def set_eval(self):
         self.latent_projector.eval()
-        self.vision_cls_emb.eval()
+        # self.vision_cls_emb.eval()
         self.llm.eval()
-        self.vision_cls_emb.reset_parameters()
+        # self.vision_cls_emb.reset_parameters()
 
     def to(self, device=None, dtype=None, non_blocking=False):
         # Override to handle the sub-model explicitly

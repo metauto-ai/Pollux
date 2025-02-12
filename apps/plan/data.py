@@ -23,7 +23,7 @@ from apps.main.utils.dummy_data_load import DummyDataLoad
 from apps.main.utils.mongodb_data_load import (
     MongoDBDataLoad,
     MongoDBImageNetDataLoad,
-    MongoDBCC12MDataLoad,
+    MongoDBImageDataLoad,
     MongoDBParquetDataLoad,
 )
 from apps.main.utils.sampler import StatefulDistributedSampler
@@ -166,7 +166,7 @@ class AutoDataLoader:
                 args=args,
             )
         elif args.data_name == "cc12m":
-            dataset = MongoDBCC12MDataLoad(
+            dataset = MongoDBImageDataLoad(
                 collection_name=args.data_name,
                 query=args.query,
                 shard_idx=self.shard_id,
