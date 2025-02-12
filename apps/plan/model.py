@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Union
 import logging
 import os
 
@@ -23,7 +23,16 @@ from apps.main.modules.gen_transformer import (
     RotaryEmbedding1D,
     RotaryEmbedding2D,
 )
-from lingua.transformer import TransformerBlock, RMSNorm, InitStdFactor, cross_entropy
+from lingua.transformer import (
+    BaseTransformerArgs,
+    Attention,
+    RMSNorm,
+    InitStdFactor,
+    FeedForward,
+    BlockMask,
+    AttentionBias,
+    cross_entropy,
+)
 import random
 
 logger = logging.getLogger()
@@ -58,6 +67,7 @@ class LlamaArgs:
     condition_seqlen: int = 320
     vocab_size: int = 128256
     pre_trained_path: Optional[str] = None
+    from_llama: bool = False
     attention_type: str = "full"  # full or causal
 
 
@@ -75,7 +85,109 @@ class ModelArgs:
     random_rate: Optional[float] = None
 
 
-class LlamaTransformer(nn.Module):
+class PlanTransformerBlock(nn.Module):
+    def __init__(self, args: BaseTransformerArgs):
+        super().__init__()
+
+        assert (args.head_dim is not None) or (
+            args.n_heads is not None
+        ), "Should specify at least head_dim or n_heads"
+        self.head_dim = args.head_dim or args.dim // args.n_heads
+        self.n_heads = args.n_heads or args.dim // args.head_dim
+        self.n_kv_heads = args.n_kv_heads or self.n_heads
+
+        assert args.n_heads % self.n_kv_heads == 0
+        assert args.dim % args.n_heads == 0
+
+        self.attention_text = Attention(
+            dim=args.dim,
+            head_dim=self.head_dim,
+            n_heads=self.n_heads,
+            n_kv_heads=self.n_kv_heads,
+            rope_theta=args.rope_theta,
+        )
+        self.feed_forward_text = FeedForward(
+            dim=args.dim,
+            hidden_dim=4 * args.dim,
+            multiple_of=args.multiple_of,
+            ffn_dim_multiplier=args.ffn_dim_multiplier,
+        )
+        self.attention_norm_text = RMSNorm(args.dim, eps=args.norm_eps)
+        self.ffn_norm_text = RMSNorm(args.dim, eps=args.norm_eps)
+
+        self.attention_visual = Attention(
+            dim=args.dim,
+            head_dim=self.head_dim,
+            n_heads=self.n_heads,
+            n_kv_heads=self.n_kv_heads,
+            rope_theta=args.rope_theta,
+        )
+
+        self.feed_forward_visual = FeedForward(
+            dim=args.dim,
+            hidden_dim=4 * args.dim,
+            multiple_of=args.multiple_of,
+            ffn_dim_multiplier=args.ffn_dim_multiplier,
+        )
+        self.attention_norm_visual = RMSNorm(args.dim, eps=args.norm_eps)
+        self.ffn_norm_visual = RMSNorm(args.dim, eps=args.norm_eps)
+
+    def forward(
+        self,
+        x: torch.Tensor,
+        text_l: int,
+        visual_l: int,
+        freq_cis: torch.Tensor,
+        tok_idx: Optional[torch.Tensor] = None,
+        mask: Optional[Union[BlockMask, AttentionBias, str]] = None,
+        attn_impl: str = "sdpa",
+    ) -> torch.Tensor:
+        assert text_l + visual_l == x.size(1)
+        text_x = x[:, :text_l]
+        visual_x = x[:, text_l:]
+        text_h = self.text_op_before_attention(text_x)
+        visual_h = self.visual_op_before_attention(visual_x)
+
+        h = x + self.attention(
+            torch.cat([text_h, visual_h], dim=1),
+            freq_cis,
+            tok_idx=tok_idx,
+            mask=mask,
+            attn_impl=attn_impl,
+        )
+        text_h = self.text_op_after_attention(h[:, :text_l])
+        visual_h = self.visual_after_attention(h[:, text_l:])
+        return torch.cat([text_h, visual_h], dim=1)
+
+    @torch.no_grad()
+    def text_op_before_attention(self, x: torch.Tensor) -> torch.Tensor:
+        return self.attention_norm_text(x)
+
+    @torch.no_grad()
+    def text_op_after_attention(self, h: torch.Tensor) -> torch.Tensor:
+        out = h + self.feed_forward_text(self.ffn_norm_text(h))
+        return out
+
+    def visual_op_before_attention(self, x: torch.Tensor) -> torch.Tensor:
+        return self.attention_norm_visual(x)
+
+    def visual_after_attention(self, h: torch.Tensor) -> torch.Tensor:
+        out = h + self.feed_forward_visual(self.ffn_norm_visual(h))
+        return out
+
+    def init_weights(self, init_std=None, factor=1.0):
+        self.attention_text.reset_parameters(init_std, factor)
+        self.attention_norm_text.reset_parameters()
+        self.attention_visual.reset_parameters(init_std, factor)
+        self.attention_norm_visual.reset_parameters()
+
+        self.feed_forward_text.reset_parameters(init_std, factor)
+        self.ffn_norm_text.reset_parameters()
+        self.feed_forward_visual.reset_parameters(init_std, factor)
+        self.ffn_norm_visual.reset_parameters()
+
+
+class PlanTransformer(nn.Module):
     def __init__(self, args: LlamaArgs):
         super().__init__()
         self.dim = args.dim
@@ -85,20 +197,49 @@ class LlamaTransformer(nn.Module):
         self.tok_embeddings = nn.Embedding(args.vocab_size, args.dim)
         self.layers = nn.ModuleList()
         for _ in range(args.n_layers):
-            self.layers.append(TransformerBlock(args))
+            self.layers.append(PlanTransformerBlock(args))
 
-    def forward(self, h, freq_cis, attn_impl: str = "sdpa"):
-        if self.attn_type == "full":
-            mask = None
-        elif self.attn_type == "causal":
-            mask = "causal"
-        else:
-            raise ValueError(f"Invalid attention type: {self.attn_type}")
+    def get_attention_mask(self, seq_len, text_l):
+        """
+        Generates an attention mask where:
+        - Tokens before `text_l` use causal (autoregressive) attention.
+        - Tokens from `text_l` onwards use bidirectional attention.
+
+        Args:
+            seq_len (int): Total sequence length.
+            text_l (int): The index separating causal and bidirectional attention.
+
+        Returns:
+            torch.Tensor: The attention mask of shape (seq_len, seq_len).
+        """
+        # Causal attention mask (lower triangular)
+        causal_mask = torch.tril(torch.ones(text_l, text_l))
+
+        # Bidirectional attention mask (all ones)
+        bidirectional_mask = torch.ones(seq_len - text_l, seq_len - text_l)
+
+        # Zero mask for cross attention (causal tokens cannot see bidirectional tokens)
+        cross_mask = torch.zeros(text_l, seq_len - text_l)
+
+        # Concatenating the masks
+        upper_part = torch.cat([causal_mask, cross_mask], dim=1)
+        lower_part = torch.cat(
+            [torch.ones(seq_len - text_l, text_l), bidirectional_mask], dim=1
+        )
+
+        # Final mask
+        attn_mask = torch.cat([upper_part, lower_part], dim=0)
+
+        return attn_mask
+
+    def forward(self, h, text_l, visual_l, freq_cis, attn_impl: str = "sdpa"):
+        assert text_l + visual_l == h.size(1)
+        mask = self.get_attention_mask(h.size(1), text_l)
         for layer in self.layers:
             h = layer(h, freq_cis, mask=mask, attn_impl=attn_impl)
         return h
 
-    def init_weights(self, pre_trained_path: Optional[str] = None):
+    def init_weights(self, pre_trained_path: Optional[str] = None, from_llama=False):
         for depth, layer in enumerate(self.layers):
             factor = {
                 InitStdFactor.CURRENT_DEPTH: (2 * (depth + 1)) ** 0.5,
@@ -113,22 +254,45 @@ class LlamaTransformer(nn.Module):
             assert os.path.exists(pre_trained_path)
             ckpt_state_dict = torch.load(pre_trained_path, map_location="cpu")
             target_state_dict = self.state_dict()
-            filtered_state_dict = {
-                k: v
-                for k, v in ckpt_state_dict.items()
-                if k in target_state_dict and v.shape == target_state_dict[k].shape
-            }
+
+            if from_llama:
+                filtered_state_dict = {}
+                for k, v in target_state_dict.items():
+                    if "_text" in k:
+                        k_remove = k.replace("_text", "")
+                        if (
+                            k_remove in ckpt_state_dict
+                            and v.shape == ckpt_state_dict[k_remove].shape
+                        ):
+                            filtered_state_dict[k] = ckpt_state_dict[k_remove]
+                    elif "_visual" in k:
+                        k_remove = k.replace("_visual", "")
+                        if (
+                            k_remove in ckpt_state_dict
+                            and v.shape == ckpt_state_dict[k_remove].shape
+                        ):
+                            filtered_state_dict[k] = ckpt_state_dict[k_remove]
+                    else:
+                        if k in ckpt_state_dict and v.shape == ckpt_state_dict[k].shape:
+                            filtered_state_dict[k] = ckpt_state_dict[k]
+            else:
+                filtered_state_dict = {
+                    k: v
+                    for k, v in ckpt_state_dict.items()
+                    if k in target_state_dict and v.shape == target_state_dict[k].shape
+                }
             target_state_dict.update(filtered_state_dict)
             self.load_state_dict(target_state_dict)
             missing_keys = set(target_state_dict.keys()) - set(
                 filtered_state_dict.keys()
             )
-            unexpected_keys = set(ckpt_state_dict.keys()) - set(
+            unexpected_keys = set(filtered_state_dict.keys()) - set(
                 target_state_dict.keys()
             )
             logger.info(f"Load the checkpoints from {pre_trained_path}")
             logger.warning(f"Missing keys: {missing_keys}")
             logger.warning(f"Unexpected keys: {unexpected_keys}")
+            logger.warning(f"Model loaded keys Num: {len(filtered_state_dict.keys())}")
 
 
 class TVAE:
@@ -172,11 +336,6 @@ class Pollux(nn.Module):
         self.mask_token = nn.Parameter(
             torch.zeros(1, 1, args.latent_projector.output_dim)
         )
-        self.vision_cls_emb = LabelEmbedder(
-            num_classes=args.num_classes,
-            hidden_size=args.llm.dim,
-            dropout_prob=args.image_cfg_ratio,
-        )
         self.vision_boi_emb = nn.Parameter(
             torch.zeros(1, args.latent_projector.output_dim)
         )
@@ -205,8 +364,8 @@ class Pollux(nn.Module):
         if self.llm_tokenizer.pad_token is None:
             self.llm_tokenizer.pad_token = self.llm_tokenizer.eos_token
 
-        self.llm = LlamaTransformer(args.llm)
-        self.llm.init_weights(args.llm.pre_trained_path)
+        self.llm = PlanTransformer(args.llm)
+        self.llm.init_weights(args.llm.pre_trained_path, args.llm.from_llama)
 
         # head
         self.dim = args.llm.dim
@@ -330,11 +489,7 @@ class Pollux(nn.Module):
     ) -> Tuple[dict[str, any], torch.Tensor]:
 
         images = batch["image"]
-        labels = batch["label"]
         captions = batch["caption"]
-
-        # Class Embedding
-        cls_emb = self.vision_cls_emb(labels, train=True).unsqueeze(1)  # [B, 1, D]
 
         # Vision Discrete Latent Codes
         # self.tvae.vae.vae._enc_model.to(images.device)
@@ -376,14 +531,13 @@ class Pollux(nn.Module):
         mm_embs = torch.cat(
             [
                 text_embs,
-                cls_emb,
                 boi_emb,
                 vae_embs,
                 # eoi_emb,
             ],
             dim=1,
         )
-        vae_start_idx = text_embs.size(1) + 2
+        vae_start_idx = text_embs.size(1) + 1
 
         # rope freq
         freqs_cis_text = self.rope_embeddings_conditions.freqs_cis[:vae_start_idx]
@@ -392,7 +546,13 @@ class Pollux(nn.Module):
         freqs_cis = torch.cat([freqs_cis_text, freqs_cis_img], dim=0)
 
         # LLM Forward
-        h = self.llm(mm_embs, freqs_cis, attn_impl=attn_impl)
+        h = self.llm(
+            mm_embs,
+            vae_start_idx,
+            mm_embs.size(1) - vae_start_idx,
+            freqs_cis,
+            attn_impl=attn_impl,
+        )
 
         # Latent Head
         latent_hidden = h[:, vae_start_idx : vae_start_idx + vae_embs.size(1), :]
@@ -415,7 +575,6 @@ class Pollux(nn.Module):
 
         # compute loss
         # pred_loss = F.mse_loss(pred_latent, vae_latent.squeeze(2))
-        # TODO: either next-token-prediction or reconstruction token prediction
         vae_indices = vae_indices.squeeze(1).flatten(1).long()  # [B, H/16*W/16]
         # vae_indices.shape [16, 1, 16, 16] -> [16, 256]
         # pred_loss = F.cross_entropy(pred_latent[:, :-1].permute(0, 2, 1), vae_indices[:, 1:])
@@ -478,50 +637,8 @@ def build_fsdp_grouping_plan(model_args: ModelArgs, model: nn.Module):
 
     group_plan.append(("latent_head", True))
 
-    # llama_model = getattr(model, "llm", None)
-    # if llama_model and hasattr(llama_model, "model"):
-    #     logger.info("LlamaForCausalLM has `model` attribute. Building group plan...")
-    #     for idx, block in enumerate(llama_model.model.layers):
-    #         group_plan.append((f"llm.model.layers.{idx}", False))
-
-    # NOTE: Hunyuan
-    # vae_encoder = getattr(model.vae.vae.encoder, "down_blocks", None)
-    # if vae_encoder:
-    #     for i in range(len(vae_encoder)):
-    #         group_plan.append((f"vae.vae.encoder.down_blocks.{i}", False))
-    # else:
-    #     logger.warning("VAE encoder does not have `down_blocks` attribute.")
-    # COSMOS
-    # vae_encoder = getattr(model.vae.vae.vae._enc_model, "encoder", None)
-    # if vae_encoder and hasattr(vae_encoder, "down"):
-    #     for i in range(len(vae_encoder.down)):
-    #         group_plan.append((f"vae.vae.vae._enc_model.encoder.down.{i}", False))
-    # elif vae_encoder and hasattr(vae_encoder, "mid"):
-    #     group_plan.append((f"vae.vae.vae._enc_model.encoder.mid.block_1", False))
-    #     group_plan.append((f"vae.vae.vae._enc_model.encoder.mid.attn_1", False))
-    #     group_plan.append((f"vae.vae.vae._enc_model.encoder.mid.block_2", False))
-
     logger.info(f"The `group_plan` for FSDP (layer-level granularity):\n{group_plan}")
     return group_plan
-
-
-def recursive_list_modules(module, prefix=""):
-    modules = []
-    if isinstance(module, (torch.nn.Module, torch.jit.RecursiveScriptModule)):
-        modules.append(prefix.strip("."))
-        for name in dir(module):
-            if not name.startswith("_"):
-                try:
-                    child = getattr(module, name)
-                    if isinstance(
-                        child, (torch.nn.Module, torch.jit.RecursiveScriptModule)
-                    ):
-                        modules.extend(
-                            recursive_list_modules(child, prefix=f"{prefix}.{name}")
-                        )
-                except AttributeError:
-                    pass
-    return modules
 
 
 def tp_parallelize(model, tp_mesh, model_args: ModelArgs, distributed_args):
@@ -561,3 +678,48 @@ def tp_parallelize(model, tp_mesh, model_args: ModelArgs, distributed_args):
         )
 
     logger.info("Tensor Parallelization complete.")
+
+
+if __name__ == "__main__":
+    args = ModelArgs(
+        text_cfg_ratio=0.1,
+        image_cfg_ratio=0.1,
+        num_classes=1000,
+        vae=LatentVideoVAEArgs(
+            model_name="COSMOS-DV",
+            pretrained_model_name_or_path="/jfs/checkpoints/cosmos/Cosmos-Tokenizer-DV8x16x16",
+            model_dtype="bfloat16",
+            enable_tiling=False,
+            enable_slicing=False,
+        ),
+        latent_projector=LatentProjecterArgs(
+            latent_dim=6,
+            patchify_size=1,
+            output_dim=3072,
+        ),
+        use_vision_boi=True,
+        tokenizer=TokenizerArgs(model_name="/jfs/checkpoints/Llama-3.2-3B"),
+        llm=LlamaArgs(
+            dim=3072,
+            ffn_dim_multiplier=1.0,
+            multiple_of=256,
+            n_layers=28,
+            n_heads=24,
+            n_kv_heads=8,
+            norm_eps=1e-5,
+            rope_theta=500000.0,
+            pre_trained_path="/jfs/checkpoints/Llama-3.2-3B/original/consolidated.00.pth",
+            from_llama=True,
+            gen_seqlen=256,
+            condition_seqlen=320,
+            attention_type="full",
+        ),
+        codebook_size=64000,
+    )
+    model = Pollux(args)
+    # Example usage
+    seq_len = 10  # Total sequence length
+    text_l = 6  # Switch point from causal to bidirectional
+
+    attn_mask = model.llm.get_attention_mask(seq_len, text_l)
+    print(attn_mask)
