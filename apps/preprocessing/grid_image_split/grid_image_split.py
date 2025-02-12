@@ -142,27 +142,42 @@ List of 1227317 items
             List of 0 items
 """
 
+err_log_txt = "/jfs/jinjie/code/downloads/logs/split.log"
 
 def download_and_split_image(args):
     record, jfs_export_path=args
     assert record.get("is_collage", False) == True
     img_path = record["url"]
-    if img_path.startswith("s3://") or img_path.startswith("http"):
-        s3url = img_path
-        response = requests.get(s3url)
-        image = Image.open(io.BytesIO(response.content)).convert("RGB")
-    else:
-        with open(img_path, "rb") as f:
-            image = Image.open(f).convert("RGB")
 
+    name, ext = os.path.splitext(record['filename'])
+    temp_jfs_paths = [os.path.join(jfs_export_path, f"{name}_split_{i}{ext}") for i in range(4)]
+
+    try:
+        if img_path.startswith("s3://") or img_path.startswith("http"):
+            s3url = img_path
+            response = requests.get(s3url)
+            image = Image.open(io.BytesIO(response.content)).convert("RGB")
+        else:
+            with open(img_path, "rb") as f:
+                image = Image.open(f).convert("RGB")
+    except Exception as e:
+        # write to log file
+        with open(err_log_txt, "a") as f:
+            f.write(f"Error downloading id {record['_id']['$oid']} from {img_path}: {str(e)}\n")
+        return []
+    
     # split the image into 4 parts
-
     width, height = image.size
     # assert width==record['width'] and height==record['height']
     if width!=record['width'] or height!=record['height']:
         print(
             f"Warning : Image {record['_id']['$oid']} size mismatch: actual {width}x{height} != record {record['width']}x{record['height']}"
         )
+        # also write to log file
+        with open(err_log_txt, "a") as f:
+            f.write(
+                f"Warning : Image id {record['_id']['$oid']} size mismatch: actual {width}x{height} != record {record['width']}x{record['height']}\n"
+            )
     mid_width, mid_height = width // 2, height // 2
 
     # Define the box coordinates for each quadrant
@@ -179,8 +194,7 @@ def download_and_split_image(args):
 
     for i, new_record in enumerate(new_records):
         # avoid some weird . in the filename
-        name, ext = os.path.splitext(record['filename'])
-        temp_jfs_path=os.path.join(jfs_export_path, f"{name}_split_{i}{ext}")
+        temp_jfs_path=temp_jfs_paths[i]
         # save the image to file path
         split_images[i].save(temp_jfs_path)
         new_record['_id'] = {'$oid':record['_id']['$oid'] + f"_{i}"}
