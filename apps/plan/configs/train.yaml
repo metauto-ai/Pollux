@@ -38,7 +38,6 @@ distributed:
 
 model:
     text_cfg_ratio: 0.1
-    image_cfg_ratio: 0.1
     num_classes: 1000
     vae:
         model_name: "COSMOS-DV"
@@ -68,7 +67,7 @@ model:
         from_llama: true
         gen_seqlen: 256
         condition_seqlen: 320
-        attention_type: 'full'
+        text_seqlen: 128
     codebook_size: 64000
 
 

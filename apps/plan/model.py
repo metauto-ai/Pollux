@@ -10,8 +10,6 @@ from torch.distributed._tensor import Replicate, Shard
 from torch.distributed.tensor.parallel import (
     ColwiseParallel,
     RowwiseParallel,
-    SequenceParallel,
-    PrepareModuleInput,
     parallelize_module,
 )
 from transformers import LlamaTokenizerFast
@@ -69,10 +67,10 @@ class LlamaArgs:
     init_std_factor: str = "disabled"
     gen_seqlen: int = 256
     condition_seqlen: int = 320
+    text_seqlen: int = 128
     vocab_size: int = 128256
     pre_trained_path: Optional[str] = None
     from_llama: bool = False
-    attention_type: str = "full"  # full or causal
 
 
 @dataclass
@@ -83,7 +81,6 @@ class ModelArgs:
     llm: LlamaArgs = field(default_factory=LlamaArgs)
     use_vision_boi: bool = True
     text_cfg_ratio: float = 0.1
-    image_cfg_ratio: float = 0.1
     codebook_size: int = 512
     num_classes: int = 1000
     random_rate: Optional[float] = None
@@ -294,7 +291,6 @@ class PlanTransformer(nn.Module):
         self.dim = args.dim
         self.init_base_std = args.init_base_std
         self.init_std_factor = InitStdFactor(args.init_std_factor)
-        self.attn_type = args.attention_type
         self.tok_embeddings = nn.Embedding(args.vocab_size, args.dim)
         self.layers = nn.ModuleList()
         for _ in range(args.n_layers):
@@ -425,9 +421,9 @@ class TVAE:
 
 class Pollux(nn.Module):
 
-    VERSION: str = "v0.8.2"
+    VERSION: str = "v1.0"
     DESCRIPTION: str = (
-        "The planning model, basically an MLLM for predicting the long visual latent codes."
+        "The planning model, similar to LMFusion model, the text branch is freezed and the visual branch is learnable."
     )
 
     def __init__(self, args: ModelArgs):
@@ -593,6 +589,9 @@ class Pollux(nn.Module):
 
         return images_embs, freqs_cis_img, ids_restore, img_mask
 
+    def cfg_drop(self, data, cfg_ratio, place_holder=""):
+        return [place_holder if random.random() < cfg_ratio else x for x in data]
+
     def forward(
         self,
         batch: dict[str, any],
@@ -602,9 +601,6 @@ class Pollux(nn.Module):
 
         images = batch["image"]
         captions = batch["caption"]
-
-        # Vision Discrete Latent Codes
-        # self.tvae.vae.vae._enc_model.to(images.device)
         vae_indices, vae_latent = self.tvae.encode(
             images
         )  # [16, 1, 16, 16], [16, 1, 16, 16, 8]
@@ -613,8 +609,6 @@ class Pollux(nn.Module):
         vae_embs, H_, W_, freqs_cis_img = self.patchify_and_embed(vae_latent.squeeze(2))
         # [B, H/16 * W/16, D]
 
-        # apply masking
-        original_vae_embs = vae_embs.clone()
         if self.args.random_rate is None:
             self.args.random_rate = random.random()
 
@@ -624,11 +618,14 @@ class Pollux(nn.Module):
             mask_strategy=mask_strategy,
             random_rate=self.args.random_rate,
         )
-
+        captions = self.cfg_drop(
+            captions, cfg_ratio=self.args.text_cfg_ratio, place_holder=""
+        )
         # Text Embedding
         tokenizer_output = self.llm_tokenizer(
             captions,
-            padding=True,
+            max_length=self.args.llm.text_seqlen,
+            padding="max_length",
             truncation=True,
             return_tensors="pt",
         )
@@ -732,7 +729,6 @@ class Pollux(nn.Module):
         return self
 
 
-# Optional policy for activation checkpointing. With None, we stick to the default (defined distributed.py: default_no_recompute_ops)
 def get_no_recompute_ops():
     return None
 
@@ -753,7 +749,9 @@ def build_fsdp_grouping_plan(model_args: ModelArgs, model: nn.Module):
     return group_plan
 
 
-def tp_parallelize(model, tp_mesh, model_args: ModelArgs, distributed_args):
+def tp_parallelize(
+    model, tp_mesh, model_args: ModelArgs, distributed_args
+):  # we not use tp_paralle, it is a place holder
     projecter_plan = {
         "latent_projector": RowwiseParallel(output_layouts=Shard(1)),
     }
@@ -790,48 +788,3 @@ def tp_parallelize(model, tp_mesh, model_args: ModelArgs, distributed_args):
         )
 
     logger.info("Tensor Parallelization complete.")
-
-
-if __name__ == "__main__":
-    args = ModelArgs(
-        text_cfg_ratio=0.1,
-        image_cfg_ratio=0.1,
-        num_classes=1000,
-        vae=LatentVideoVAEArgs(
-            model_name="COSMOS-DV",
-            pretrained_model_name_or_path="/jfs/checkpoints/cosmos/Cosmos-Tokenizer-DV8x16x16",
-            model_dtype="bfloat16",
-            enable_tiling=False,
-            enable_slicing=False,
-        ),
-        latent_projector=LatentProjecterArgs(
-            latent_dim=6,
-            patchify_size=1,
-            output_dim=3072,
-        ),
-        use_vision_boi=True,
-        tokenizer=TokenizerArgs(model_name="/jfs/checkpoints/Llama-3.2-3B"),
-        llm=LlamaArgs(
-            dim=3072,
-            ffn_dim_multiplier=1.0,
-            multiple_of=256,
-            n_layers=28,
-            n_heads=24,
-            n_kv_heads=8,
-            norm_eps=1e-5,
-            rope_theta=500000.0,
-            pre_trained_path="/jfs/checkpoints/Llama-3.2-3B/original/consolidated.00.pth",
-            from_llama=True,
-            gen_seqlen=256,
-            condition_seqlen=320,
-            attention_type="full",
-        ),
-        codebook_size=64000,
-    )
-    model = Pollux(args)
-    # Example usage
-    seq_len = 10  # Total sequence length
-    text_l = 6  # Switch point from causal to bidirectional
-
-    attn_mask = model.llm.get_attention_mask(seq_len, text_l)
-    print(attn_mask)
