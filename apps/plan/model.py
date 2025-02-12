@@ -293,6 +293,10 @@ class PlanTransformer(nn.Module):
             logger.warning(f"Missing keys: {missing_keys}")
             logger.warning(f"Unexpected keys: {unexpected_keys}")
             logger.warning(f"Model loaded keys Num: {len(filtered_state_dict.keys())}")
+            for name, param in self.named_parameters():
+                if "_text" in name:
+                    param.requires_grad = False
+            self.tok_embeddings.requires_grad_(False)
 
 
 class TVAE:
