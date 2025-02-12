@@ -158,7 +158,11 @@ def download_and_split_image(args):
     # split the image into 4 parts
 
     width, height = image.size
-    assert width==record['width'] and height==record['height']
+    # assert width==record['width'] and height==record['height']
+    if width!=record['width'] or height!=record['height']:
+        print(
+            f"Warning : Image {record['_id']['$oid']} size mismatch: actual {width}x{height} != record {record['width']}x{record['height']}"
+        )
     mid_width, mid_height = width // 2, height // 2
 
     # Define the box coordinates for each quadrant
