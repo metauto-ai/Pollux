@@ -32,6 +32,12 @@ cd apps/main
 python test_vae.py
 ```
 
+* Installation of CLIP MOdel
+```bash
+pip install git+https://github.com/openai/CLIP.git
+```
+
+
 * If you need to run data preprocessing (Optional dependencies)
 ```bash
 pip install timm
