@@ -57,7 +57,7 @@ from lingua.metrics import (
 from lingua.optim import OptimArgs, build_optimizer
 from lingua.profiling import ProfilerArgs, maybe_run_profiler
 
-from apps.main.data import AutoDataLoader, DataArgs
+from apps.main.data import AutoDataLoader, DataArgs, DictTensorBatchIterator
 from apps.main.modules.schedulers import SchedulerArgs
 from apps.main.utils.cal_flops import get_num_flop_per_token
 from apps.gen_tran.model import (
@@ -67,7 +67,6 @@ from apps.gen_tran.model import (
     tp_parallelize,
     get_no_recompute_ops,
 )
-from apps.main.data import DictTensorBatchIterator
 from apps.main.eval import (
     launch_eval,
     EVAL_FOLDER_NAME,

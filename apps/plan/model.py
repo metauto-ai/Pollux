@@ -14,8 +14,6 @@ from torch.distributed.tensor.parallel import (
 )
 from transformers import LlamaTokenizerFast
 
-# from apps.main.modules.vae import LatentVideoVAE, LatentVideoVAEArgs
-from apps.main.modules.vae import build_vae, LatentVideoVAEArgs
 from apps.main.modules.embedder import LabelEmbedder
 from apps.main.modules.gen_transformer import (
     RotaryEmbedding1D,
@@ -75,14 +73,11 @@ class LlamaArgs:
 
 @dataclass
 class ModelArgs:
-    vae: LatentVideoVAEArgs = field(default_factory=LatentVideoVAEArgs)
     latent_projector: LatentProjecterArgs = field(default_factory=LatentProjecterArgs)
     tokenizer: TokenizerArgs = field(default_factory=TokenizerArgs)
     llm: LlamaArgs = field(default_factory=LlamaArgs)
-    use_vision_boi: bool = True
     text_cfg_ratio: float = 0.1
     codebook_size: int = 512
-    num_classes: int = 1000
     random_rate: Optional[float] = None
 
 
@@ -403,23 +398,7 @@ class PlanTransformer(nn.Module):
             self.tok_embeddings.requires_grad_(False)
 
 
-class TVAE:
-    def __init__(self, args: LatentVideoVAEArgs):
-        self.vae = build_vae(args)
-
-    def encode(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-        indices, latent = self.vae.encode(x)
-        return indices, latent
-
-    def decode(self, indices: torch.Tensor) -> torch.Tensor:
-        return self.vae.decode(indices)
-
-    def to(self, device=None, dtype=None):
-        self.vae.to(device=device, dtype=dtype)
-        return self
-
-
-class Pollux(nn.Module):
+class Pollux_Plan(nn.Module):
 
     VERSION: str = "v1.0"
     DESCRIPTION: str = (
@@ -429,9 +408,6 @@ class Pollux(nn.Module):
     def __init__(self, args: ModelArgs):
         super().__init__()
         self.args = args
-
-        # self.tvae = LatentVideoVAE(args.vae)
-        self.tvae = TVAE(args.vae)
         self.patchify_size = args.latent_projector.patchify_size
         assert self.patchify_size == 1, "Patchify size must be 1 for 16x16x8 TVAE."
         self.latent_projector = nn.Linear(
@@ -447,10 +423,6 @@ class Pollux(nn.Module):
         self.vision_boi_emb = nn.Parameter(
             torch.zeros(1, args.latent_projector.output_dim)
         )
-        # self.vision_eoi_emb = nn.Parameter(
-        #     torch.zeros(1, args.latent_projector.output_dim)
-        # )
-        # we do not use eoi for now
 
         self.rope_embeddings_conditions = RotaryEmbedding1D(
             theta=args.llm.rope_theta,
@@ -474,7 +446,6 @@ class Pollux(nn.Module):
 
         self.llm = PlanTransformer(args.llm)
         self.llm.init_weights(args.llm.pre_trained_path, args.llm.from_llama)
-
         # head
         self.dim = args.llm.dim
         self.norm = RMSNorm(args.llm.dim, eps=args.llm.norm_eps)
@@ -497,11 +468,8 @@ class Pollux(nn.Module):
             b=3 * init_std,
         )
         nn.init.normal_(self.vision_boi_emb, std=0.02)
-        # nn.init.normal_(self.vision_eoi_emb, std=0.02)
         nn.init.xavier_uniform_(self.latent_projector.weight)
         nn.init.xavier_uniform_(self.latent_head.weight)
-        # nn.init.zeros_(self.latent_head.bias)
-        # self.vision_cls_emb.reset_parameters()
 
     def patchify_and_embed(
         self, x: torch.Tensor
@@ -581,9 +549,6 @@ class Pollux(nn.Module):
                 [freqs_cis_img_keep, freqs_cis_img_mask], dim=0
             )  # [256, 64, 2, 2]
 
-        elif mask_strategy == "full_mask":
-            raise NotImplementedError("Full mask is not implemented yet.")
-
         else:
             raise ValueError(f"Invalid mask strategy: {mask_strategy}")
 
@@ -599,11 +564,13 @@ class Pollux(nn.Module):
         attn_impl: str = "sdpa",
     ) -> Tuple[dict[str, any], torch.Tensor]:
 
-        images = batch["image"]
+        # images = batch["image"]
         captions = batch["caption"]
-        vae_indices, vae_latent = self.tvae.encode(
-            images
-        )  # [16, 1, 16, 16], [16, 1, 16, 16, 8]
+        if isinstance(batch["caption"][0], tuple):
+            captions = [x[0] for x in batch["caption"]]
+        vae_indices = batch["latent_code_indices"]
+        vae_latent = batch["latent_code"]
+
         vae_indices_size = vae_indices.size()
         # [B, 1, H/16, W/16], [B, 6, 1, H/16, W/16]
         vae_embs, H_, W_, freqs_cis_img = self.patchify_and_embed(vae_latent.squeeze(2))
@@ -631,9 +598,6 @@ class Pollux(nn.Module):
         )
         text_input_ids = tokenizer_output["input_ids"].to(vae_embs.device)  # [B, L]
         text_embs = self.llm.tok_embeddings(text_input_ids)  # [B, L, D]
-        # attn_mask = tokenizer_output["attention_mask"].to(vae_embs.device)  # [B, L]
-        # attn_mask: left padding, invalid is 0, valid is 1. we do not need it now.
-
         # Concat
         boi_emb = self.vision_boi_emb.unsqueeze(0).expand(vae_embs.size(0), -1, -1)
         # eoi_emb = self.vision_eoi_emb.unsqueeze(0).expand(vae_embs.size(0), -1, -1)
@@ -656,10 +620,10 @@ class Pollux(nn.Module):
 
         # LLM Forward
         h = self.llm(
-            mm_embs,
-            vae_start_idx,
-            mm_embs.size(1) - vae_start_idx,
-            freqs_cis,
+            h=mm_embs,
+            text_l=vae_start_idx,
+            visual_l=mm_embs.size(1) - vae_start_idx,
+            freq_cis=freqs_cis,
             attn_impl=attn_impl,
         )
 
@@ -684,48 +648,46 @@ class Pollux(nn.Module):
 
         # compute loss
         # pred_loss = F.mse_loss(pred_latent, vae_latent.squeeze(2))
-        vae_indices = vae_indices.squeeze(1).flatten(1).long()  # [B, H/16*W/16]
+
+        vae_indices = vae_indices.squeeze(1).flatten(1).long() - 1  # [B, H/16*W/16]
+        vae_indices.clamp_(min=0, max=self.args.codebook_size - 1)
         # vae_indices.shape [16, 1, 16, 16] -> [16, 256]
         # pred_loss = F.cross_entropy(pred_latent[:, :-1].permute(0, 2, 1), vae_indices[:, 1:])
 
-        mask_pred = pred_latent[:, :][img_mask[:, :] == 1]  # [num_masked, D]
-        mask_target = vae_indices[:, :][img_mask[:, :] == 1]  # [num_masked]
+        pred_loss = cross_entropy(
+            pred_latent.flatten(0, 1),
+            vae_indices.flatten(0, 1),
+            reduction="mean",
+        )
+        # accuracy = (pred_latent[:, :-1].argmax(-1) == vae_indices[:, 1:]).float().mean()
+        mask_pred = pred_latent[:, :].detach()[img_mask[:, :] == 1]  # [num_masked, D]
+        mask_target = vae_indices[:, :].detach()[img_mask[:, :] == 1]  # [num_masked]
         # mask_pred.shape [816, 64000]
         # mask_target.shape [832]
 
         mask_accuracy = (
             (mask_pred.argmax(-1) == mask_target).float().mean().cpu().item()
         )
-
-        pred_loss = cross_entropy(
-            pred_latent[:, :].flatten(0, 1),
-            vae_indices[:, :].flatten(0, 1),
-            reduction="mean",
-        )
-        # accuracy = (pred_latent[:, :-1].argmax(-1) == vae_indices[:, 1:]).float().mean()
         batch["accuracy"] = mask_accuracy
 
         batch["latent_target"] = vae_indices.view(vae_indices_size)
         batch["pred_latent"] = (
-            torch.argmax(pred_latent, dim=-1).unsqueeze(1).view(vae_indices_size)
+            torch.argmax(pred_latent.detach(), dim=-1)
+            .unsqueeze(1)
+            .view(vae_indices_size)
         )
         return batch, pred_loss, mask_accuracy
 
     def set_train(self):
         self.latent_projector.train()
-        # self.vision_cls_emb.train()
         self.llm.train()
 
     def set_eval(self):
         self.latent_projector.eval()
-        # self.vision_cls_emb.eval()
         self.llm.eval()
-        # self.vision_cls_emb.reset_parameters()
 
     def to(self, device=None, dtype=None, non_blocking=False):
-        # Override to handle the sub-model explicitly
         super().to(device, dtype, non_blocking)
-        self.tvae.to(device, dtype)
         return self
 
 
