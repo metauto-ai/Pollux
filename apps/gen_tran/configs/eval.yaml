@@ -2,8 +2,8 @@
 # torchrun --nnodes 1 --nproc-per-node 4 -m apps.gen_tran.eval config=apps/gen_tran/configs/eval.yaml
 name: "debug_evals"
 stage: eval
-ckpt_dir: "/jfs/checkpoints/dump/Pollux_v1.0_latent_pollux_full_attn_from_scratch_clip_embedding/checkpoints/0000005000"
-dump_dir: "/jfs/checkpoints/dump/Pollux_v1.0_latent_pollux_full_attn_from_scratch_clip_embedding/checkpoints/0000005000"
+ckpt_dir: "/jfs/checkpoints/dump/Pollux_v1.0_latent_pollux_full_attn_from_scratch_clip_embedding_parquet/checkpoints/0000005000"
+dump_dir: "/jfs/checkpoints/dump/Pollux_v1.0_latent_pollux_full_attn_from_scratch_clip_embedding_parquet/checkpoints/0000005000"
 generator:
   guidance_scale: 2.5
   dtype: bf16
