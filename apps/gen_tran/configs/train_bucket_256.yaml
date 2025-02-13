@@ -1,10 +1,10 @@
-# OMP_NUM_THREADS=16 torchrun --standalone --nnodes 1 --nproc-per-node 8 -m apps.gen_tran.train config=apps/gen_tran/configs/train_bucket_256.yaml
+# OMP_NUM_THREADS=16 torchrun --standalone --nnodes 1 --nproc-per-node 4 -m apps.gen_tran.train config=apps/gen_tran/configs/train_bucket_256.yaml
 
 # Set up single experiment
 version: v1.0
 # From now on, start to align train, data, and model setting with train stage (just finish refactor for dara)
 train_stage: stage-1 # options: preliminary, pretraining, posttraining; aligned with data setting
-name: Pollux_v1.0_latent_pollux_full_attn_from_scratch_clip_embedding # used for local dump and wandb log
+name: Pollux_v1.0_latent_pollux_full_attn_from_scratch_clip_embedding_parquet # used for local dump and wandb log
 output_dir: /jfs/checkpoints/dump
 dump_dir: '' # No need now
 steps: 1000000
@@ -17,9 +17,9 @@ optim:
     weight_decay: 0.01
 
 distributed:
-    gpus: 0,1,2,3,4,5,6,7
+    gpus: 0,1,2,3
     fsdp_type: full_shard
-    dp_shard: 8
+    dp_shard: 4
     dp_replicate: 1
     compile: false
     model_dtype: bf16 # options: `fb8` is only supported by H100
@@ -74,7 +74,7 @@ data:
         "parquet_path": "path"
     mapping_field:
         "HunyuanVideo_latent_code": "latent_code"
-        "LLAMA3_3B_text_embedding": "text_embedding"
+        "CLIP_text_embedding": "text_embedding"
     use: True
     dataloader:
         batch_size: 64
