@@ -563,7 +563,6 @@ class Pollux_Plan(nn.Module):
         mask_strategy: str = "random_mask",
         attn_impl: str = "sdpa",
     ) -> Tuple[dict[str, any], torch.Tensor]:
-
         # images = batch["image"]
         captions = batch["caption"]
         if isinstance(batch["caption"][0], tuple):
@@ -648,9 +647,7 @@ class Pollux_Plan(nn.Module):
 
         # compute loss
         # pred_loss = F.mse_loss(pred_latent, vae_latent.squeeze(2))
-
-        vae_indices = vae_indices.squeeze(1).flatten(1).long() - 1  # [B, H/16*W/16]
-        vae_indices.clamp_(min=0, max=self.args.codebook_size - 1)
+        vae_indices = vae_indices.squeeze(1).flatten(1)  # [B, H/16*W/16]
         # vae_indices.shape [16, 1, 16, 16] -> [16, 256]
         # pred_loss = F.cross_entropy(pred_latent[:, :-1].permute(0, 2, 1), vae_indices[:, 1:])
 

@@ -376,6 +376,7 @@ def train(args: TrainArgs):
                 batch = next(parquet_iterator)
 
             ###### Batch Data Receive ######
+            batch["latent_code_indices"] = batch["latent_code_indices"].long()
             batch["latent_code"] = batch["latent_code"].cuda()
             data_load_time = round(timer() - data_load_start, 4)
             nwords_since_last_log += batch["latent_code"].numel()
