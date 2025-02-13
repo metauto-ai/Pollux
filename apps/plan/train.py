@@ -434,7 +434,7 @@ def train(args: TrainArgs):
                 total_acc_steps = (
                     args.grad_acc_steps * train_state.step + train_state.acc_step
                 )
-                tokens_per_gpu = total_acc_steps * active_data[0].batch_size
+                tokens_per_gpu = total_acc_steps * active_data[0].dataloader.batch_size
                 total_tokens = dp_degree * tokens_per_gpu
                 # This is an estimate and the correct values may change
                 # if you change the architecture
