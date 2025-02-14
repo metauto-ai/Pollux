@@ -67,11 +67,6 @@ from apps.gen_tran.model import (
     tp_parallelize,
     get_no_recompute_ops,
 )
-from apps.main.eval import (
-    launch_eval,
-    EVAL_FOLDER_NAME,
-    EvalArgs,
-)
 
 logger = logging.getLogger()
 
@@ -500,27 +495,27 @@ def train(args: TrainArgs):
                     device_mesh=world_mesh,
                 )
 
-            if args.eval is not None and every_n_steps(
-                train_state, args.checkpoint.eval.every, acc_step=0
-            ):
-                logger.info("Evaluation Start")
-                start_time = time.time()
-                eval_args = dataclass_from_dict(EvalArgs, args.eval)
-                eval_args.global_step = train_state.step
-                eval_args.ckpt_dir = str(checkpoint.existing_saves[-1])
-                eval_args.dump_dir = str(
-                    os.path.join(
-                        args.dump_dir,
-                        "evals",
-                        EVAL_FOLDER_NAME.format(train_state.step),
-                    )
-                )
-                # launch_eval(eval_args)# TODO: update eval.py later
-                end_time = time.time()
-                logger.info(
-                    f"Evaluation End! Take total time (sec): {end_time-start_time}"
-                )
-                # TODO: add some images to wandb for visualization
+            # if args.eval is not None and every_n_steps(
+            #     train_state, args.checkpoint.eval.every, acc_step=0
+            # ):
+            #     logger.info("Evaluation Start")
+            #     start_time = time.time()
+            #     eval_args = dataclass_from_dict(EvalArgs, args.eval)
+            #     eval_args.global_step = train_state.step
+            #     eval_args.ckpt_dir = str(checkpoint.existing_saves[-1])
+            #     eval_args.dump_dir = str(
+            #         os.path.join(
+            #             args.dump_dir,
+            #             "evals",
+            #             EVAL_FOLDER_NAME.format(train_state.step),
+            #         )
+            #     )
+            #     # launch_eval(eval_args)# TODO: update eval.py later
+            #     end_time = time.time()
+            #     logger.info(
+            #         f"Evaluation End! Take total time (sec): {end_time-start_time}"
+            #     )
+            # TODO: add some images to wandb for visualization
             if preemption_flag["flag"]:
                 if not saved:
                     checkpoint.save(
