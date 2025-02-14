@@ -61,7 +61,7 @@ from apps.main.data import AutoDataLoader, DataArgs, DictTensorBatchIterator
 from apps.main.modules.schedulers import SchedulerArgs
 from apps.main.utils.cal_flops import get_num_flop_per_token
 from apps.gen_tran.model import (
-    LatentPollux,
+    LatentPollux_Gen as LatentPollux,
     ModelArgs,
     build_fsdp_grouping_plan_latent_pollux,
     tp_parallelize,
