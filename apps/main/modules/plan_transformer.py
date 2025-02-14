@@ -652,8 +652,8 @@ class Latent_Pollux_Plan(nn.Module):
         # pred_loss = F.cross_entropy(pred_latent[:, :-1].permute(0, 2, 1), vae_indices[:, 1:])
 
         pred_loss = cross_entropy(
-            pred_latent.flatten(0, 1),
-            vae_indices.flatten(0, 1),
+            pred_latent[img_mask == 1],
+            vae_indices[img_mask == 1],
             reduction="mean",
         )
         # accuracy = (pred_latent[:, :-1].argmax(-1) == vae_indices[:, 1:]).float().mean()
