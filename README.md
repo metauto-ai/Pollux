@@ -22,7 +22,7 @@ pip install --requirement requirements.txt
 
 * Installation of COSMOS TVAE
 ```bash
-cd apps/main/modules/Cosmos-Tokenizer
+cd apps/Cosmos-Tokenizer
 pip3 install -e .
 ```
 
