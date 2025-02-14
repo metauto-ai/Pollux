@@ -409,7 +409,7 @@ class Latent_Pollux_Plan(nn.Module):
         super().__init__()
         self.args = args
         self.patchify_size = args.latent_projector.patchify_size
-        assert self.patchify_size == 1, "Patchify size must be 1 for 16x16x8 TVAE."
+        # assert self.patchify_size == 1, "Patchify size must be 1 for 16x16x8 TVAE."
         self.latent_projector = nn.Linear(
             self.patchify_size**2 * args.latent_projector.latent_dim,
             args.latent_projector.output_dim,
@@ -567,12 +567,11 @@ class Latent_Pollux_Plan(nn.Module):
         captions = batch["caption"]
         if isinstance(batch["caption"][0], tuple):
             captions = [x[0] for x in batch["caption"]]
-        vae_indices = batch["latent_code_indices"]
         vae_latent = batch["latent_code"]
 
-        vae_indices_size = vae_indices.size()
+        # vae_indices_size = vae_indices.size()
         # [B, 1, H/16, W/16], [B, 6, 1, H/16, W/16]
-        vae_embs, H_, W_, freqs_cis_img = self.patchify_and_embed(vae_latent.squeeze(2))
+        vae_embs, H_, W_, freqs_cis_img = self.patchify_and_embed(vae_latent)
         # [B, H/16 * W/16, D]
 
         if self.args.random_rate is None:
@@ -629,8 +628,6 @@ class Latent_Pollux_Plan(nn.Module):
         # Latent Head
         latent_hidden = h[:, vae_start_idx : vae_start_idx + vae_embs.size(1), :]
         pred_latent = self.latent_head(self.norm(latent_hidden))  # [B,M,D]
-        # pred_latent = self.unpatchify_image(pred_latent, H_, W_)
-
         # restore the order of the latent codes
         pred_latent = torch.gather(
             pred_latent,
@@ -638,42 +635,11 @@ class Latent_Pollux_Plan(nn.Module):
             index=ids_restore.unsqueeze(-1).repeat(1, 1, pred_latent.shape[2]),
         )
 
-        # vae_embs [16, 256, 3072]
-        # freq_cis_img [256, 64, 2, 2]
-        # vae_indices.shape [16, 1, 16, 16]
-        # vae_latent.shape [16, 1, 16, 16, 8]
-        # ids_mask.shape [16, 52]
-        # prede_latent.shape [16, 256, 64000]
+        pred_latent = self.unpatchify_image(pred_latent, H_, W_)
 
         # compute loss
-        # pred_loss = F.mse_loss(pred_latent, vae_latent.squeeze(2))
-        vae_indices = vae_indices.squeeze(1).flatten(1)  # [B, H/16*W/16]
-        # vae_indices.shape [16, 1, 16, 16] -> [16, 256]
-        # pred_loss = F.cross_entropy(pred_latent[:, :-1].permute(0, 2, 1), vae_indices[:, 1:])
-
-        pred_loss = cross_entropy(
-            pred_latent[img_mask == 1],
-            vae_indices[img_mask == 1],
-            reduction="mean",
-        )
-        # accuracy = (pred_latent[:, :-1].argmax(-1) == vae_indices[:, 1:]).float().mean()
-        mask_pred = pred_latent[:, :].detach()[img_mask[:, :] == 1]  # [num_masked, D]
-        mask_target = vae_indices[:, :].detach()[img_mask[:, :] == 1]  # [num_masked]
-        # mask_pred.shape [816, 64000]
-        # mask_target.shape [832]
-
-        mask_accuracy = (
-            (mask_pred.argmax(-1) == mask_target).float().mean().cpu().item()
-        )
-        batch["accuracy"] = mask_accuracy
-
-        batch["latent_target"] = vae_indices.view(vae_indices_size)
-        batch["pred_latent"] = (
-            torch.argmax(pred_latent.detach(), dim=-1)
-            .unsqueeze(1)
-            .view(vae_indices_size)
-        )
-        return batch, pred_loss, mask_accuracy
+        pred_loss = F.mse_loss(pred_latent, vae_latent)
+        return batch, pred_loss
 
     def set_train(self):
         self.latent_projector.train()
