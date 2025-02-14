@@ -296,24 +296,26 @@ class MongoDBParquetDataLoad(MongoDBDataLoad):
             for k, v in sample.items():
                 if k in self.mapping_field:
                     k_ = self.mapping_field[k]
-                else:
-                    k_ = k
-                if isinstance(v, ObjectId):
-                    return_sample[k_] = [str(v)]
-                elif isinstance(v, np.ndarray) and "raw_shape" not in k:
-                    raw_shape_key = f"{k}_raw_shape"
-                    if raw_shape_key in sample:
-                        return_sample[k_] = v.reshape(sample[raw_shape_key])
-                        return_sample[k_] = [torch.Tensor(np.copy(return_sample[k_]))]
-                    elif raw_shape_key in self.data.iloc[idx]:
-                        return_sample[k_] = v.reshape(
-                            self.data.iloc[idx][raw_shape_key]
-                        )
-                        return_sample[k_] = [torch.Tensor(np.copy(return_sample[k_]))]
+                    if isinstance(v, ObjectId):
+                        return_sample[k_] = [str(v)]
+                    elif isinstance(v, np.ndarray) and "raw_shape" not in k:
+                        raw_shape_key = f"{k}_raw_shape"
+                        if raw_shape_key in sample:
+                            return_sample[k_] = v.reshape(sample[raw_shape_key])
+                            return_sample[k_] = [
+                                torch.Tensor(np.copy(return_sample[k_]))
+                            ]
+                        elif raw_shape_key in self.data.iloc[idx]:
+                            return_sample[k_] = v.reshape(
+                                self.data.iloc[idx][raw_shape_key]
+                            )
+                            return_sample[k_] = [
+                                torch.Tensor(np.copy(return_sample[k_]))
+                            ]
+                        else:
+                            return_sample[k_] = [torch.Tensor(np.copy(v))]
                     else:
-                        return_sample[k_] = [torch.Tensor(np.copy(v))]
-                else:
-                    return_sample[k_] = [v]
+                        return_sample[k_] = [v]
             if i == 0:
                 return_parquet = return_sample
             else:

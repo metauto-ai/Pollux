@@ -1,6 +1,6 @@
 # find /jfs/data/imagenet-1k/ -type f -name "*.lock" -exec rm -f {} \;
 # rm -rf /jfs/checkpoints/dump/Pollux_v0.8.2_Local_ImageNet-1k_multimodal/ 
-# torchrun --standalone --nnodes 1 --nproc-per-node 2 -m apps.plan.train config=apps/plan/configs/train.yaml
+# torchrun --standalone --nnodes 1 --nproc-per-node 4 -m apps.plan.train config=apps/plan/configs/train.yaml
 # nohup torchrun --standalone --nnodes 1 --nproc-per-node 4 -m apps.plan.train config=apps/plan/configs/train.yaml > output2.log 2>&1 &
 
 
@@ -10,24 +10,24 @@ version: v0.8.3
 # From now on, start to align train, data, and model setting with train stage (just finish refactor for dara)
 train_stage: preliminary # options: preliminary, pretraining, posttraining; aligned with data setting
 
-name: Pollux_v0.8.3_Local_ImageNet-1k_multimodal_1e-3_random_drop_e2e_causal
+name: Pollux_v0.8.3_Local_ImageNet-1k_hz_test
 
 output_dir: /jfs/checkpoints/dump
 dump_dir: '' # No need now
 steps: 1000000
 seed: 777
 optim:
-    lr: 1.0e-3
-    weight_decay: 0.1
+    lr: 1.4e-4
+    weight_decay: 0.01
     warmup: 2000
     lr_min_ratio: 0.000001
-    clip: 1.0
+    clip: 10.0
     
 distributed:
 
-    gpus: 6,7 #6,7 #,2,3 #0,1,2,3 #4,5,6,7
+    gpus: 4,5,6,7 #6,7 #,2,3 #0,1,2,3 #4,5,6,7
     fsdp_type: full_shard
-    dp_shard: 2
+    dp_shard: 4
     dp_replicate: 1
     compile: false
     model_dtype: bf16 # options: `fb8` is only supported by H100
@@ -38,7 +38,6 @@ distributed:
 
 model:
     text_cfg_ratio: 0.1
-    image_cfg_ratio: 0.1
     num_classes: 1000
     vae:
         model_name: "COSMOS-DV"
@@ -65,9 +64,10 @@ model:
         norm_eps: 1e-5
         rope_theta: 500000.0
         pre_trained_path: /jfs/checkpoints/Llama-3.2-3B/original/consolidated.00.pth
+        from_llama: true
         gen_seqlen: 256
         condition_seqlen: 320
-        attention_type: 'full'
+        text_seqlen: 128
     codebook_size: 64000
 
 
