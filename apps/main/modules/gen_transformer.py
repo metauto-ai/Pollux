@@ -372,11 +372,17 @@ class LatentPollux_Gen(nn.Module):
         nn.init.normal_(self.negative_token, std=0.02)
 
     def forward(self, batch: dict[str:any]) -> dict[str:any]:
-        if random.random() > self.text_cfg_ratio:
-            conditional_signal = batch["text_embedding"]
+        if batch["plan_embedding"] is not None:
+            conditional_signal = batch["plan_embedding"]
         else:
-            conditional_signal = self.negative_token.repeat(
-                batch["text_embedding"].size(0), batch["text_embedding"].size(1), 1
+            conditional_signal = batch["text_embedding"]
+        if random.random() <= self.text_cfg_ratio:
+            conditional_signal = (
+                torch.ones_like(conditional_signal)
+                * self.negative_token.repeat(
+                    conditional_signal.size(0), conditional_signal.size(1), 1
+                )
+                + torch.zeros_like(conditional_signal) * conditional_signal
             )
         latent_code = batch["latent_code"]
         conditional_signal = self.token_proj(conditional_signal)

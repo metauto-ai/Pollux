@@ -445,7 +445,6 @@ class Latent_Pollux_Plan(nn.Module):
             self.llm_tokenizer.pad_token = self.llm_tokenizer.eos_token
 
         self.llm = PlanTransformer(args.llm)
-        self.llm.init_weights(args.llm.pre_trained_path, args.llm.from_llama)
         # head
         self.dim = args.llm.dim
         self.norm = RMSNorm(args.llm.dim, eps=args.llm.norm_eps)
@@ -470,6 +469,7 @@ class Latent_Pollux_Plan(nn.Module):
         nn.init.normal_(self.vision_boi_emb, std=0.02)
         nn.init.xavier_uniform_(self.latent_projector.weight)
         nn.init.xavier_uniform_(self.latent_head.weight)
+        self.llm.init_weights(args.llm.pre_trained_path, args.llm.from_llama)
 
     def patchify_and_embed(
         self, x: torch.Tensor
@@ -627,14 +627,15 @@ class Latent_Pollux_Plan(nn.Module):
 
         # Latent Head
         latent_hidden = h[:, vae_start_idx : vae_start_idx + vae_embs.size(1), :]
-        pred_latent = self.latent_head(self.norm(latent_hidden))  # [B,M,D]
-        # restore the order of the latent codes
+        pred_latent = self.norm(latent_hidden)
         pred_latent = torch.gather(
             pred_latent,
             dim=1,
             index=ids_restore.unsqueeze(-1).repeat(1, 1, pred_latent.shape[2]),
         )
-
+        batch["plan_embedding"] = pred_latent.clone()
+        pred_latent = self.latent_head(pred_latent)  # [B,M,D]
+        # restore the order of the latent codes
         pred_latent = self.unpatchify_image(pred_latent, H_, W_)
 
         # compute loss
