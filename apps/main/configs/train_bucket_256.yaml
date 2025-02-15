@@ -63,6 +63,7 @@ model:
             plan_transformer_dim: 3072
     plan:
         text_cfg_ratio: 0.1
+        image_cfg_ratio: 0.1
         latent_projector:
             latent_dim: 16
             patchify_size: 2

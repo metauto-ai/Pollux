@@ -77,6 +77,7 @@ class ModelArgs:
     tokenizer: TokenizerArgs = field(default_factory=TokenizerArgs)
     llm: LlamaArgs = field(default_factory=LlamaArgs)
     text_cfg_ratio: float = 0.1
+    image_cfg_ratio: float = 0.1
     codebook_size: int = 512
     random_rate: Optional[float] = None
 
@@ -575,13 +576,16 @@ class Latent_Pollux_Plan(nn.Module):
         # [B, H/16 * W/16, D]
 
         if self.args.random_rate is None:
-            self.args.random_rate = random.random()
-
+            mask_rate = random.random()
+        else:
+            mask_rate = self.args.random_rate
         vae_embs, freqs_cis_img, ids_restore, img_mask = self.process_mask(
             vae_embs,
             freqs_cis_img,
             mask_strategy=mask_strategy,
-            random_rate=self.args.random_rate,
+            random_rate=(
+                mask_rate if random.random() > self.args.image_cfg_ratio else 1.0
+            ),
         )
         captions = self.cfg_drop(
             captions, cfg_ratio=self.args.text_cfg_ratio, place_holder=""
