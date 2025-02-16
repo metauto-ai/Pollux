@@ -236,9 +236,9 @@ def main():
     print("Model loaded successfully")
     context = {
         "caption": [
-            "Generate a cat in a box",
-            "",
-            "In a modern urban setting, a large blue planter box with the words MediaCityUK prominently displayed on its sides stands as a focal point in a paved outdoor area.",
+            "A charming old building with a terracotta roof and white-washed walls stands prominently in a quaint European town. The building features several windows adorned with brown shutters, and a line of freshly laundered clothes hangs from a clothesline outside the second-floor window, adding a touch of domesticity to the scene. The sunlight casts gentle shadows, highlighting the textures of the aged walls and the rustic charm of the setting. The overall composition evokes a sense of nostalgia and simplicity, reminiscent of a bygone era, with the clear blue sky serving as a serene backdrop.",
+            "Statue of Pharaonic Queen Cleopatra inside the Egyptian temple done from Limestone, full-body, Pottery utensils and sand dunes cover walls and rocks, painting in watercolor,",
+            "On a wooden surface, a can of Positive Beverage Tropical Berry, with its vibrant blue and white label featuring a cheerful illustration of tropical fruits, sits next to a wooden rolling pin and a pile of flour. The can is surrounded by a large, golden-brown gingerbread dough with cutouts of star and gingerbread man shapes, creating a festive and cozy atmosphere. The scene is bathed in soft, natural light, highlighting the textures of the dough and the rustic wooden elements, evoking a warm and inviting holiday spirit.",
         ]
     }
     # Start generation
