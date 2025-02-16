@@ -1,12 +1,12 @@
 import torch
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from omegaconf import OmegaConf
 from torch import nn
 from torch.nn import functional as F
 from torchvision.utils import save_image
 import numpy as np
-from apps.main.model import Pollux, ModelArgs
+from apps.main.model import Latent_Pollux, ModelArgs
 from typing import List, Optional, Tuple, Union, Dict, Any
 from apps.main.modules.schedulers import retrieve_timesteps, calculate_shift
 from lingua.args import dataclass_from_dict
@@ -17,7 +17,7 @@ from lingua.checkpoint import (
     consolidate_checkpoints,
     CONSOLIDATE_FOLDER,
 )
-
+from apps.main.modules.vae import BaseLatentVideoVAE, build_vae, LatentVideoVAEArgs
 
 logger = logging.getLogger()
 
@@ -32,91 +32,60 @@ class GeneratorArgs:
     device: Optional[str] = "cuda"
     sigma: Optional[float] = None
     inference_steps: int = 25
+    vae_scale_factor: float = 8.0
+    tvae: LatentVideoVAEArgs = field(default_factory=LatentVideoVAEArgs)
 
 
 class LatentGenerator(nn.Module):
-    def __init__(self, cfg: GeneratorArgs, model: nn.Module):
+    def __init__(
+        self,
+        cfg: GeneratorArgs,
+        model: nn.Module,
+        tvae: BaseLatentVideoVAE,
+    ):
         super().__init__()
         self.model = model
-        self.vae_scale_factor = (
-            2 ** (len(self.model.compressor.vae.config.block_out_channels) - 1)
-            if hasattr(self, "vae") and self.vae is not None
-            else 8
-        )
-        self.resolution = cfg.resolution // self.vae_scale_factor
+        self.vae_scale_factor = cfg.vae_scale_factor
+        self.resolution = int(cfg.resolution // self.vae_scale_factor)
         self.device = cfg.device
         self.guidance_scale = cfg.guidance_scale
         self.show_progress = cfg.show_progress
         self.dtype = dict(fp32=torch.float32, bf16=torch.bfloat16)[cfg.dtype]
-        self.in_channel = model.gen_transformer.in_channels
+        self.in_channel = model.gen_model.gen_transformer.in_channels
         self.sigma = cfg.sigma
-        self.scheduler = model.scheduler.scheduler
+        self.scheduler = model.gen_model.scheduler.scheduler
         self.num_inference_steps = cfg.inference_steps
+        self.tvae = tvae
 
-    def prepare_latent(self, context, device, dtype):
+    def prepare_latent(self, context, device):
         bsz = len(context["caption"])
         latent_size = (bsz, self.in_channel, self.resolution, self.resolution)
-        latents = randn_tensor(latent_size, device=device, dtype=dtype)
+        latents = randn_tensor(latent_size, device=device, dtype=self.dtype)
         return latents
 
     @torch.no_grad()
-    def prepare_negative_context(self, context, device, dtype):
-        bsz = len(context["caption"])
-        context["masked_latent"] = torch.cat(
-            [
-                torch.zeros((bsz, self.in_channel, self.resolution, self.resolution)),
-                torch.ones((bsz, self.in_channel, self.resolution, self.resolution)),
-            ],
-            dim=1,
-        ).to(
-            device=device,
-            dtype=dtype,
+    def prepare_negative_context(self, context):
+        conditional_signal = self.model.gen_model.negative_token.repeat(
+            context["positive_text_embedding"].size(0),
+            context["positive_text_embedding"].size(1),
+            1,
         )
-        context = self.model.cap_neg_tokenize(context)
-        return self.model.plan_transformer(context)
+        context["negative_text_embedding"] = conditional_signal.to(self.dtype)
+        return context
 
     @torch.no_grad()
-    def prepare_positive_context(self, context, device, dtype):
-        if "image" in context and "mask" in context:
-            image = context["image"]
-            latent_masked_code = self.compressor.encode(image)
-            _, c, h, w = latent_masked_code.size()
-            mask = context["mask"]
-            resized_mask = F.interpolate(mask, size=(h, w), mode="nearest")
-            resized_mask = torch.cat([resized_mask] * c, dim=1)
-            context["masked_latent"] = torch.cat(
-                [latent_masked_code, resized_mask], dim=1
-            ).to(
-                device=device,
-                dtype=dtype,
-            )
-        else:
-            bsz = len(context["caption"])
-            context["masked_latent"] = torch.cat(
-                [
-                    torch.zeros(
-                        (bsz, self.in_channel, self.resolution, self.resolution)
-                    ),
-                    torch.ones(
-                        (bsz, self.in_channel, self.resolution, self.resolution)
-                    ),
-                ],
-                dim=1,
-            ).to(
-                device=device,
-                dtype=dtype,
-            )
-        context = self.model.cap_pos_tokenize(context)
-        return self.model.plan_transformer(context)
+    def prepare_positive_context(self, context):
+        context["positive_text_embedding"] = self.model.plan_model.encode(context).to(
+            self.dtype
+        )
+        return context
 
     def return_seq_len(self):
-        return (self.resolution // self.model.gen_transformer.patch_size) ** 2
+        return (self.resolution // self.model.gen_model.gen_transformer.patch_size) ** 2
 
     @torch.no_grad()
     def forward(self, context: Dict[str, Any]) -> torch.Tensor:
-        assert "caption" in context
         cur_device = next(self.model.parameters()).device
-        cur_type = next(self.model.parameters()).dtype
         image_seq_len = self.return_seq_len()
         mu = calculate_shift(
             image_seq_len,
@@ -137,24 +106,25 @@ class LatentGenerator(nn.Module):
             sigmas=sigmas,
             mu=mu,
         )
-        latent = self.prepare_latent(context, device=cur_device, dtype=cur_type)
-        pos_conditional_signal, _ = self.prepare_positive_context(
-            context, device=cur_device, dtype=cur_type
+        latent = self.prepare_latent(context, device=cur_device)
+        context["latent_code"] = self.prepare_latent(context, device=cur_device)
+        context = self.prepare_positive_context(context)
+        context = self.prepare_negative_context(context)
+        negative_conditional_signal = self.model.gen_model.token_proj(
+            context["negative_text_embedding"]
         )
-        pos_conditional_signal = self.model.token_proj(pos_conditional_signal)
-        negative_conditional_signal, layout = self.prepare_negative_context(
-            context, device=cur_device, dtype=cur_type
+        pos_conditional_signal = self.model.gen_model.token_proj(
+            context["positive_text_embedding"]
         )
-        negative_conditional_signal = self.model.token_proj(negative_conditional_signal)
+
         context = torch.cat([pos_conditional_signal, negative_conditional_signal])
         for i, t in enumerate(timesteps):
             latent_model_input = torch.cat([latent] * 2)
             timestep = t.expand(latent_model_input.shape[0])
-            noise_pred = self.model.gen_transformer(
+            noise_pred = self.model.gen_model.gen_transformer(
                 x=latent_model_input,
                 time_steps=timestep,
                 condition=context,
-                layout=layout,
             )
             noise_pred_text, noise_pred_uncond = noise_pred.chunk(2)
             noise_pred = noise_pred_uncond + self.guidance_scale * (
@@ -162,10 +132,8 @@ class LatentGenerator(nn.Module):
             )
             latent = self.scheduler.step(noise_pred, t, latent, return_dict=False)[0]
 
-        latent = (
-            latent / self.model.compressor.vae.config.scaling_factor
-        ) + self.model.compressor.vae.config.shift_factor
-        image = self.model.compressor.decode(latent)
+        # latent = latent / self.model.compressor.vae.config.scaling_factor
+        image = self.tvae.decode(latent)
         return image
 
 
@@ -258,25 +226,21 @@ def main():
     # Load CLI arguments (overrides) and combine with a YAML config
     cfg = OmegaConf.from_cli()
     cfg = OmegaConf.load(cfg.config)
-    gen_cfg = dataclass_from_dict(GeneratorArgs, cfg, strict=False)
-    print(cfg)
-
-    model, _ = load_consolidated_model(
-        cfg.ckpt_dir, model_cls=Pollux, model_args_cls=ModelArgs
+    gen_cfg = dataclass_from_dict(GeneratorArgs, cfg.generator, strict=False)
+    print(gen_cfg)
+    pollux, _ = load_consolidated_model(
+        cfg.ckpt_dir, model_cls=Latent_Pollux, model_args_cls=ModelArgs
     )
-
-    generator = LatentGenerator(gen_cfg, model)
-
+    tvae = build_vae(gen_cfg.tvae)
+    generator = LatentGenerator(gen_cfg, pollux, tvae).cuda()
+    print("Model loaded successfully")
     context = {
         "caption": [
-            "goldfish, Carassius auratus",
-            "kit fox, Vulpes macrotis",
-            "ice bear, polar bear, Ursus Maritimus, Thalarctos maritimus",
-            "Egyptian cat",
-            "zebra",
+            "Generate a cat in a box",
+            "",
+            "In a modern urban setting, a large blue planter box with the words MediaCityUK prominently displayed on its sides stands as a focal point in a paved outdoor area.",
         ]
     }
-
     # Start generation
     start_time = time.time()
     samples = generator(context)

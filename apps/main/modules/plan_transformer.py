@@ -77,6 +77,7 @@ class ModelArgs:
     tokenizer: TokenizerArgs = field(default_factory=TokenizerArgs)
     llm: LlamaArgs = field(default_factory=LlamaArgs)
     text_cfg_ratio: float = 0.1
+    image_cfg_ratio: float = 0.1
     codebook_size: int = 512
     random_rate: Optional[float] = None
 
@@ -445,7 +446,6 @@ class Latent_Pollux_Plan(nn.Module):
             self.llm_tokenizer.pad_token = self.llm_tokenizer.eos_token
 
         self.llm = PlanTransformer(args.llm)
-        self.llm.init_weights(args.llm.pre_trained_path, args.llm.from_llama)
         # head
         self.dim = args.llm.dim
         self.norm = RMSNorm(args.llm.dim, eps=args.llm.norm_eps)
@@ -470,6 +470,7 @@ class Latent_Pollux_Plan(nn.Module):
         nn.init.normal_(self.vision_boi_emb, std=0.02)
         nn.init.xavier_uniform_(self.latent_projector.weight)
         nn.init.xavier_uniform_(self.latent_head.weight)
+        self.llm.init_weights(args.llm.pre_trained_path, args.llm.from_llama)
 
     def patchify_and_embed(
         self, x: torch.Tensor
@@ -575,13 +576,16 @@ class Latent_Pollux_Plan(nn.Module):
         # [B, H/16 * W/16, D]
 
         if self.args.random_rate is None:
-            self.args.random_rate = random.random()
-
+            mask_rate = random.random()
+        else:
+            mask_rate = self.args.random_rate
         vae_embs, freqs_cis_img, ids_restore, img_mask = self.process_mask(
             vae_embs,
             freqs_cis_img,
             mask_strategy=mask_strategy,
-            random_rate=self.args.random_rate,
+            random_rate=(
+                mask_rate if random.random() > self.args.image_cfg_ratio else 1.0
+            ),
         )
         captions = self.cfg_drop(
             captions, cfg_ratio=self.args.text_cfg_ratio, place_holder=""
@@ -627,19 +631,86 @@ class Latent_Pollux_Plan(nn.Module):
 
         # Latent Head
         latent_hidden = h[:, vae_start_idx : vae_start_idx + vae_embs.size(1), :]
-        pred_latent = self.latent_head(self.norm(latent_hidden))  # [B,M,D]
-        # restore the order of the latent codes
+        pred_latent = self.norm(latent_hidden)
         pred_latent = torch.gather(
             pred_latent,
             dim=1,
             index=ids_restore.unsqueeze(-1).repeat(1, 1, pred_latent.shape[2]),
         )
-
+        batch["plan_embedding"] = pred_latent.clone()
+        pred_latent = self.latent_head(pred_latent)  # [B,M,D]
+        # restore the order of the latent codes
         pred_latent = self.unpatchify_image(pred_latent, H_, W_)
 
         # compute loss
         pred_loss = F.mse_loss(pred_latent, vae_latent)
         return batch, pred_loss
+
+    def encode(  # TODO: ADD MASK based condition
+        self,
+        batch: dict[str, any],
+        attn_impl: str = "sdpa",
+    ) -> Tuple[dict[str, any], torch.Tensor]:
+        # images = batch["image"]
+        captions = batch["caption"]
+        if isinstance(batch["caption"][0], tuple):
+            captions = [x[0] for x in batch["caption"]]
+        vae_latent = batch["latent_code"]
+        vae_embs, H_, W_, freqs_cis_img = self.patchify_and_embed(vae_latent)
+        vae_embs, freqs_cis_img, ids_restore, img_mask = self.process_mask(
+            vae_embs,
+            freqs_cis_img,
+            mask_strategy="random_mask",
+            random_rate=1.0,  # no raw data
+        )
+        # Text Embedding
+        tokenizer_output = self.llm_tokenizer(
+            captions,
+            max_length=self.args.llm.text_seqlen,
+            padding="max_length",
+            truncation=True,
+            return_tensors="pt",
+        )
+        text_input_ids = tokenizer_output["input_ids"].to(vae_embs.device)  # [B, L]
+        text_embs = self.llm.tok_embeddings(text_input_ids)  # [B, L, D]
+        # Concat
+        boi_emb = self.vision_boi_emb.unsqueeze(0).expand(vae_embs.size(0), -1, -1)
+        # eoi_emb = self.vision_eoi_emb.unsqueeze(0).expand(vae_embs.size(0), -1, -1)
+        mm_embs = torch.cat(
+            [
+                text_embs,
+                boi_emb,
+                vae_embs,
+                # eoi_emb,
+            ],
+            dim=1,
+        )
+        vae_start_idx = text_embs.size(1) + 1
+
+        # rope freq
+        freqs_cis_text = self.rope_embeddings_conditions.freqs_cis[:vae_start_idx]
+        freqs_cis_text = freqs_cis_text.to(mm_embs.device)
+        freqs_cis_img = freqs_cis_img.to(mm_embs.device)
+        freqs_cis = torch.cat([freqs_cis_text, freqs_cis_img], dim=0)
+
+        # LLM Forward
+        h = self.llm(
+            h=mm_embs,
+            text_l=vae_start_idx,
+            visual_l=mm_embs.size(1) - vae_start_idx,
+            freq_cis=freqs_cis,
+            attn_impl=attn_impl,
+        )
+
+        # Latent Head
+        latent_hidden = h[:, vae_start_idx : vae_start_idx + vae_embs.size(1), :]
+        pred_latent = self.norm(latent_hidden)
+        pred_latent = torch.gather(
+            pred_latent,
+            dim=1,
+            index=ids_restore.unsqueeze(-1).repeat(1, 1, pred_latent.shape[2]),
+        )
+        return pred_latent.clone()
 
     def set_train(self):
         self.latent_projector.train()
