@@ -6,7 +6,7 @@ from torch import nn
 from torch.nn import functional as F
 from torchvision.utils import save_image
 import numpy as np
-from apps.plan.model import Pollux, ModelArgs
+from apps.plan.model import Pollux_Plan, ModelArgs
 from typing import List, Optional, Tuple, Union, Dict, Any
 from apps.main.modules.schedulers import retrieve_timesteps, calculate_shift
 from lingua.args import dataclass_from_dict
@@ -17,7 +17,7 @@ from lingua.checkpoint import (
     consolidate_checkpoints,
     CONSOLIDATE_FOLDER,
 )
-from apps.plan.data import AutoDataLoader, DataArgs
+from apps.main.data import AutoDataLoader, DataArgs
 
 logger = logging.getLogger()
 
@@ -141,7 +141,7 @@ def main():
     print(cfg)
 
     model, _ = load_consolidated_model(
-        cfg.ckpt_dir, model_cls=Pollux, model_args_cls=ModelArgs
+        cfg.ckpt_dir, model_cls=Pollux_Plan, model_args_cls=ModelArgs
     )
 
     generator = LatentGenerator(gen_cfg, model)

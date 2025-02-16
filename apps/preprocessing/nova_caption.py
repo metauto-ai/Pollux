@@ -17,6 +17,7 @@ import re
 import time
 from botocore.config import Config
 import types
+import gc
 
 logging.basicConfig(
     level=logging.INFO,
@@ -120,8 +121,8 @@ class NovaCaption:
 
     def read_data_from_mongoDB(self):
         query = {f"{self.caption_field}": {"$exists": False}}
-        cursor = self.collection.find(query).limit(self.batch_size)
-        return list(cursor)
+        with self.collection.find(query).limit(self.batch_size) as cursor:
+            return list(cursor)
 
     def process_image(self, image):
         width, height = image.size
@@ -201,10 +202,10 @@ class NovaCaption:
 
 
 if __name__ == "__main__":
-    batch_size = 100
+    batch_size = 32
     max_samples_per_min = 500
     nova_caption = NovaCaption(
-        collection_name="flickr-part-04-of-08",
+        collection_name="flickr-part-01-of-08",
         image_field="AZURE_URL",
         caption_field="nova_lite_caption",
         maxTokens=150,
@@ -246,4 +247,5 @@ if __name__ == "__main__":
                 time.sleep(60 - elapsed_time)
             start_time = time.time()
             processed_samples = 0
+        gc.collect()
         logging.warning(f"Total samples processed: {total_samples}")

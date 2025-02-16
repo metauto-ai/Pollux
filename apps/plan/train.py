@@ -36,7 +36,6 @@ from lingua.distributed import (
     get_device_mesh,
     get_is_master,
     get_world_size,
-    get_local_rank,
     parallelize_model,
     setup_env,
     setup_torch_distributed,
@@ -53,21 +52,15 @@ from lingua.metrics import (
 from lingua.optim import OptimArgs, build_optimizer
 from lingua.profiling import ProfilerArgs, maybe_run_profiler
 
-from apps.plan.data import AutoDataLoader, DataArgs
+from apps.main.data import AutoDataLoader, DataArgs, DictTensorBatchIterator
 from apps.main.modules.schedulers import SchedulerArgs
 from apps.main.utils.sampler import StatefulDistributedSampler
 from apps.plan.model import (
-    Pollux,
+    Pollux_Plan,
     ModelArgs,
     build_fsdp_grouping_plan,
     tp_parallelize,
     get_no_recompute_ops,
-)
-
-from apps.plan.eval import (
-    launch_eval,
-    EVAL_FOLDER_NAME,
-    EvalArgs,
 )
 
 from apps.main.utils.cal_flops import get_num_flop_per_token
@@ -284,7 +277,7 @@ def train(args: TrainArgs):
 
         ###### Build model ######
         torch.manual_seed(args.seed)
-        model = Pollux(args.model)
+        model = Pollux_Plan(args.model)
         model_param_count = get_num_params(model)
         logger.info(f"Model has been built with {model_param_count} parameters...")
         model.init_weights(args.model)
@@ -322,17 +315,12 @@ def train(args: TrainArgs):
             shard_id=dp_rank,
             num_shards=dp_degree,
             train_stage=args.train_stage,
-            # init_signal_handler=get_local_rank() == 0,
             data_config=active_data,  # Pass the filtered data configuration
         )
 
         data_loader, sampler = data_loader_factory.create_dataloader()
-        torch.distributed.barrier()
-        # if get_local_rank() == 0 and hasattr(
-        #     data_loader_factory.dataset, "clean_buffer"
-        # ):
-        #     data_loader_factory.dataset.clean_buffer()
-
+        logger.info("Data loader is built !")
+        logger.info(f"Data loader size: {len(data_loader)}")
         ###### Build optimizer after apply parallelisms to the model ######
         optimizer, scheduler = build_optimizer(model, args.optim, args.steps)
 
@@ -373,33 +361,32 @@ def train(args: TrainArgs):
             data_load_start = timer()
 
             try:
-                batch = next(dataloader_iterator)
+                batch = next(parquet_iterator)
             except:
-                sampler.reset()
-                # * sampler need to keep track of the exact epoch
-                sampler.epoch += 1
-                logger.info(f"New Epoch: {sampler.epoch}")
-                dataloader_iterator = iter(data_loader)
-                batch = next(dataloader_iterator)
-
-            if every_n_steps(train_state, args.gc_collect_freq, acc_step=0):
-                logger.info("garbage collection")
-                # we do garbage collection manually otherwise different processes
-                # run the GC at different times so they slow down the whole pipeline
-                gc.collect()
+                try:
+                    batch = next(dataloader_iterator)
+                except:
+                    logger.info("New Epoch!")
+                    sampler.reset()
+                    dataloader_iterator = iter(data_loader)
+                    batch = next(dataloader_iterator)
+                parquet_iterator = DictTensorBatchIterator(
+                    batch, active_data[0].dataloader.batch_size
+                )
+                batch = next(parquet_iterator)
 
             ###### Batch Data Receive ######
-
-            batch["image"] = batch["image"].cuda()
+            # batch["latent_code_indices"] = batch["latent_code_indices"].long()
+            batch["latent_code"] = batch["latent_code"].cuda()
             data_load_time = round(timer() - data_load_start, 4)
-            nwords_since_last_log += batch["image"].numel()
+            nwords_since_last_log += batch["latent_code"].numel()
 
             # forward
             start_timer = torch.cuda.Event(enable_timing=True)
             end_timer = torch.cuda.Event(enable_timing=True)
             start_timer.record()
 
-            batch, loss, accuracy = model(batch)
+            batch, loss = model(batch)
             # We scale loss with grad_acc_steps so the gradient is the same
             # regardless of grad_acc_steps
             loss = loss / args.grad_acc_steps
@@ -448,7 +435,7 @@ def train(args: TrainArgs):
                 total_acc_steps = (
                     args.grad_acc_steps * train_state.step + train_state.acc_step
                 )
-                tokens_per_gpu = total_acc_steps * active_data[0].batch_size
+                tokens_per_gpu = total_acc_steps * active_data[0].dataloader.batch_size
                 total_tokens = dp_degree * tokens_per_gpu
                 # This is an estimate and the correct values may change
                 # if you change the architecture
@@ -480,7 +467,6 @@ def train(args: TrainArgs):
                         },
                         "metrics": {
                             "loss": loss.item(),
-                            "accuracy": accuracy, 
                         },
                         "memory": gpu_mem_stats._asdict(),
                     },
@@ -502,7 +488,6 @@ def train(args: TrainArgs):
                     f"  acc: {train_state.acc_step}"
                     f"  loss: {round(loss.item(),4):>7}"
                     f"  grad: {grad_norm:.2e}"
-                    f"  mask_accuracy: {accuracy * 100:.2f}%"
                     # f"  flops: {FLOPS:.2e}"
                     f"  wps: {wps:.2e}"
                     f"  iter: {curr_iter_time:>7}"
@@ -531,28 +516,28 @@ def train(args: TrainArgs):
 
             ###### Validation (TODO) ######
 
-            if args.eval is not None and every_n_steps(
-                train_state, args.checkpoint.eval.every, acc_step=0
-            ):
+            # if args.eval is not None and every_n_steps(
+            #     train_state, args.checkpoint.eval.every, acc_step=0
+            # ):
 
-                logger.info("Evaluation Start...")
-                start_time = time.time()
-                eval_args = dataclass_from_dict(EvalArgs, args.eval)
-                eval_args.global_step = train_state.step
-                eval_args.ckpt_dir = str(checkpoint.existing_saves[-1])
-                eval_args.dump_dir = str(
-                    os.path.join(
-                        args.dump_dir,
-                        "evals",
-                        EVAL_FOLDER_NAME.format(train_state.step),
-                    )
-                )
-                # launch_eval(eval_args)# TODO: update eval.py later
-                end_time = time.time()
-                logger.info(
-                    f"Evaluation End! Take total time (sec): {end_time-start_time}"
-                )
-                # TODO: add some images to wandb for visualization
+            #     logger.info("Evaluation Start...")
+            #     start_time = time.time()
+            #     eval_args = dataclass_from_dict(EvalArgs, args.eval)
+            #     eval_args.global_step = train_state.step
+            #     eval_args.ckpt_dir = str(checkpoint.existing_saves[-1])
+            #     eval_args.dump_dir = str(
+            #         os.path.join(
+            #             args.dump_dir,
+            #             "evals",
+            #             EVAL_FOLDER_NAME.format(train_state.step),
+            #         )
+            #     )
+            #     # launch_eval(eval_args)# TODO: update eval.py later
+            #     end_time = time.time()
+            #     logger.info(
+            #         f"Evaluation End! Take total time (sec): {end_time-start_time}"
+            #     )
+            # TODO: add some images to wandb for visualization
 
             ###### END of Loop ######
             if preemption_flag["flag"]:

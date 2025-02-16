@@ -21,6 +21,7 @@ from lingua.distributed import (
     setup_torch_distributed,
     get_local_rank,
 )
+import uuid
 import time
 from apps.main.data import AutoDataLoader, DataArgs
 import pandas as pd
@@ -73,7 +74,6 @@ def launch_inference(cfg: InferenceArgs):
     csv_path = Path(cfg.dump_dir) / f"{world_size}_{global_rank}_metadata.csv"
     logger.info("Loading model")
     model = OfflineInference(cfg.model)
-    model.init_weights(cfg.model)
     logger.info("Model loaded")
     is_s3 = cfg.dump_dir.startswith("s3:")
     if is_s3:
@@ -89,15 +89,6 @@ def launch_inference(cfg: InferenceArgs):
         data_config=active_data,  # Pass the filtered data configuration
     )
     data_loader, sampler = data_loader_factory.create_dataloader()
-
-    # Benchmark loading from MongoDB web, should only used for testing
-    # * enable this profiling will make our inference state incorrect,
-    # don't enable this line during actual inference
-    # benchmark_url_loading(data_loader)
-
-    # * init our profiling meters for different type of tensors we want to save,
-    # latent_code or text_embedding
-    # Initialize profiling meters for all tensor types
     inference_meters = {
         tensor_type: AverageMeter() for tensor_type in cfg.prefix_mapping
     }
@@ -195,18 +186,19 @@ def launch_inference(cfg: InferenceArgs):
         if in_parquet_num >= cfg.parque_size:
             for attempt in range(cfg.max_save_attempt):
                 try:
+                    file_name = f"{world_size}_{global_rank}_{count}_{uuid.uuid4()}"
                     if is_s3:
                         parquet_path = upload_parquet(
                             save_batch,
                             s3_path,
-                            f"{world_size}_{global_rank}_{count}",
+                            file_name,
                             save_meter=storage_meters["parquet"],
                         )
                     else:
                         parquet_path = save_parquet(
                             save_batch,
                             cfg.dump_dir,
-                            f"{world_size}_{global_rank}_{count}",
+                            file_name,
                             save_meter=save_meters["parquet"],
                             storage_meter=storage_meters["parquet"],
                         )

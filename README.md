@@ -22,7 +22,7 @@ pip install --requirement requirements.txt
 
 * Installation of COSMOS TVAE
 ```bash
-cd apps/main/modules/Cosmos-Tokenizer
+cd apps/Cosmos-Tokenizer
 pip3 install -e .
 ```
 
@@ -31,6 +31,12 @@ pip3 install -e .
 cd apps/main
 python test_vae.py
 ```
+
+* Installation of CLIP MOdel
+```bash
+pip install git+https://github.com/openai/CLIP.git
+```
+
 
 * If you need to run data preprocessing (Optional dependencies)
 ```bash

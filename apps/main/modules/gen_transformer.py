@@ -2,7 +2,7 @@
 
 import os
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional, Tuple, Union, Dict
 
 import torch
@@ -10,10 +10,19 @@ from torch import nn
 from torch.nn.attention.flex_attention import BlockMask
 from xformers.ops import fmha, AttentionBias
 from torch.nn.attention.flex_attention import create_block_mask, BlockMask
-
+from torch.distributed._tensor import Replicate, Shard
+from torch.distributed.tensor.parallel import (
+    ColwiseParallel,
+    RowwiseParallel,
+    SequenceParallel,
+    PrepareModuleInput,
+    parallelize_module,
+)
+import torch.nn.functional as F
+from apps.main.modules.schedulers import RectifiedFlow, SchedulerArgs
+import random
 from lingua.transformer import (
     BaseTransformerArgs,
-    TransformerBlock,
     RMSNorm,
     FeedForward,
     Attention,
@@ -36,6 +45,7 @@ logger = logging.getLogger()
 class GenTransformerArgs(BaseTransformerArgs):
 
     seed: int = 42
+    plan_transformer_dim: int = 512
     ada_dim: int = 512
     patch_size: int = 16
     in_channels: int = 3
@@ -47,8 +57,11 @@ class GenTransformerArgs(BaseTransformerArgs):
     attn_type: str = "full"  # Options: 'full', 'bi_causal' and 'causal'.
 
 
-def causal_mask(b, h, q_idx, kv_idx):
-    return q_idx >= kv_idx
+@dataclass
+class ModelArgs:
+    gen_transformer: GenTransformerArgs = field(default_factory=GenTransformerArgs)
+    scheduler: SchedulerArgs = field(default_factory=SchedulerArgs)
+    text_cfg_ratio: float = 0.1
 
 
 class DiffusionTransformerBlock(nn.Module):
@@ -229,10 +242,8 @@ class GenTransformer(BaseDiffusionTransformer):
         )
         self.ada_dim = args.ada_dim
         self.dim = args.dim
-        # [BEGING_OF_TEXT, END_OF_TEXT, BEGIN_OF_IMAGE, END_OF_IMAGE]
-        self.bot_token = nn.Parameter(torch.zeros(1, 1, self.dim))
-        self.eot_token = nn.Parameter(torch.zeros(1, 1, self.dim))
-        # self.cap_cond_token = nn.Parameter(torch.zeros(1, 1, self.dim))
+        self.cos_token = nn.Parameter(torch.zeros(1, 1, self.dim))
+        self.coe_token = nn.Parameter(torch.zeros(1, 1, self.dim))
         self.norm = RMSNorm(args.dim, eps=args.norm_eps)
 
     def patchify_and_embed_image(
@@ -260,27 +271,21 @@ class GenTransformer(BaseDiffusionTransformer):
         x: torch.Tensor,
         time_steps: torch.Tensor,
         condition: torch.Tensor,
-        # layout: Dict[str, int],
         attn_impl: str = "sdpa",
     ):
         x, img_size, freqs_cis_img = self.patchify_and_embed_image(x)
         x_l = x.size(1)
-        modulation_signal = self.tmb_embed(time_steps)
-
-        # indicator = torch.cat(
-        #     [
-        #         torch.cat([self.cap_cond_token] * layout["cap"], dim=1),
-        #         torch.cat([self.img_cond_token] * layout["img"], dim=1),
-        #     ],
-        #     dim=1,
-        # )
-        # condition = condition + indicator
-
+        if len(condition.shape) == 2:
+            modulation_signal = condition + self.tmb_embed(time_steps)
+        else:
+            modulation_signal = torch.mean(
+                condition, dim=1, keepdim=False
+            ) + self.tmb_embed(time_steps)
         condition_ = torch.cat(
             [
-                self.bot_token.repeat(len(condition), 1, 1),
-                condition.unsqueeze(1),
-                self.eot_token.repeat(len(condition), 1, 1),
+                self.cos_token.repeat(len(condition), 1, 1),
+                condition.unsqueeze(1) if len(condition.shape) == 2 else condition,
+                self.coe_token.repeat(len(condition), 1, 1),
             ],
             dim=1,
         )
@@ -329,7 +334,146 @@ class GenTransformer(BaseDiffusionTransformer):
             a=-3 * init_std,
             b=3 * init_std,
         )
-        # nn.init.normal_(self.img_cond_token, std=0.02)
-        # nn.init.normal_(self.cap_cond_token, std=0.02)
-        nn.init.normal_(self.bot_token, std=0.02)
-        nn.init.normal_(self.eot_token, std=0.02)
+        nn.init.normal_(self.cos_token, std=0.02)
+        nn.init.normal_(self.coe_token, std=0.02)
+
+
+class LatentPollux_Gen(nn.Module):
+    """
+    Latent Diffusion Transformer Model.
+    This model drops VAE for latent compression, as it is already pre-processed, a transformer for temporal and spatial token mixing,
+    and a custom scheduler for diffusion steps.
+    """
+
+    VERSION: str = "v1.0"
+    DESCRIPTION: str = "Latent Diffusion Transformer for ImageGen"
+
+    def __init__(self, args: ModelArgs):
+        super().__init__()
+        self.scheduler = RectifiedFlow(args.scheduler)
+        self.gen_transformer = GenTransformer(args.gen_transformer)
+        self.text_cfg_ratio = args.text_cfg_ratio
+        self.token_proj = nn.Linear(
+            in_features=args.gen_transformer.plan_transformer_dim,
+            out_features=args.gen_transformer.dim,
+            bias=False,
+        )
+        init_std = self.gen_transformer.dim ** (-0.5)
+        nn.init.trunc_normal_(
+            self.token_proj.weight,
+            mean=0.0,
+            std=init_std,
+            a=-3 * init_std,
+            b=3 * init_std,
+        )
+        self.negative_token = nn.Parameter(
+            torch.zeros(1, 1, args.gen_transformer.plan_transformer_dim)
+        )
+        nn.init.normal_(self.negative_token, std=0.02)
+
+    def forward(self, batch: dict[str:any]) -> dict[str:any]:
+        if batch["plan_embedding"] is not None:
+            conditional_signal = batch["plan_embedding"]
+        else:
+            conditional_signal = batch["text_embedding"]
+        if random.random() <= self.text_cfg_ratio:
+            conditional_signal = (
+                torch.ones_like(conditional_signal)
+                * self.negative_token.repeat(
+                    conditional_signal.size(0), conditional_signal.size(1), 1
+                )
+                + torch.zeros_like(conditional_signal) * conditional_signal
+            )
+        latent_code = batch["latent_code"]
+        conditional_signal = self.token_proj(conditional_signal)
+        noised_x, t, target = self.scheduler.sample_noised_input(latent_code)
+        output = self.gen_transformer(
+            x=noised_x, time_steps=t, condition=conditional_signal
+        )
+        batch["prediction"] = output
+        batch["target"] = target
+        target = target.to(output.dtype)
+        loss = F.mse_loss(output, target)
+
+        return batch, loss
+
+    def set_train(self):
+        self.gen_transformer.train()
+
+    def set_eval(self):
+        self.gen_transformer.eval()
+
+    def init_weights(self, args: ModelArgs):
+        self.gen_transformer.init_weights(args.gen_transformer.pre_trained_path)
+
+
+# Optional policy for activation checkpointing. With None, we stick to the default (defined distributed.py: default_no_recompute_ops)
+def get_no_recompute_ops():
+    return None
+
+
+def build_fsdp_grouping_plan_latent_pollux(model_args: ModelArgs):
+    group_plan: Tuple[int, bool] = []
+
+    for i in range(model_args.gen_transformer.n_layers):
+        group_plan.append((f"gen_transformer.layers.{i}", False))
+
+    group_plan.append(("gen_transformer.img_output", True))
+    logger.info(f"The `group_plan` for fsdp is:\n{group_plan}")
+
+    return group_plan
+
+
+def tp_parallelize(model, tp_mesh, model_args: ModelArgs, distributed_args):
+
+    assert model_args.gen_transformer.dim % distributed_args.tp_size == 0
+    assert model_args.gen_transformer.vocab_size % distributed_args.tp_size == 0
+    assert model_args.gen_transformer.n_heads % distributed_args.tp_size == 0
+    assert (model_args.gen_transformer.n_kv_heads or 0) % distributed_args.tp_size == 0
+    assert model_args.gen_transformer.n_heads % (model_args.n_kv_heads or 1) == 0
+
+    main_plan = {}
+    main_plan["norm"] = SequenceParallel()
+    main_plan["img_output"] = ColwiseParallel(
+        input_layouts=Shard(1), output_layouts=Replicate()
+    )
+
+    parallelize_module(
+        model.gen_transformer,
+        tp_mesh,
+        main_plan,
+    )
+    for layer in model.gen_transformer.layers:
+        layer_plan = {}
+
+        layer_plan["attention"] = PrepareModuleInput(
+            input_layouts=(Shard(1), None),
+            desired_input_layouts=(Replicate(), None),
+        )
+        layer_plan["attention_norm"] = SequenceParallel()
+        layer_plan["attention.wq"] = ColwiseParallel()
+        layer_plan["attention.wk"] = ColwiseParallel()
+        layer_plan["attention.wv"] = ColwiseParallel()
+        layer_plan["attention.wo"] = RowwiseParallel(output_layouts=Shard(1))
+
+        # Feedforward layers TP
+        # Feedforward layers TP
+        layer_plan["feed_forward"] = PrepareModuleInput(
+            input_layouts=(Shard(1),),
+            desired_input_layouts=(Replicate(),),
+        )
+        layer_plan["ffn_norm"] = SequenceParallel()
+        layer_plan["feed_forward.w1"] = ColwiseParallel()
+        layer_plan["feed_forward.w3"] = ColwiseParallel()
+        layer_plan["feed_forward.w2"] = RowwiseParallel(output_layouts=Shard(1))
+
+        parallelize_module(
+            layer,
+            tp_mesh,
+            layer_plan,
+        )
+
+        # Adjusting the number of heads and kv heads according to the tp size
+        attn_layer = layer.attention
+        attn_layer.n_heads = attn_layer.n_heads // distributed_args.tp_size
+        attn_layer.n_kv_heads = attn_layer.n_kv_heads // distributed_args.tp_size

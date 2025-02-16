@@ -25,14 +25,14 @@ from torch.optim import lr_scheduler
 from torch.distributed.checkpoint.stateful import Stateful
 from torch.distributed._tensor import DTensor
 from contextlib import ExitStack
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from pathlib import Path
 from timeit import default_timer as timer
 from typing import Any, Dict, List, Optional
 
 from apps.main.utils.sampler import StatefulDistributedSampler
 from lingua.args import dump_config, flatten_dict, dataclass_from_dict
-from lingua.checkpoint import CheckpointArgs, CheckpointManager, load_from_checkpoint
+from lingua.checkpoint import CheckpointArgs, CheckpointManager
 from lingua.distributed import (
     DistributedArgs,
     EnvironmentArgs,
@@ -57,23 +57,15 @@ from lingua.metrics import (
 from lingua.optim import OptimArgs, build_optimizer
 from lingua.profiling import ProfilerArgs, maybe_run_profiler
 
-from apps.main.data import AutoDataLoader, DataArgs
+from apps.main.data import AutoDataLoader, DataArgs, DictTensorBatchIterator
 from apps.main.modules.schedulers import SchedulerArgs
 from apps.main.utils.cal_flops import get_num_flop_per_token
 from apps.gen_tran.model import (
-    Pollux,
-    LatentPollux,
+    LatentPollux_Gen as LatentPollux,
     ModelArgs,
     build_fsdp_grouping_plan_latent_pollux,
-    build_fsdp_grouping_plan_pollux,
     tp_parallelize,
     get_no_recompute_ops,
-)
-from apps.main.data import DictTensorBatchIterator
-from apps.main.eval import (
-    launch_eval,
-    EVAL_FOLDER_NAME,
-    EvalArgs,
 )
 
 logger = logging.getLogger()
@@ -83,7 +75,7 @@ logger = logging.getLogger()
 class TrainArgs:
 
     name: str = "Pollux"
-    version: str = "v0.7"
+    version: str = "v1.0"
     train_stage: str = "preliminary"  # Align with `data` configuration
     output_dir: str = "/mnt/data/dump"
     dump_dir: str = ""
@@ -278,16 +270,8 @@ def train(args: TrainArgs):
 
         torch.manual_seed(args.seed)
         logger.info("Building model")
-        if args.model.type == "latent_pollux":
-            model = LatentPollux(args.model)
-            fsdp_plan = build_fsdp_grouping_plan_latent_pollux(args.model)
-        elif args.model.type == "pollux":
-            model = Pollux(args.model)
-            fsdp_plan = build_fsdp_grouping_plan_pollux(
-                args.model, model.compressor.vae.config
-            )
-        else:
-            raise ValueError(f"Unsupported model type: {args.model.type}")
+        model = LatentPollux(args.model)
+        fsdp_plan = build_fsdp_grouping_plan_latent_pollux(args.model)
         logger.info("Model is built !")
 
         model_param_count = get_num_params(model)
@@ -365,31 +349,9 @@ def train(args: TrainArgs):
             # get batch
             curr_lr = float(optimizer.param_groups[0]["lr"])
             data_load_start = timer()
-            if args.model.type == "latent_pollux":
-                try:
-                    batch = next(parquet_iterator)
-                except:
-                    try:
-                        batch = next(dataloader_iterator)
-                    except:
-                        logger.info("New Epoch!")
-                        sampler.reset()
-                        dataloader_iterator = iter(data_loader)
-                        batch = next(dataloader_iterator)
-                    parquet_iterator = DictTensorBatchIterator(
-                        batch, active_data[0].dataloader.batch_size
-                    )
-                    batch = next(parquet_iterator)
-                # if every_n_steps(train_state, args.gc_collect_freq, acc_step=0):
-                #     logger.info("garbage collection")
-                #     # we do garbage collection manually otherwise different processes
-                #     # run the GC at different times so they slow down the whole pipeline
-                #     gc.collect()
-                batch["latent_code"] = batch["latent_code"].cuda()
-                batch["text_embedding"] = batch["text_embedding"].cuda()
-                data_load_time = round(timer() - data_load_start, 4)
-                nwords_since_last_log += batch["latent_code"].numel()
-            elif args.model.type == "pollux":
+            try:
+                batch = next(parquet_iterator)
+            except:
                 try:
                     batch = next(dataloader_iterator)
                 except:
@@ -397,11 +359,14 @@ def train(args: TrainArgs):
                     sampler.reset()
                     dataloader_iterator = iter(data_loader)
                     batch = next(dataloader_iterator)
-                batch["image"] = batch["image"].cuda()
-                data_load_time = round(timer() - data_load_start, 4)
-                nwords_since_last_log += batch["image"].numel()
-            else:
-                raise ValueError(f"Unsupported model type: {args.model.type}")
+                parquet_iterator = DictTensorBatchIterator(
+                    batch, active_data[0].dataloader.batch_size
+                )
+                batch = next(parquet_iterator)
+            batch["latent_code"] = batch["latent_code"].cuda()
+            batch["text_embedding"] = batch["text_embedding"].cuda()
+            data_load_time = round(timer() - data_load_start, 4)
+            nwords_since_last_log += batch["latent_code"].numel()
             # forward
             start_timer = torch.cuda.Event(enable_timing=True)
             end_timer = torch.cuda.Event(enable_timing=True)
@@ -472,14 +437,8 @@ def train(args: TrainArgs):
                         args.model.gen_transformer.max_seqlen,
                     )
                     * wps
-                    + get_num_flop_per_token(
-                        model_param_count,
-                        args.model.plan_transformer.n_layers,
-                        args.model.plan_transformer.dim,
-                        args.model.plan_transformer.max_seqlen,
-                    )
-                    * wps
                 )
+
                 metrics = flatten_dict(
                     {
                         "global_step": train_state.step,
@@ -536,27 +495,27 @@ def train(args: TrainArgs):
                     device_mesh=world_mesh,
                 )
 
-            if args.eval is not None and every_n_steps(
-                train_state, args.checkpoint.eval.every, acc_step=0
-            ):
-                logger.info("Evaluation Start")
-                start_time = time.time()
-                eval_args = dataclass_from_dict(EvalArgs, args.eval)
-                eval_args.global_step = train_state.step
-                eval_args.ckpt_dir = str(checkpoint.existing_saves[-1])
-                eval_args.dump_dir = str(
-                    os.path.join(
-                        args.dump_dir,
-                        "evals",
-                        EVAL_FOLDER_NAME.format(train_state.step),
-                    )
-                )
-                # launch_eval(eval_args)# TODO: update eval.py later
-                end_time = time.time()
-                logger.info(
-                    f"Evaluation End! Take total time (sec): {end_time-start_time}"
-                )
-                # TODO: add some images to wandb for visualization
+            # if args.eval is not None and every_n_steps(
+            #     train_state, args.checkpoint.eval.every, acc_step=0
+            # ):
+            #     logger.info("Evaluation Start")
+            #     start_time = time.time()
+            #     eval_args = dataclass_from_dict(EvalArgs, args.eval)
+            #     eval_args.global_step = train_state.step
+            #     eval_args.ckpt_dir = str(checkpoint.existing_saves[-1])
+            #     eval_args.dump_dir = str(
+            #         os.path.join(
+            #             args.dump_dir,
+            #             "evals",
+            #             EVAL_FOLDER_NAME.format(train_state.step),
+            #         )
+            #     )
+            #     # launch_eval(eval_args)# TODO: update eval.py later
+            #     end_time = time.time()
+            #     logger.info(
+            #         f"Evaluation End! Take total time (sec): {end_time-start_time}"
+            #     )
+            # TODO: add some images to wandb for visualization
             if preemption_flag["flag"]:
                 if not saved:
                     checkpoint.save(
