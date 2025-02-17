@@ -218,7 +218,6 @@ def launch_inference(cfg: InferenceArgs):
                         "timestamp": [datetime.now()],
                         "data_source": [active_data[0].data_name],
                         "resolution": [active_data[0].image_size],
-                        "token_length": [cfg.model.text_encoder.text_seqlen],
                     }
                     batch_df = pd.DataFrame(batch_df)
                     if csv_path.exists():

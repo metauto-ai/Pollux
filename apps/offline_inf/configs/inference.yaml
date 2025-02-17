@@ -1,19 +1,16 @@
 # CUDA_VISIBLE_DEVICES=4,5,6,7 torchrun --nnodes 1 --nproc-per-node 4 --rdzv_endpoint=localhost:29400 -m apps.offline_inf.inference config=apps/offline_inf/configs/inference.yaml
 name: "inference"
 stage: inference # preliminary for test normal usage: inference 
-dump_dir: "/mnt/pollux/parquet_cache_0" # change dir
+dump_dir: "/mnt/pollux/test/save_parquet" # change dir
 # s3://t2i-parquet/cc12m_r256_l3b128_s3/ # Not use s3
 parque_size: 1024
 prefix_mapping:
   "caption": "caption"
-  "text_embedding": "CLIP_text_embedding"
-  "gen_latent_code": "HunyuanVideo_latent_code"
-  "plan_latent_code": "Cosmos_latent_code"
-  "plan_latent_code_indices": "Cosmos_latent_code_indices"
+  "latent_code": "HunyuanVideo_latent_code"
 source_data:
   - stage: inference
     id: 1
-    data_name: bucket-256-1
+    data_name: bucket-hq
     task: text_to_image
     source: mongodb
     image_size: 256
@@ -22,13 +19,10 @@ source_data:
     extract_field:
         "media_path": "image"
     use: true
-    query:
-        "parquet_cache":
-            "$exists": true
     dataloader:
         prefetch_factor: 2
-        batch_size: 64
-        num_workers: 32
+        batch_size: 256
+        num_workers: 4
         seed: 1024
         shuffle: True
         pin_memory: True
@@ -40,13 +34,3 @@ model:
         pretrained_model_name_or_path: '/jfs/checkpoints/models--tencent--HunyuanVideo/snapshots/2a15b5574ee77888e51ae6f593b2ceed8ce813e5/vae'
         enable_tiling: false
         enable_slicing: false
-    plan_vae:
-        model_name: "COSMOS-DV"
-        pretrained_model_name_or_path: '/jfs/checkpoints/cosmos/Cosmos-Tokenizer-DV8x16x16'
-        model_dtype: bfloat16 # should be consistent with distributed.model_dtype
-        enable_tiling: false
-        enable_slicing: false    
-    text_encoder:
-        config_name: "ViT-B/32"
-        dtype: "fp32"
-        text_seqlen: 77

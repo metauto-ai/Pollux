@@ -160,7 +160,7 @@ class AutoDataLoader:
                 partition_key=args.partition_key,
                 args=args,
             )
-        elif args.data_name in ["cc12m", "bucket-256-1"]:
+        elif args.data_name in ["cc12m", "bucket-256-1", "bucket-hq", "bucket-256-2"]:
             dataset = MongoDBImageDataLoad(
                 collection_name=args.data_name,
                 query=args.query,
