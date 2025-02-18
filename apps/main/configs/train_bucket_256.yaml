@@ -1,10 +1,10 @@
-# torchrun --standalone --nnodes 1 --nproc-per-node 8 -m apps.main.train config=apps/main/configs/train_bucket_256.yaml
+# torchrun --standalone --nnodes 1 --nproc-per-node 4 -m apps.main.train config=apps/main/configs/train_bucket_256.yaml
 
 # Set up single experiment
 version: v1.0
 # From now on, start to align train, data, and model setting with train stage (just finish refactor for dara)
 train_stage: stage-1 # options: preliminary, pretraining, posttraining; aligned with data setting
-name: Pollux_v1.0_joint_training # used for local dump and wandb log
+name: Pollux_v1.0_joint_training_test_new_offline_inf # used for local dump and wandb log
 output_dir: /jfs/checkpoints/dump
 dump_dir: '' # No need now
 steps: 1000000
@@ -17,9 +17,9 @@ optim:
     weight_decay: 0.01
 
 distributed:
-    gpus: 0,1,2,3,4,5,6,7
+    gpus: 4,5,6,7
     fsdp_type: full_shard
-    dp_shard: 8
+    dp_shard: 4
     dp_replicate: 1
     compile: false
     model_dtype: bf16 # options: `fb8` is only supported by H100
@@ -88,7 +88,7 @@ model:
 data:  
   - stage: stage-1
     id: 1
-    data_name: bucket-256-parquet
+    data_name: bucket-256-parquet-test
     task: latent_text_to_image
     source: mongodb
     partition_key: 'partition_key'
@@ -98,11 +98,10 @@ data:
         "parquet_path": "path"
     mapping_field:
         "HunyuanVideo_latent_code": "latent_code"
-        "CLIP_text_embedding": "text_embedding"
         "caption": "caption"
     use: True
     dataloader:
-        batch_size: 18
+        batch_size: 12
         num_workers: 4
         seed: 1024
         shuffle: False

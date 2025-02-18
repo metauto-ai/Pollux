@@ -1,5 +1,5 @@
 """_summary_
-python -m apps.offline_inf.submit --dump-dir /jfs/data/tmp/cc12m_test_1m --collection-name cc12m_llama3bf128_hunyuanr256_test1m
+python -m apps.offline_inf.submit --dump-dir /mnt/pollux/test/save_parquet --collection-name bucket-256-parquet-test
 """
 
 import argparse
