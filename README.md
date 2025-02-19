@@ -64,16 +64,10 @@ mongoexport --uri="mongodb+srv://nucleusadmin:eMPF9pgRy2UqJW3@nucleus.mongoclust
 ```
 ## Preliminary Usages
 
-* Before we develop a MongoDB dataloader, we could first use this to remove `.lock` files for HFDataLoader.
-
-```bash
-find /jfs/data/imagenet-1k/ -type f -name "*.lock" -exec rm -f {} \;
-```
-
 * We provides a minimal system to train diffusion model on ImageNet with parallelized system. The following example is how we train our pipeline on 4 GPUs.
 
 ```
-torchrun --standalone --nnodes 1 --nproc-per-node 8 -m apps.main.train config=apps/main/configs/train.yaml
+torchrun --standalone --nnodes 1 --nproc-per-node 8 -m apps.main.train config=apps/main/configs/train_bucket_256.yaml
 ```
 
 * Generate visualizations:
@@ -82,15 +76,8 @@ torchrun --standalone --nnodes 1 --nproc-per-node 8 -m apps.main.train config=ap
 python -m apps.main.generate config=apps/main/configs/eval.yaml
 ```
 
-* Test each module:
-
-```
-python -m apps.main.test
-```
-
 ## Pollux Pipeline
-![pipeline](https://github.com/user-attachments/assets/2289daf0-2639-4bf9-aaaa-e708721fe9e4)
-
+![Image](https://github.com/user-attachments/assets/d0ea0b5f-54ed-48fd-92de-b849f07c7548)
 
 ## Data Pipeline
 haozhe is working on that.
