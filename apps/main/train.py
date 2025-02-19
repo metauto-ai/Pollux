@@ -373,9 +373,15 @@ def train(args: TrainArgs):
                 # we do garbage collection manually otherwise different processes
                 # run the GC at different times so they slow down the whole pipeline
                 gc.collect()
-            batch["latent_code"] = batch["latent_code"].cuda()
+            if "latent_code" in batch:
+                batch["latent_code"] = batch["latent_code"].cuda()
+                nwords_since_last_log += batch["latent_code"].numel()
+            elif "image" in batch:
+                batch["image"] = batch["image"].cuda()
+                nwords_since_last_log += batch["image"].numel()
+            else:
+                raise ValueError("No image or latent code in batch")
             data_load_time = round(timer() - data_load_start, 4)
-            nwords_since_last_log += batch["latent_code"].numel()
 
             # forward
             start_timer = torch.cuda.Event(enable_timing=True)

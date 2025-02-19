@@ -24,6 +24,8 @@ class ModelArgs:
     plan: PolluxPlanArgs = field(default_factory=PolluxPlanArgs)
     plan_weight: float = 1.0
     gen_weight: float = 1.0
+    with_vae: bool = False
+    vae_args: LatentVideoVAEArgs = field(default_factory=LatentVideoVAEArgs)
 
 
 class Latent_Pollux(nn.Module):
@@ -39,12 +41,17 @@ class Latent_Pollux(nn.Module):
 
         self.plan_model = Latent_Pollux_Plan(args.plan)
         self.gen_model = LatentPollux_Gen(args.gen)
+        if args.with_vae:
+            self.compressor = build_vae(args.vae_args)
         self.plan_weight = args.plan_weight
         self.gen_weight = args.gen_weight
 
     def forward(self, batch: dict[str:any]) -> dict[str:any]:
+        if hasattr(self, "compressor"):
+            batch["latent_code"] = self.compressor.encode(batch["image"])
         plan_output, plan_loss = self.plan_model(batch)
         gen_out_put, gen_loss = self.gen_model(plan_output)
+
         return gen_out_put, self.plan_weight * plan_loss + self.gen_weight * gen_loss
 
     def set_train(self):
@@ -68,7 +75,9 @@ def get_no_recompute_ops():
 # Optional and only used for fully shard options (fsdp) is choose. Highly recommanded for large models
 def build_fsdp_grouping_plan(model_args: ModelArgs):
     group_plan: Tuple[int, bool] = []
-
+    if model_args.with_vae:
+        for i in range(4):  # Specific for Hunyuan's VAE
+            group_plan.append((f"compressor.vae.encoder.down_blocks.{i}", False))
     for i in range(model_args.plan.llm.n_layers):
         group_plan.append((f"plan_model.llm.layers.{i}", False))
     group_plan.append(("plan_model.latent_head", True))
