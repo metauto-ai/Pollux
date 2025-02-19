@@ -209,7 +209,14 @@ class MongoDBImageDataLoad(MongoDBDataLoad):
         sample = self.data.iloc[idx]  # Use iloc for row access in DataFrame
         return_sample = {}
         return_sample["_id"] = str(sample["_id"])
-        return_sample["caption"] = sample["caption"]
+        caption = sample["caption"]
+        if isinstance(caption, tuple):
+            caption = caption[0]
+
+        if not isinstance(caption, str):
+            logging.warning(f"Expected string but got {type(caption)}:{caption}")
+            caption = ""
+        return_sample["caption"] = caption
         for k, v in self.extract_field.items():
             imageUrl = sample[k]
             for attempt in range(self.retries):
@@ -223,10 +230,8 @@ class MongoDBImageDataLoad(MongoDBDataLoad):
                     return_sample[v] = self.image_processing.transform(image)
                     break
                 except Exception as e:
-                    logging.warning(
-                        f"Attempt {attempt + 1}/{self.retries} - Error loading image: {e}"
-                    )
                     if attempt == self.retries - 1:
+                        # logging.warning(f"Error loading image: {e}")
                         image = self.place_holder_image
                         return_sample[v] = self.image_processing.transform(image)
                         return_sample["_id"] = "-1"

@@ -343,6 +343,7 @@ def train(args: TrainArgs):
 
         dataloader_iterator = iter(data_loader)
         nwords_since_last_log = 0
+        failure_rate = 0
         time_last_log = timer()
         gc.collect()
 
@@ -358,8 +359,9 @@ def train(args: TrainArgs):
             except:
                 try:
                     batch = next(dataloader_iterator)
-                except:
-                    logger.info("New Epoch!")
+                except Exception as e:
+                    logger.error(f"Error getting next batch: {e}")
+                    logger.error("Resetting dataloader")
                     sampler.reset()
                     dataloader_iterator = iter(data_loader)
                     batch = next(dataloader_iterator)
@@ -367,7 +369,8 @@ def train(args: TrainArgs):
                     batch, active_data[0].dataloader.batch_size
                 )
                 batch = next(parquet_iterator)
-
+            if "_id" in batch:
+                failure_rate = batch["_id"].count("-1") / len(batch["_id"])
             if every_n_steps(train_state, args.gc_collect_freq, acc_step=0):
                 logger.info("garbage collection")
                 # we do garbage collection manually otherwise different processes
@@ -439,7 +442,6 @@ def train(args: TrainArgs):
                 total_acc_steps = (
                     args.grad_acc_steps * train_state.step + train_state.acc_step
                 )
-                # TODO: here need to rewrite in later when we have multiple source
                 tokens_per_gpu = total_acc_steps * active_data[0].dataloader.batch_size
                 total_tokens = dp_degree * tokens_per_gpu
                 # This is an estimate and the correct values may change
@@ -465,6 +467,7 @@ def train(args: TrainArgs):
                     {
                         "global_step": train_state.step,
                         "acc_step": train_state.acc_step,
+                        "data_failure_rate": failure_rate,
                         "speed": {
                             "wps": wps,
                             "FLOPS": FLOPS,
@@ -500,9 +503,10 @@ def train(args: TrainArgs):
                     f"  wps: {wps:.2e}"
                     f"  iter: {curr_iter_time:>7}"
                     f"  data: {data_load_time:>5}"
+                    f"  data_failure_rate: {round(failure_rate,4):>7}"
                     f"  lr: {curr_lr:.2e}"
                     f"  mem: {gpu_mem_stats.max_active_pct:.0f}%"
-                    f"  pow: {gpu_mem_stats.power_draw/1000} W"
+                    f"  pow: {gpu_mem_stats.power_draw/1000} W",
                 )
 
             saved = False

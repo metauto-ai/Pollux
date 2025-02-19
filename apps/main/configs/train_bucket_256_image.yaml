@@ -106,7 +106,7 @@ data:
     dataloader:
         prefetch_factor: 2
         batch_size: 16
-        num_workers: 12
+        num_workers: 8
         seed: 1024
         shuffle: True
         pin_memory: True
