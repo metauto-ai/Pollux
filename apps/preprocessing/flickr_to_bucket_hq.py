@@ -4,17 +4,17 @@
 # sudo apt install mongodb-database-tools
 # mongoexport --uri="mongodb+srv://nucleusadmin:eMPF9pgRy2UqJW3@imagedata.global.mongocluster.cosmos.azure.com/?tls=true&authMechanism=SCRAM-SHA-256&retrywrites=false&maxIdleTimeMS=120000" \
 #     --db=world_model \
-#     --collection=flickr-part-00-of-08 \
-#     --out=/mnt/pollux/mongo_db_cache/flickr-part-00-of-08-nova.json \
+#     --collection=flickr-part-04-of-08 \
+#     --out=/mnt/pollux/mongo_db_cache/flickr-part-04-of-08-nova.json \
 #     --query='{"nova_lite_caption":{"$exists":true}}' --jsonArray
 # mongoimport --uri="mongodb+srv://nucleusadmin:eMPF9pgRy2UqJW3@imagedata.global.mongocluster.cosmos.azure.com/?tls=true&authMechanism=SCRAM-SHA-256&retrywrites=false&maxIdleTimeMS=120000" \
 # --db=world_model \
 # --collection=bucket-hq \
-# --file=/mnt/pollux/mongo_db_cache/flickr-part-00-of-08-nova_processed.json --jsonArray
+# --file=/mnt/pollux/mongo_db_cache/flickr-part-04-of-08-nova_processed.json --jsonArray
 # mongoimport --uri="mongodb+srv://nucleusadmin:eMPF9pgRy2UqJW3@imagedata.global.mongocluster.cosmos.azure.com/?tls=true&authMechanism=SCRAM-SHA-256&retrywrites=false&maxIdleTimeMS=120000" \
 # --db=world_model \
 # --collection=bucket-256-1 \
-# --file=/mnt/pollux/mongo_db_cache/flickr-part-00-of-08-nova_processed.json --jsonArray
+# --file=/mnt/pollux/mongo_db_cache/flickr-part-04-of-08-nova_processed.json --jsonArray
 import json
 import requests
 from PIL import Image
@@ -26,7 +26,7 @@ from tqdm_joblib import tqdm_joblib
 from pymongo import MongoClient
 from bson import ObjectId
 
-file_path = "/mnt/pollux/mongo_db_cache/flickr-part-00-of-08-nova.json"
+file_path = "/mnt/pollux/mongo_db_cache/flickr-part-04-of-08-nova.json"
 
 
 def update_doc(doc):
@@ -49,7 +49,7 @@ def update_doc(doc):
                 doc_return["height"] = value
             if key == "PARTITION_KEY":
                 doc_return["partition_key"] = value
-        doc_return["source"] = "flickr-part-00-of-08"
+        doc_return["source"] = "flickr-part-04-of-08"
         return doc_return
     except Exception as e:
         print(f"Error processing element {doc['_id']}: {e}")
@@ -70,7 +70,7 @@ with tqdm_joblib(tqdm(desc="Processing", total=len(data))):
 processed_results = [res for res in processed_results if res is not None]
 print(processed_results[:10])
 with open(
-    "/mnt/pollux/mongo_db_cache/flickr-part-00-of-08-nova_processed.json",
+    "/mnt/pollux/mongo_db_cache/flickr-part-04-of-08-nova_processed.json",
     "w",
     encoding="utf-8",
 ) as f:
