@@ -599,7 +599,21 @@ class Latent_Pollux_Plan(nn.Module):
             return_tensors="pt",
         )
         text_input_ids = tokenizer_output["input_ids"].to(vae_embs.device)  # [B, L]
+
+        if text_input_ids.max().item() >= self.args.llm.vocab_size:
+            logger.warning(
+                f"Text input ids exceed the vocab size: {text_input_ids.max().item()} with caption: {captions}"
+            )
+        if text_input_ids.min().item() < 0:
+            logger.warning(
+                f"Text input ids are negative: {text_input_ids.min().item()} with caption: {captions}"
+            )
+
+        text_input_ids = torch.clamp(
+            text_input_ids, min=0, max=self.args.llm.vocab_size - 1
+        )
         text_embs = self.llm.tok_embeddings(text_input_ids)  # [B, L, D]
+
         # Concat
         boi_emb = self.vision_boi_emb.unsqueeze(0).expand(vae_embs.size(0), -1, -1)
         # eoi_emb = self.vision_eoi_emb.unsqueeze(0).expand(vae_embs.size(0), -1, -1)

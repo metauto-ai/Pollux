@@ -94,7 +94,7 @@ model:
 data:  
   - stage: stage-1
     id: 1
-    data_name: bucket-256-1
+    data_name: bucket-256-2
     task: text_to_image
     source: mongodb
     image_size: 256
