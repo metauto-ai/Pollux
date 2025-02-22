@@ -1,8 +1,8 @@
 # python -m apps.main.generate config=apps/main/configs/eval.yaml
 name: "debug_evals"
 stage: eval
-ckpt_dir: "/jfs/checkpoints/dump/Pollux_v1.0_joint_training/checkpoints/0000080000"
-dump_dir: "/jfs/checkpoints/dump/Pollux_v1.0_joint_training/checkpoints/0000080000"
+ckpt_dir: "/jfs/checkpoints/dump/Pollux_v1.0_joint_training_image_input/checkpoints/0000130000"
+dump_dir: "/jfs/checkpoints/dump/Pollux_v1.0_joint_training_image_input/checkpoints/0000130000"
 generator:
   guidance_scale: 6.5
   dtype: bf16

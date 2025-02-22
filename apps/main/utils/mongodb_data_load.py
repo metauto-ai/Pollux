@@ -221,7 +221,7 @@ class MongoDBImageDataLoad(MongoDBDataLoad):
             imageUrl = sample[k]
             for attempt in range(self.retries):
                 try:
-                    response = requests.get(imageUrl)
+                    response = requests.get(imageUrl, timeout=2)
                     image = Image.open(io.BytesIO(response.content)).convert("RGB")
                     if random.random() > 0.9:
                         self.place_holder_image = (
