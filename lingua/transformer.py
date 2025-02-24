@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from enum import Enum
 import math
 from typing import Optional, Union, Tuple
+from apps.main.kernels.rmsnorm import RMS_Norm
 
 import torch
 from torch import nn
@@ -286,8 +287,7 @@ class RMSNorm(nn.Module):
 
     def forward(self, x: torch.Tensor):
         x = probe.log_stats(x, "resid")
-        output = self._norm(x.float())
-        return (output * self.weight.float()).type_as(x)
+        return RMS_Norm.apply(x, self.weight).type_as(x)
 
     def reset_parameters(self):
         torch.nn.init.ones_(self.weight)  # type: ignore
