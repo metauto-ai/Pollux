@@ -3,10 +3,11 @@ name: "inference"
 stage: inference # preliminary for test normal usage: inference 
 dump_dir: "/mnt/pollux/test/save_parquet" # change dir
 # s3://t2i-parquet/cc12m_r256_l3b128_s3/ # Not use s3
-parque_size: 1024
+parque_size: 2048
 prefix_mapping:
   "caption": "caption"
-  "latent_code": "HunyuanVideo_latent_code"
+  "gen_latent_code": "HunyuanVideo_gen_latent_code"
+  "plan_latent_code": "HunyuanVideo_plan_latent_code"
 source_data:
   - stage: inference
     id: 1
@@ -14,6 +15,7 @@ source_data:
     task: text_to_image
     source: mongodb
     image_size: 256
+    condition_image_size: 256
     partition_key: 'partition_key'
     retries: 3
     extract_field:
@@ -21,8 +23,8 @@ source_data:
     use: true
     dataloader:
         prefetch_factor: 2
-        batch_size: 256
-        num_workers: 4
+        batch_size: 64
+        num_workers: 16
         seed: 1024
         shuffle: True
         pin_memory: True

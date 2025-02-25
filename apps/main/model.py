@@ -48,7 +48,8 @@ class Latent_Pollux(nn.Module):
 
     def forward(self, batch: dict[str:any]) -> dict[str:any]:
         if hasattr(self, "compressor"):
-            batch["latent_code"] = self.compressor.encode(batch["image"])
+            batch["gen_latent_code"] = self.compressor.encode(batch["image"])
+            batch["plan_latent_code"] = self.compressor.encode(batch["image_cond"])
         plan_output, plan_loss = self.plan_model(batch)
         gen_out_put, gen_loss = self.gen_model(plan_output)
 

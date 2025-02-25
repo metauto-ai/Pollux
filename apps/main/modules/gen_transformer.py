@@ -384,7 +384,7 @@ class LatentPollux_Gen(nn.Module):
                 )
                 + torch.zeros_like(conditional_signal) * conditional_signal
             )
-        latent_code = batch["latent_code"]
+        latent_code = batch["gen_latent_code"]
         conditional_signal = self.token_proj(conditional_signal)
         noised_x, t, target = self.scheduler.sample_noised_input(latent_code)
         output = self.gen_transformer(

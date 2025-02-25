@@ -21,8 +21,6 @@ from apps.main.modules.preprocess import ImageProcessing
 from apps.main.utils.hf_data_load import HFDataLoad
 from apps.main.utils.dummy_data_load import DummyDataLoad
 from apps.main.utils.mongodb_data_load import (
-    MongoDBDataLoad,
-    MongoDBImageNetDataLoad,
     MongoDBImageDataLoad,
     MongoDBParquetDataLoad,
 )
@@ -75,6 +73,7 @@ class DataArgs:
 
     # * Image specific args
     image_size: int = 256
+    condition_image_size: int = 256
 
     # * Huggingface specific args
     root_dir: Optional[str] = None  # For local/huggingface datasets
@@ -115,9 +114,7 @@ class AutoDataLoader:
                 f"Initializing dataloader for dataset: {dataset_config.data_name}"
             )
             try:
-                if dataset_config.source == "huggingface":
-                    return self._create_imagenet_dataloader(dataset_config)
-                elif dataset_config.source == "mongodb":
+                if dataset_config.source == "mongodb":
                     return self._create_mongodb_dataloader(dataset_config)
                 else:
                     raise ValueError(
@@ -132,35 +129,11 @@ class AutoDataLoader:
             f"No dataset configured for stage {self.train_stage} with `use: True`."
         )
 
-    def _create_imagenet_dataloader(
-        self, args: DataArgs
-    ) -> Tuple[DataLoader, StatefulDistributedSampler]:
-
-        data = HFDataLoad(data_name=args.data_name, cache_dir=args.root_dir)
-        train_data = data[args.split]
-        data_pipeline = ImageProcessing(args)
-        train_data.set_transform(data_pipeline)
-        logger.warning(
-            f"Read Data with Total Shard: {self.num_shards} Current Index: {self.shard_id} Split: {args.split}"
-        )
-        train_data = train_data.shard(num_shards=self.num_shards, index=self.shard_id)
-
-        self.dataset = train_data
-        return self._warp_dataloader_with_stateful_sampler(args, train_data)
-
     def _create_mongodb_dataloader(
         self, args: DataArgs
     ) -> Tuple[DataLoader, StatefulDistributedSampler]:
         record_batch_size = args.dataloader.batch_size
-        if args.data_name == "imagenet-1k":
-            dataset = MongoDBImageNetDataLoad(
-                num_shards=self.num_shards,
-                shard_idx=self.shard_id,
-                collection_name=args.data_name,
-                partition_key=args.partition_key,
-                args=args,
-            )
-        elif args.data_name in ["cc12m", "bucket-256-1", "bucket-hq", "bucket-256-2"]:
+        if args.data_name in ["cc12m", "bucket-256-1", "bucket-hq", "bucket-256-2"]:
             dataset = MongoDBImageDataLoad(
                 collection_name=args.data_name,
                 query=args.query,

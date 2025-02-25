@@ -11,28 +11,11 @@ from torch import nn
 from apps.main.utils.imagenet_classes import IMAGENET2012_CLASSES
 
 
-@dataclass
-class DataArgs:
-    data_name: str = (
-        "ILSVRC/imagenet-1k"  # Supported values: "ILSVRC/imagenet-1k", "dummy", "NucluesIMG-100M"
-    )
-    batch_size: int = 12
-    num_workers: int = 8
-    image_size: int = 256
-    split: str = "train"
-    root_dir: Optional[str] = None  # For local/huggingface datasets
-    cache_dir: Optional[str] = None  # Cache directory for datasets
-    mongo_uri: Optional[str] = None  # MongoDB URI for NucluesIMG-100M
-    usage: Optional[str] = None  # "class_to_image", "image_generation"
-    source: Optional[str] = None  # "huggingface", "mongodb", "local"
-    stage: Optional[str] = None  # "preliminary", "pretraining", "posttraining"
-
-
 ######################## FOR IMAGE ########################
 
 
 class ImageProcessing(nn.Module):
-    def __init__(self, args: DataArgs) -> nn.Module:
+    def __init__(self, args) -> nn.Module:
         super().__init__()
         self.normalize_transform = transforms.Compose(
             [
@@ -71,6 +54,30 @@ class ImageProcessing(nn.Module):
             caption_list.append(cap)
         data["caption"] = caption_list
         return data
+
+
+class PolluxImageProcessing:
+    def __init__(self, args):
+        super().__init__()
+        self.normalize_transform = transforms.Compose(
+            [
+                transforms.RandomHorizontalFlip(),
+                transforms.ToTensor(),
+                transforms.Normalize(
+                    mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5], inplace=True
+                ),
+            ]
+        )
+        self.image_size = args.image_size
+        self.condition_image_size = args.condition_image_size
+
+    def transform(self, x: Image) -> torch.Tensor:
+        x = center_crop_arr(x, self.image_size)
+        cond_x = x.resize(
+            (self.condition_image_size, self.condition_image_size),
+            resample=Image.BICUBIC,
+        )
+        return self.normalize_transform(x), self.normalize_transform(cond_x)
 
 
 def random_mask_images(img_tensor, mask_ratio, mask_patch, mask_all=False):
