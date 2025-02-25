@@ -17,7 +17,7 @@ In the above, the name of your conda env is `pollux`, and the packed env will be
 2. Submit to Slurm through `lingua.stool`. The example config is [train_bucket_256_latent_code.yaml](apps/main/configs/train_bucket_256_latent_code.yaml), which will use total 8GPUs for training.
 
 ```
-python -m lingua.stool script=apps.gen_tran.train config=apps/gen_tran/configs/train_2x4.yaml \
+python -m lingua.stool script=apps.main.train config=apps/main/configs/train_bucket_256_latent_code.yaml \
   nodes=1 \
   ngpu=8 \
   ncpu=16 \
