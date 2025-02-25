@@ -14,12 +14,12 @@ conda-pack -n pollux -o /jfs/shuming/code/env/pollux_env.tar.gz
 In the above, the name of your conda env is `pollux`, and the packed env will be saved at the jfs.
 
 
-2. Submit to Slurm through `lingua.stool`. The example config is [train_2x4.yaml](https://github.com/metauto-ai/Pollux/blob/a9491c7457370ab20756c94dbf178458d8474d23/apps/gen_tran/configs/train_2x4.yaml), which will use total 8GPUs for training.
+2. Submit to Slurm through `lingua.stool`. The example config is [train_bucket_256_latent_code.yaml](apps/main/configs/train_bucket_256_latent_code.yaml), which will use total 8GPUs for training.
 
 ```
 python -m lingua.stool script=apps.gen_tran.train config=apps/gen_tran/configs/train_2x4.yaml \
-  nodes=2 \
-  ngpu=4 \
+  nodes=1 \
+  ngpu=8 \
   ncpu=16 \
   mem=256G \
   partition=debug \
