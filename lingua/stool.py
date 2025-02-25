@@ -159,7 +159,7 @@ def validate_args(args) -> None:
 def launch_job(args: StoolArgs):
     # Set up args default and validate them depending on the cluster or partition requested
     validate_args(args)
-    dump_dir = args.config["dump_dir"]
+    dump_dir = os.path.join(args.config["output_dir"], args.config["name"])
     job_name = args.config["name"]
     print("Creating directories...")
     os.makedirs(dump_dir, exist_ok=args.dirs_exists_ok or args.override)
