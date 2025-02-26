@@ -1,5 +1,5 @@
 """
-torchrun --nnodes 1 --nproc-per-node 4 -m apps.main.eval config=apps/main/configs/eval.yaml                                                         
+CUDA_VISIBLE_DEVICES=2,3 torchrun --nnodes 1 --nproc-per-node 2 -m apps.main.eval config=apps/main/configs/eval.yaml                                                         
 """
 
 from collections import defaultdict
@@ -24,7 +24,7 @@ from lingua.distributed import (
 )
 from apps.main.data import AutoDataLoader, DataArgs
 from apps.main.generate import LatentGenerator, GeneratorArgs, load_consolidated_model
-
+from apps.main.modules.vae import build_vae
 from apps.main.model import Latent_Pollux, ModelArgs
 
 EVAL_FOLDER_NAME = "{:010d}"
@@ -49,7 +49,7 @@ def save_images(
     csv_name: str = "meta.csv",
 ):
     os.makedirs(output_dir, exist_ok=True)
-    csv_path = (Path(output_dir) / f"{csv_name}",)
+    csv_path = Path(output_dir) / f"{csv_name}"
     tensors = batch["generated_samples"]
     tensors = (tensors + 1) * 127.5
     tensors = tensors.clamp(0, 255).byte()
@@ -91,7 +91,8 @@ def launch_eval(cfg: EvalArgs):
     )
     logger.info("Model loaded")
     model.eval()
-    generator = LatentGenerator(cfg.generator, model)
+    tvae = build_vae(cfg.generator.tvae)
+    generator = LatentGenerator(cfg.generator, model, tvae).cuda()
     active_data = [d for d in cfg.data if d.stage == cfg.stage and d.use]
     data_loader_factory = AutoDataLoader(
         shard_id=global_rank,
