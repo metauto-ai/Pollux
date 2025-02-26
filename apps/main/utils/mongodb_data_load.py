@@ -286,6 +286,43 @@ class MongoDBParquetDataLoad(MongoDBDataLoad):
         return return_parquet
 
 
+class MongoDBCaptionDataLoad(MongoDBDataLoad):
+    def __init__(
+        self,
+        num_shards,
+        shard_idx,
+        query,
+        collection_name,
+        mapping_field,
+        partition_key,
+    ) -> None:
+        super().__init__(
+            num_shards=num_shards,
+            shard_idx=shard_idx,
+            collection_name=collection_name,
+            query=query,
+            partition_key=partition_key,
+        )
+        self.mapping_field = mapping_field
+
+    def __getitem__(self, idx: int) -> dict[str, Any]:
+
+        # sample = self.data[idx]
+        # for pd data
+        sample = self.data.iloc[idx]  # Use iloc for row access in DataFrame
+        return_sample = {}
+        return_sample["_id"] = str(sample["_id"])
+        for k, v in self.mapping_field.items():
+            caption = sample[k]
+            if isinstance(caption, tuple):
+                caption = caption[0]
+            if not isinstance(caption, str):
+                logging.warning(f"Expected string but got {type(caption)}:{caption}")
+                caption = ""
+            return_sample[v] = caption
+        return return_sample
+
+
 class DictTensorBatchIterator:
     def __init__(self, data_dict, batch_size):
         """

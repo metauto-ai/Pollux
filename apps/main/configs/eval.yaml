@@ -2,7 +2,7 @@
 name: "debug_evals"
 stage: eval
 ckpt_dir: "/jfs/checkpoints/dump/Pollux_v1.0_joint_training_image_input/checkpoints/0000130000"
-dump_dir: "/jfs/checkpoints/dump/Pollux_v1.0_joint_training_image_input/checkpoints/0000130000"
+dump_dir: "/jfs/checkpoints/dump/Pollux_v1.0_joint_training_image_input/checkpoints/gen_eval/0000130000"
 generator:
   guidance_scale: 6.5
   dtype: bf16
@@ -15,3 +15,20 @@ generator:
     pretrained_model_name_or_path: '/jfs/checkpoints/models--tencent--HunyuanVideo/snapshots/2a15b5574ee77888e51ae6f593b2ceed8ce813e5/vae'
     enable_tiling: false
     enable_slicing: false
+data:
+  - stage: eval
+    id: 1
+    data_name: gen-eval
+    task: latent_text_to_image
+    source: mongodb
+    partition_key: 'partition_key'
+    mapping_field:
+        "caption": "caption"
+    use: True
+    dataloader:
+        batch_size: 64
+        num_workers: 4
+        seed: 1024
+        shuffle: False
+        pin_memory: False
+        drop_last: False

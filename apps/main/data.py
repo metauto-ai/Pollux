@@ -23,6 +23,7 @@ from apps.main.utils.dummy_data_load import DummyDataLoad
 from apps.main.utils.mongodb_data_load import (
     MongoDBImageDataLoad,
     MongoDBParquetDataLoad,
+    MongoDBCaptionDataLoad,
 )
 from apps.main.utils.sampler import StatefulDistributedSampler
 from apps.main.utils.mongodb_data_load import DictTensorBatchIterator
@@ -159,6 +160,15 @@ class AutoDataLoader:
             )
             record_batch_size = args.dataloader.batch_size
             args.dataloader.batch_size = 1
+        elif args.data_name in ["gen-eval"]:
+            dataset = MongoDBCaptionDataLoad(
+                collection_name=args.data_name,
+                query=args.query,
+                shard_idx=self.shard_id,
+                num_shards=self.num_shards,
+                mapping_field=args.mapping_field,
+                partition_key=args.partition_key,
+            )
         else:
             raise ValueError(f"Unsupported MongoDB dataset: {args.data_name}")
 
