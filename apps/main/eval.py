@@ -62,7 +62,7 @@ def save_images(
         image_path = os.path.join(output_dir, f"{prefix}_{i}.png")
         # Save image
         img_pil.save(image_path)
-        with open(csv_path, mode="a", newline="") as file:
+        with open(csv_path, mode="a", newline="", encoding="utf-8") as file:
             writer = csv.writer(file)
             writer.writerow([batch["caption"][i], image_path])
 
