@@ -50,10 +50,19 @@ class Latent_Pollux(nn.Module):
         if hasattr(self, "compressor"):
             batch["gen_latent_code"] = self.compressor.encode(batch["image"])
             batch["plan_latent_code"] = self.compressor.encode(batch["image_cond"])
-        plan_output, plan_loss = self.plan_model(batch)
-        gen_out_put, gen_loss = self.gen_model(plan_output)
-
-        return gen_out_put, self.plan_weight * plan_loss + self.gen_weight * gen_loss
+        with torch.set_grad_enabled(self.plan_model.is_train):
+            plan_output, plan_loss = self.plan_model(batch)
+        with torch.set_grad_enabled(self.gen_model.is_train):
+            gen_out_put, gen_loss = self.gen_model(plan_output)
+        if self.plan_model.is_train and self.gen_model.is_train:
+            loss = self.plan_weight * plan_loss + self.gen_weight * gen_loss
+        elif self.plan_model.is_train:
+            loss = plan_loss
+        elif self.gen_model.is_train:
+            loss = gen_loss
+        else:
+            raise ValueError("Both plan and gen models are in eval mode")
+        return gen_out_put, loss
 
     def set_train(self):
         self.plan_model.train()

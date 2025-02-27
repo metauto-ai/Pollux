@@ -80,6 +80,7 @@ class ModelArgs:
     image_cfg_ratio: float = 0.1
     codebook_size: int = 512
     random_rate: Optional[float] = None
+    is_train: bool = True
 
 
 class PlanTransformerBlock(nn.Module):
@@ -454,6 +455,7 @@ class Latent_Pollux_Plan(nn.Module):
             self.patchify_size**2 * args.codebook_size,
             bias=False,
         )
+        self.is_train = args.is_train
 
     def init_weights(self, args: ModelArgs, init_std: Optional[float] = None):
         self.rope_embeddings_image.reset_parameters()
@@ -471,6 +473,9 @@ class Latent_Pollux_Plan(nn.Module):
         nn.init.xavier_uniform_(self.latent_projector.weight)
         nn.init.xavier_uniform_(self.latent_head.weight)
         self.llm.init_weights(args.llm.pre_trained_path, args.llm.from_llama)
+        if not self.is_train:
+            for name, param in self.named_parameters():
+                param.requires_grad = False
 
     def patchify_and_embed(
         self, x: torch.Tensor
@@ -569,7 +574,6 @@ class Latent_Pollux_Plan(nn.Module):
         if isinstance(batch["caption"][0], tuple):
             captions = [x[0] for x in batch["caption"]]
         vae_latent = batch["plan_latent_code"]
-
         # vae_indices_size = vae_indices.size()
         # [B, 1, H/16, W/16], [B, 6, 1, H/16, W/16]
         vae_embs, H_, W_, freqs_cis_img = self.patchify_and_embed(vae_latent)
