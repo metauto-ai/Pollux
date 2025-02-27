@@ -14,8 +14,8 @@
 #     --query='{"nova_lite_caption":{"$exists":false},"aesthetic_score":{"$gt":6.8}}' --jsonArray
 # mongoimport --uri="mongodb+srv://nucleusadmin:eMPF9pgRy2UqJW3@imagedata.global.mongocluster.cosmos.azure.com/?tls=true&authMechanism=SCRAM-SHA-256&retrywrites=false&maxIdleTimeMS=120000" \
 # --db=world_model \
-# --collection=bucket-256-3 \
-# --file=/mnt/pollux/mongo_db_cache/flickr-part-06-of-09-all_processed.json --jsonArray
+# --collection=bucket-256-4 \
+# --file=/mnt/pollux/mongo_db_cache/flickr-part-07-of-09-all_processed.json --jsonArray
 import json
 import requests
 from PIL import Image
