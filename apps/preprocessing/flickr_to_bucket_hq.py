@@ -14,8 +14,8 @@
 #     --query='{"nova_lite_caption":{"$exists":false},"aesthetic_score":{"$gt":6.8}}' --jsonArray
 # mongoimport --uri="mongodb+srv://nucleusadmin:eMPF9pgRy2UqJW3@imagedata.global.mongocluster.cosmos.azure.com/?tls=true&authMechanism=SCRAM-SHA-256&retrywrites=false&maxIdleTimeMS=120000" \
 # --db=world_model \
-# --collection=bucket-256-2 \
-# --file=/mnt/pollux/mongo_db_cache/flickr-part-08-of-09-all_processed.json --jsonArray
+# --collection=bucket-256-3 \
+# --file=/mnt/pollux/mongo_db_cache/flickr-part-06-of-09-all_processed.json --jsonArray
 import json
 import requests
 from PIL import Image
@@ -27,7 +27,7 @@ from tqdm_joblib import tqdm_joblib
 from pymongo import MongoClient
 from bson import ObjectId
 
-file_path = "/mnt/pollux/mongo_db_cache/flickr-part-06-of-09-all.json"
+file_path = "/mnt/pollux/mongo_db_cache/flickr-part-07-of-09-all.json"
 
 
 def update_doc(doc):
@@ -53,7 +53,7 @@ def update_doc(doc):
                 doc_return["height"] = value
             if key == "PARTITION_KEY":
                 doc_return["partition_key"] = value
-        doc_return["source"] = "flickr-part-06-of-09"
+        doc_return["source"] = "flickr-part-07-of-09"
         return doc_return
     except Exception as e:
         print(f"Error processing element {doc['_id']}: {e}")
@@ -74,7 +74,7 @@ with tqdm_joblib(tqdm(desc="Processing", total=len(data))):
 processed_results = [res for res in processed_results if res is not None]
 print(processed_results[:10])
 with open(
-    "/mnt/pollux/mongo_db_cache/flickr-part-06-of-09-all_processed.json",
+    "/mnt/pollux/mongo_db_cache/flickr-part-07-of-09-all_processed.json",
     "w",
     encoding="utf-8",
 ) as f:
