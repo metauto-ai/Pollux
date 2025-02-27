@@ -62,6 +62,7 @@ class ModelArgs:
     gen_transformer: GenTransformerArgs = field(default_factory=GenTransformerArgs)
     scheduler: SchedulerArgs = field(default_factory=SchedulerArgs)
     text_cfg_ratio: float = 0.1
+    is_train: bool = True
 
 
 class DiffusionTransformerBlock(nn.Module):
@@ -370,6 +371,7 @@ class LatentPollux_Gen(nn.Module):
             torch.zeros(1, 1, args.gen_transformer.plan_transformer_dim)
         )
         nn.init.normal_(self.negative_token, std=0.02)
+        self.is_train = args.is_train
 
     def forward(self, batch: dict[str:any]) -> dict[str:any]:
         if batch["plan_embedding"] is not None:
@@ -405,6 +407,9 @@ class LatentPollux_Gen(nn.Module):
 
     def init_weights(self, args: ModelArgs):
         self.gen_transformer.init_weights(args.gen_transformer.pre_trained_path)
+        if not self.is_train:
+            for name, param in self.named_parameters():
+                param.requires_grad = False
 
 
 # Optional policy for activation checkpointing. With None, we stick to the default (defined distributed.py: default_no_recompute_ops)

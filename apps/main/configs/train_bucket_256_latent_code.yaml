@@ -1,4 +1,4 @@
-# torchrun --standalone --nnodes 1 --nproc-per-node 8 -m apps.main.train config=apps/main/configs/train_bucket_256_latent_code.yaml
+# torchrun --standalone --nnodes 1 --nproc-per-node 4 -m apps.main.train config=apps/main/configs/train_bucket_256_latent_code.yaml
 
 # Set up single experiment
 version: v1.0
@@ -17,9 +17,9 @@ optim:
     weight_decay: 0.01
 
 distributed:
-    gpus: 0,1,2,3,4,5,6,7
+    gpus: 4,5,6,7
     fsdp_type: full_shard
-    dp_shard: 8
+    dp_shard: 4
     dp_replicate: 1
     compile: false
     model_dtype: bf16 # options: `fb8` is only supported by H100
@@ -31,6 +31,7 @@ distributed:
 model:
     gen:
         text_cfg_ratio: 0.1
+        is_train: true
         scheduler:
             num_train_timesteps: 1000
             base_image_seq_len: 256
@@ -85,6 +86,7 @@ model:
             condition_seqlen: 320
             text_seqlen: 128
         codebook_size: 16
+        is_train: true
 data:  
   - stage: stage-1
     id: 1
