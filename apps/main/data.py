@@ -148,6 +148,7 @@ class AutoDataLoader:
             "cc12m_l3bf128_hr256",
             "cc12m_aethetics_6_5_llama3bf128_hunyuanr256_s3",
             "bucket-256-parquet",
+            "bucket-256-parquet-new",
         ]:
             dataset = MongoDBParquetDataLoad(
                 collection_name=args.data_name,
