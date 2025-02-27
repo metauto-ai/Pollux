@@ -4,9 +4,9 @@
 # sudo apt install mongodb-database-tools
 # mongoexport --uri="mongodb+srv://nucleusadmin:eMPF9pgRy2UqJW3@imagedata.global.mongocluster.cosmos.azure.com/?tls=true&authMechanism=SCRAM-SHA-256&retrywrites=false&maxIdleTimeMS=120000" \
 #     --db=world_model \
-#     --collection=flickr-part-04-of-08 \
-#     --out=/mnt/pollux/mongo_db_cache/flickr-part-04-of-08-nova.json \
-#     --query='{"nova_lite_caption":{"$exists":true}}' --jsonArray
+#     --collection=flickr-part-07-of-09 \
+#     --out=/mnt/pollux/mongo_db_cache/flickr-part-07-of-09-all.json \
+#     --query='{"$or":[{"Qwen2_5_VL_7B_Instruct_caption":{"$exists":true}},{"InternVL2_5_8B_MPO_caption":{"$exists":true}}]}' --jsonArray
 # mongoimport --uri="mongodb+srv://nucleusadmin:eMPF9pgRy2UqJW3@imagedata.global.mongocluster.cosmos.azure.com/?tls=true&authMechanism=SCRAM-SHA-256&retrywrites=false&maxIdleTimeMS=120000" \
 # --db=world_model \
 # --collection=bucket-256-2 \
