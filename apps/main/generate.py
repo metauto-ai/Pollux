@@ -26,6 +26,7 @@ logger = logging.getLogger()
 class GeneratorArgs:
     guidance_scale: float = 2.0
     resolution: int = 256
+    cond_resolution: int = 256
     in_channel: int = 3
     show_progress: bool = False
     dtype: Optional[str] = "bf16"
@@ -47,6 +48,7 @@ class LatentGenerator(nn.Module):
         self.model = model
         self.vae_scale_factor = cfg.vae_scale_factor
         self.resolution = int(cfg.resolution // self.vae_scale_factor)
+        self.cond_resolution = int(cfg.cond_resolution // self.vae_scale_factor)
         self.device = cfg.device
         self.guidance_scale = cfg.guidance_scale
         self.show_progress = cfg.show_progress
@@ -60,6 +62,12 @@ class LatentGenerator(nn.Module):
     def prepare_latent(self, context, device):
         bsz = len(context["caption"])
         latent_size = (bsz, self.in_channel, self.resolution, self.resolution)
+        latents = randn_tensor(latent_size, device=device, dtype=self.dtype)
+        return latents
+
+    def prepare_cond_latent(self, context, device):
+        bsz = len(context["caption"])
+        latent_size = (bsz, self.in_channel, self.cond_resolution, self.cond_resolution)
         latents = randn_tensor(latent_size, device=device, dtype=self.dtype)
         return latents
 
@@ -107,7 +115,9 @@ class LatentGenerator(nn.Module):
             mu=mu,
         )
         latent = self.prepare_latent(context, device=cur_device)
-        context["latent_code"] = self.prepare_latent(context, device=cur_device)
+        context["plan_latent_code"] = self.prepare_cond_latent(
+            context, device=cur_device
+        )
         context = self.prepare_positive_context(context)
         context = self.prepare_negative_context(context)
         negative_conditional_signal = self.model.gen_model.token_proj(

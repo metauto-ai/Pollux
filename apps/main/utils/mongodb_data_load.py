@@ -8,7 +8,6 @@ import pandas as pd
 
 import certifi
 from urllib.parse import quote_plus
-from dotenv import load_dotenv
 from pymongo import MongoClient
 from typing import Final
 from tqdm import tqdm
@@ -19,7 +18,7 @@ from bson import json_util, ObjectId
 import pandas as pd
 import pyarrow.parquet as pq
 import bisect
-from apps.main.modules.preprocess import ImageProcessing
+from apps.main.modules.preprocess import PolluxImageProcessing
 import time
 import random
 import numpy as np
@@ -33,25 +32,11 @@ boto3.set_stream_logger("boto3", level=logging.WARNING)
 boto3.set_stream_logger("botocore", level=logging.WARNING)
 logging.getLogger("s3fs").setLevel(logging.WARNING)
 Image.MAX_IMAGE_PIXELS = None
+from apps.main.utils.env import env
 
-load_dotenv()
-# Iniitialize
-MONGODB_URI: Final[str] = os.environ["MONGODB_URI"]
-MONGODB_USER: Final[str] = os.environ["MONGODB_USER"]
-MONGODB_PASSWORD: Final[str] = os.environ["MONGODB_PASSWORD"]
-S3KEY: Final[str] = os.environ["S3KEY"]
-S3SECRET: Final[str] = os.environ["S3SECRET"]
-encoded_user = quote_plus(MONGODB_USER)
-encoded_password = quote_plus(MONGODB_PASSWORD)
-MONGODB_URI = f"mongodb+srv://{encoded_user}:{encoded_password}@{MONGODB_URI}"
-LOCAL_TEMP_DIR: Final[str] = "/dev/shm"
-
-wandb_api_key = os.environ.get("WANDB_API_KEY")
-if wandb_api_key:
-    wandb.login(key=wandb_api_key)
-    logging.info("WANDB_API_KEY found in environment variables")
-else:
-    logging.warning("WANDB_API_KEY not found in environment variables")
+MONGODB_URI = env.MONGODB_URI
+S3KEY = env.S3KEY
+S3SECRET = env.S3SECRET
 
 
 class MongoDBDataLoad(Dataset):
@@ -143,42 +128,6 @@ class MongoDBDataLoad(Dataset):
         return self.data[idx]
 
 
-class MongoDBImageNetDataLoad(MongoDBDataLoad):
-    def __init__(
-        self,
-        num_shards,
-        shard_idx,
-        collection_name,
-        partition_key,
-        args,
-    ) -> None:
-        if args.split == "train":
-            query = {"split": "train"}
-        elif args.split == "validation":
-            query = {"split": "validation"}
-        else:
-            raise ValueError(f"Invalid split: {args.split}")
-        super().__init__(
-            num_shards=num_shards,
-            shard_idx=shard_idx,
-            collection_name=collection_name,
-            query=query,
-            partition_key=partition_key,
-        )
-        self.image_processing = ImageProcessing(args)
-
-    def __getitem__(self, idx: int) -> dict[str, Any]:
-        cur_data = self.data.iloc[idx]
-        image_url = cur_data["image"]
-        image = Image.open(image_url)
-        return {
-            "image": self.image_processing.transform(image),
-            "label": cur_data["label"],
-            "caption": cur_data["caption"],
-            "_id": str(cur_data["_id"]),
-        }
-
-
 class MongoDBImageDataLoad(MongoDBDataLoad):
     def __init__(
         self,
@@ -197,7 +146,7 @@ class MongoDBImageDataLoad(MongoDBDataLoad):
             query=query,
             partition_key=partition_key,
         )
-        self.image_processing = ImageProcessing(args)
+        self.image_processing = PolluxImageProcessing(args)
         self.extract_field = extract_field
         self.retries = args.retries
         self.place_holder_image = Image.new("RGB", (args.image_size, args.image_size))
@@ -227,13 +176,18 @@ class MongoDBImageDataLoad(MongoDBDataLoad):
                         self.place_holder_image = (
                             image  # frequently update the placeholder image
                         )
-                    return_sample[v] = self.image_processing.transform(image)
+                    return_sample[v], return_sample[f"{v}_cond"] = (
+                        self.image_processing.transform(image)
+                    )
+
                     break
                 except Exception as e:
                     if attempt == self.retries - 1:
                         # logging.warning(f"Error loading image: {e}")
                         image = self.place_holder_image
-                        return_sample[v] = self.image_processing.transform(image)
+                        return_sample[v], return_sample[f"{v}_cond"] = (
+                            self.image_processing.transform(image)
+                        )
                         return_sample["_id"] = "-1"
                         return_sample["caption"] = ""
         return return_sample
@@ -330,6 +284,43 @@ class MongoDBParquetDataLoad(MongoDBDataLoad):
             if isinstance(v[0], torch.Tensor):
                 return_parquet[k] = torch.stack(v, dim=0)
         return return_parquet
+
+
+class MongoDBCaptionDataLoad(MongoDBDataLoad):
+    def __init__(
+        self,
+        num_shards,
+        shard_idx,
+        query,
+        collection_name,
+        mapping_field,
+        partition_key,
+    ) -> None:
+        super().__init__(
+            num_shards=num_shards,
+            shard_idx=shard_idx,
+            collection_name=collection_name,
+            query=query,
+            partition_key=partition_key,
+        )
+        self.mapping_field = mapping_field
+
+    def __getitem__(self, idx: int) -> dict[str, Any]:
+
+        # sample = self.data[idx]
+        # for pd data
+        sample = self.data.iloc[idx]  # Use iloc for row access in DataFrame
+        return_sample = {}
+        return_sample["_id"] = str(sample["_id"])
+        for k, v in self.mapping_field.items():
+            caption = sample[k]
+            if isinstance(caption, tuple):
+                caption = caption[0]
+            if not isinstance(caption, str):
+                logging.warning(f"Expected string but got {type(caption)}:{caption}")
+                caption = ""
+            return_sample[v] = caption
+        return return_sample
 
 
 class DictTensorBatchIterator:

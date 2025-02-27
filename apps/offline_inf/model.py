@@ -43,6 +43,16 @@ class OfflineInference(nn.Module):
         start_time = time.time()
         gen_latent_code = self.vae_compressor.encode(image)
         inference_time = time.time() - start_time
-        inference_meters["latent_code"].update(inference_time, len(gen_latent_code))
-        batch["latent_code"] = gen_latent_code
+        inference_meters["gen_latent_code"].update(inference_time, len(gen_latent_code))
+        batch["gen_latent_code"] = gen_latent_code
+
+        image = batch["image_cond"].cuda()
+        start_time = time.time()
+        plan_latent_code = self.vae_compressor.encode(image)
+        inference_time = time.time() - start_time
+        inference_meters["plan_latent_code"].update(
+            inference_time, len(plan_latent_code)
+        )
+        batch["plan_latent_code"] = plan_latent_code
+
         return batch

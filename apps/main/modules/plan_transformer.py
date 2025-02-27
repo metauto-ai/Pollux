@@ -568,7 +568,7 @@ class Latent_Pollux_Plan(nn.Module):
         captions = batch["caption"]
         if isinstance(batch["caption"][0], tuple):
             captions = [x[0] for x in batch["caption"]]
-        vae_latent = batch["latent_code"]
+        vae_latent = batch["plan_latent_code"]
 
         # vae_indices_size = vae_indices.size()
         # [B, 1, H/16, W/16], [B, 6, 1, H/16, W/16]
@@ -669,7 +669,7 @@ class Latent_Pollux_Plan(nn.Module):
         captions = batch["caption"]
         if isinstance(batch["caption"][0], tuple):
             captions = [x[0] for x in batch["caption"]]
-        vae_latent = batch["latent_code"]
+        vae_latent = batch["plan_latent_code"]
         vae_embs, H_, W_, freqs_cis_img = self.patchify_and_embed(vae_latent)
         vae_embs, freqs_cis_img, ids_restore, img_mask = self.process_mask(
             vae_embs,

@@ -376,9 +376,11 @@ def train(args: TrainArgs):
                 # we do garbage collection manually otherwise different processes
                 # run the GC at different times so they slow down the whole pipeline
                 gc.collect()
-            if "latent_code" in batch:
-                batch["latent_code"] = batch["latent_code"].cuda()
-                nwords_since_last_log += batch["latent_code"].numel()
+            if "gen_latent_code" in batch and "plan_latent_code" in batch:
+                batch["gen_latent_code"] = batch["gen_latent_code"].cuda()
+                batch["plan_latent_code"] = batch["plan_latent_code"].cuda()
+                nwords_since_last_log += batch["gen_latent_code"].numel()
+                nwords_since_last_log += batch["plan_latent_code"].numel()
             elif "image" in batch:
                 batch["image"] = batch["image"].cuda()
                 nwords_since_last_log += batch["image"].numel()

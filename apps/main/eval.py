@@ -1,3 +1,7 @@
+"""
+CUDA_VISIBLE_DEVICES=2,3 torchrun --nnodes 1 --nproc-per-node 2 -m apps.main.eval config=apps/main/configs/eval.yaml                                                         
+"""
+
 from collections import defaultdict
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
@@ -6,7 +10,7 @@ import logging
 import os
 from pathlib import Path
 from typing import Any, List, Optional, Tuple, Union
-
+import csv
 from omegaconf import OmegaConf
 import torchvision.transforms as transforms
 import torch
@@ -14,16 +18,14 @@ from lingua.args import dump_config
 from lingua.checkpoint import CONSOLIDATE_FOLDER, consolidate_checkpoints
 from lingua.distributed import (
     DistributedArgs,
-    dist_mean_dict,
     get_global_rank,
     get_world_size,
     setup_torch_distributed,
-    get_local_rank,
 )
 from apps.main.data import AutoDataLoader, DataArgs
 from apps.main.generate import LatentGenerator, GeneratorArgs, load_consolidated_model
-
-from apps.main.model import Pollux, ModelArgs
+from apps.main.modules.vae import build_vae
+from apps.main.model import Latent_Pollux, ModelArgs
 
 EVAL_FOLDER_NAME = "{:010d}"
 
@@ -33,22 +35,22 @@ logger = logging.getLogger()
 @dataclass
 class EvalArgs:
     name: str = "evals"
+    stage: str = "eval"
     dump_dir: Optional[str] = None
     ckpt_dir: str = ""
     generator: GeneratorArgs = field(default_factory=GeneratorArgs)
-    eval_data: DataArgs = field(default_factory=DataArgs)
-    wandb: Optional[Any] = None
-    sample_num: int = 1000
-
-    global_step: Optional[int] = None  # for in-training evaluation
+    data: List[DataArgs] = field(default_factory=list)
 
 
 def save_images(
-    tensors: torch.Tensor,
+    batch: dict,
     output_dir: str,
     prefix: str = "image",
+    csv_name: str = "meta.csv",
 ):
     os.makedirs(output_dir, exist_ok=True)
+    csv_path = Path(output_dir) / f"{csv_name}"
+    tensors = batch["generated_samples"]
     tensors = (tensors + 1) * 127.5
     tensors = tensors.clamp(0, 255).byte()
 
@@ -60,6 +62,10 @@ def save_images(
         image_path = os.path.join(output_dir, f"{prefix}_{i}.png")
         # Save image
         img_pil.save(image_path)
+        with open(csv_path, mode="a", newline="", encoding="utf-8") as file:
+            writer = csv.writer(file)
+            writer.writerow([batch["caption"][i], image_path])
+
     logger.warning(f"Saved {len(tensors)} images to {output_dir}")
 
 
@@ -80,69 +86,35 @@ def launch_eval(cfg: EvalArgs):
     logger.info("Loading model")
     model, _ = load_consolidated_model(
         consolidated_path=cfg.ckpt_dir,
-        model_cls=Pollux,
+        model_cls=Latent_Pollux,
         model_args_cls=ModelArgs,
     )
     logger.info("Model loaded")
     model.eval()
-    generator = LatentGenerator(cfg.generator, model)
-    data_loader = create_dataloader(
+    tvae = build_vae(cfg.generator.tvae)
+    generator = LatentGenerator(cfg.generator, model, tvae).cuda()
+    active_data = [d for d in cfg.data if d.stage == cfg.stage and d.use]
+    data_loader_factory = AutoDataLoader(
         shard_id=global_rank,
         num_shards=world_size,
-        args=cfg.eval_data,
+        train_stage=cfg.stage,
+        data_config=active_data,  # Pass the filtered data configuration
     )
-    max_steps = cfg.sample_num // (cfg.eval_data.batch_size * world_size)
+    data_loader, sampler = data_loader_factory.create_dataloader()
+    logger.info("Data loader is built !")
+    logger.info(f"Data loader size: {len(data_loader)}")
     for idx, batch in enumerate(data_loader):
-        generated_samples = generator(batch)
+        batch["generated_samples"] = generator(batch)
         save_images(
-            generated_samples,
+            batch,
             output_dir=Path(cfg.dump_dir) / f"samples",
             prefix=f"image_rank{global_rank}_batch{idx}",
+            csv_name=f"meta_rank{global_rank}.csv",
         )
-        if idx + 1 >= max_steps:
-            break
     del generator
 
 
 def main():
-    """
-    The command line interface here uses OmegaConf https://omegaconf.readthedocs.io/en/2.3_branch/usage.html#from-command-line-arguments
-    This accepts arguments as a dot list
-    So if the dataclass looks like
-
-    @dataclass
-    class DummyArgs:
-        name: str
-        model: LMTransformerArgsgs
-
-    @dataclass
-    class LMTransformerArgsgs:
-        dim: int
-
-    Then you can pass model.dim=32 to change values in LMTransformerArgsgs
-    or just name=tictac for top level attributes.
-
-    The behavior here is as follows:
-    1. We instantiate EvalArgs with its default values
-    2. We override those default values with the ones in the provided config file
-    3. We override the result with the additional arguments provided through command line
-
-    For example, if the config is the following
-
-    model:
-        dim: 128
-        n_layers: 4
-
-    and you call eval.py with eval.py model.dim=64
-
-    Then the final TrainArgs will have
-
-    model:
-        dim: 64
-        n_layers: 4
-
-    Plus all the default values in EvalArgs dataclass.
-    """
     cli_args = OmegaConf.from_cli()
     file_cfg = OmegaConf.load(cli_args.config)
     # We remove 'config' attribute from config as the underlying DataClass does not have it

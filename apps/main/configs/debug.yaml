@@ -1,10 +1,10 @@
-# torchrun --standalone --nnodes 1 --nproc-per-node 8 -m apps.main.train config=apps/main/configs/train_bucket_256_latent_code.yaml
+# torchrun --standalone --nnodes 1 --nproc-per-node 8 -m apps.main.train config=apps/main/configs/debug.yaml
 
 # Set up single experiment
 version: v1.0
 # From now on, start to align train, data, and model setting with train stage (just finish refactor for dara)
 train_stage: stage-1 # options: preliminary, pretraining, posttraining; aligned with data setting
-name: Pollux_v1.0_joint_training_asyn_res # used for local dump and wandb log
+name: Pollux_v1.0_debug # used for local dump and wandb log
 output_dir: /jfs/checkpoints/dump
 dump_dir: '' # No need now
 steps: 1000000
@@ -85,30 +85,33 @@ model:
             condition_seqlen: 320
             text_seqlen: 128
         codebook_size: 16
+    with_vae: true
+    vae_args:
+        model_name: Hunyuan
+        pretrained_model_name_or_path: '/jfs/checkpoints/models--tencent--HunyuanVideo/snapshots/2a15b5574ee77888e51ae6f593b2ceed8ce813e5/vae'
+        enable_tiling: false
+        enable_slicing: false
 data:  
   - stage: stage-1
     id: 1
-    data_name: bucket-256-parquet-new
-    task: latent_text_to_image
+    data_name: bucket-hq
+    task: text_to_image
     source: mongodb
+    image_size: 256
+    condition_image_size: 256
     partition_key: 'partition_key'
     retries: 3
     extract_field:
-        "parquet_size": "sample_num"
-        "parquet_path": "path"
-    mapping_field:
-        "HunyuanVideo_gen_latent_code": "gen_latent_code"
-        "HunyuanVideo_plan_latent_code": "plan_latent_code"
-        "caption": "caption"
-    use: True
+        "media_path": "image"
+    use: true
     dataloader:
-        batch_size: 22
-        num_workers: 4
+        prefetch_factor: 2
+        batch_size: 16
+        num_workers: 8
         seed: 1024
-        shuffle: False
-        pin_memory: False
+        shuffle: True
+        pin_memory: True
         drop_last: False
-
 profiling:
     run: false
 
