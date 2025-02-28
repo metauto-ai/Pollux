@@ -205,7 +205,7 @@ if __name__ == "__main__":
     batch_size = 32
     max_samples_per_min = 500
     nova_caption = NovaCaption(
-        collection_name="flickr-part-02-of-08",  # check 01
+        collection_name="flickr-part-01-of-08",  # check 01
         image_field="AZURE_URL",
         caption_field="nova_lite_caption",
         maxTokens=150,
