@@ -27,7 +27,7 @@ from tqdm_joblib import tqdm_joblib
 from pymongo import MongoClient
 from bson import ObjectId
 
-file_path = "/mnt/pollux/mongo_db_cache/flickr-part-07-of-09-all.json"
+file_path = "/mnt/pollux/mongo_db_cache/flickr-part-04-of-08-all.json"
 
 
 def update_doc(doc):
@@ -53,7 +53,7 @@ def update_doc(doc):
                 doc_return["height"] = value
             if key == "PARTITION_KEY":
                 doc_return["partition_key"] = value
-        doc_return["source"] = "flickr-part-07-of-09"
+        doc_return["source"] = "flickr-part-04-of-08"
         return doc_return
     except Exception as e:
         print(f"Error processing element {doc['_id']}: {e}")
@@ -74,7 +74,7 @@ with tqdm_joblib(tqdm(desc="Processing", total=len(data))):
 processed_results = [res for res in processed_results if res is not None]
 print(processed_results[:10])
 with open(
-    "/mnt/pollux/mongo_db_cache/flickr-part-07-of-09-all_processed.json",
+    "/mnt/pollux/mongo_db_cache/flickr-part-04-of-08-all_processed.json",
     "w",
     encoding="utf-8",
 ) as f:
