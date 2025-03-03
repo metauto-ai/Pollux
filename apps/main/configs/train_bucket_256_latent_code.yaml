@@ -4,15 +4,15 @@
 version: v1.0
 # From now on, start to align train, data, and model setting with train stage (just finish refactor for dara)
 train_stage: stage-1 # options: preliminary, pretraining, posttraining; aligned with data setting
-name: Pollux_v1.0_joint_training_asyn_res_w_o_recon # used for local dump and wandb log
+name: Pollux_v1.0_joint_training_config_update_double_check #used for local dump and wandb log
 output_dir: /jfs/checkpoints/dump
 dump_dir: '' # No need now
-steps: 100000
+steps: 500000
 seed: 777
 optim:
-    lr: 1.4e-4
-    warmup: 2000
-    lr_min_ratio: 0.000001
+    lr: 1e-4
+    warmup: 4000
+    lr_min_ratio: 1.5e-5
     clip: 1.0
     weight_decay: 0.01
 
