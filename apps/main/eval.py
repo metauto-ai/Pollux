@@ -1,5 +1,5 @@
 """
-CUDA_VISIBLE_DEVICES=2,3 torchrun --nnodes 1 --nproc-per-node 2 -m apps.main.eval config=apps/main/configs/eval.yaml                                                         
+torchrun --nnodes 1 --nproc-per-node 8 -m apps.main.eval config=apps/main/configs/eval.yaml                                                         
 """
 
 from collections import defaultdict
