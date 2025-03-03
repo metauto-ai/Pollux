@@ -300,6 +300,7 @@ class GenTransformer(BaseDiffusionTransformer):
 
         freqs_cis_img = freqs_cis_img.to(x.device)
         freqs_cis_cond = self.rope_embeddings_conditions.freqs_cis[:c_l].to(x.device)
+        mask_dict = None
         if self.token_drop_ratio > 0:
             mask_dict = self.get_mask(
                 x.shape[0],
@@ -342,7 +343,10 @@ class GenTransformer(BaseDiffusionTransformer):
             )
 
         x = self.unpatchify_image(out, img_size)
-        return {"sample": x, "mask": mask_dict["mask"]}
+        if mask_dict is not None:
+            return {"sample": x, "mask": mask_dict["mask"]}
+        else:
+            return {"sample": x}
 
     def unpatchify_image(
         self, x: torch.Tensor, img_size: Tuple[int, int]
