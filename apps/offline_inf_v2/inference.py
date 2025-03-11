@@ -1,4 +1,5 @@
 """
+conda activate curator
 python -m apps.offline_inf_v2.inference.py config=apps/offline_inf_v2/configs/inference.yaml
 """
 
@@ -30,7 +31,9 @@ def main():
     cfg = OmegaConf.merge(default_cfg, file_cfg, cli_args)
     cfg = OmegaConf.to_object(cfg)
 
-    client = get_client(cluster_type="gpu")
+    assert cfg.data.output_path is not None, f"Output path is required, otherwise the parquets in {cfg.data.data_path} will be overwritten"
+
+    client = get_client(cluster_type="gpu", nvlink_only=True)
 
     dataset = ImageTextPairDataset.from_webdataset(
         path=cfg.data.data_path, id_col=cfg.data.id_col
