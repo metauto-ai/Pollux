@@ -171,13 +171,11 @@ class VAELatentExtractor:
                 to load the model on.
 
         Returns:
-            Callable: A timm model loaded on the specified device.
+            Callable: A model loaded on the specified device.
                 The model's forward call may be augmented with torch.autocast()
-                or embedding normalization if specified in the constructor.
         """
         model = VAE(model_args).eval().to(device)
         model = self._configure_forward(model)
-        
         return model
 
     def _configure_forward(self, model):
@@ -245,6 +243,8 @@ class VAELatentExtractor:
             {"model_args": self.model_args, "device": device},
         )
 
+        print(f"Model loaded on {device}")
+
         dataset = self.load_dataset_shard(tar_path)
         final_image_latents = []
         image_ids = []
@@ -258,7 +258,8 @@ class VAELatentExtractor:
         with torch.no_grad(), torch.amp.autocast(device_type="cuda", enabled=self.model_args.autocast):
             for batch, metadata in dataset:
                 image_latents = self._process_batch(model, batch)
-                
+                del batch
+
                 final_image_latents.append(image_latents)
                 image_ids.extend(m[id_col] for m in metadata)
 
@@ -266,8 +267,8 @@ class VAELatentExtractor:
                 samples_completed += batch_size
                 progress_bar.update(batch_size)
                 
-                # Clear CUDA cache less frequently
-                if samples_completed % (self.data_args.batch_size * 50) == 0:
+                # Clear CUDA cache frequently
+                if samples_completed % (self.data_args.batch_size * 5) == 0:
                     torch.cuda.empty_cache()
         progress_bar.close()
 
@@ -313,5 +314,9 @@ class VAELatentExtractor:
         partition[self.data_args.image_latent_column] = create_list_series_from_1d_or_2d_ar(
             concat_embedding_output, index=partition.index
         )
+
+        del concat_embedding_output
+        del final_image_latents
+        torch.cuda.empty_cache()
 
         return partition
