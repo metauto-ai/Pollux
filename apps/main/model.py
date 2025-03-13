@@ -83,7 +83,20 @@ class Latent_Pollux(nn.Module):
             pre_trained_state_dict = torch.load(args.pre_trained_weight)
             if "model" in pre_trained_state_dict:
                 pre_trained_state_dict = pre_trained_state_dict["model"]
-            self.load_state_dict(pre_trained_state_dict)
+            model_dict = self.state_dict()
+
+            # Filter out non-matching keys
+            filtered_dict = {
+                k: v for k, v in pre_trained_state_dict.items() if k in model_dict
+            }
+            not_loaded_keys = set(pre_trained_state_dict.keys()) - set(
+                filtered_dict.keys()
+            )
+            logger.warning(
+                f"Keys not loaded from pre-trained weights: {not_loaded_keys}"
+            )
+            model_dict.update(filtered_dict)
+            self.load_state_dict(model_dict)
         else:
             self.plan_model.init_weights(args=args.plan)
             self.gen_model.init_weights(args=args.gen)
