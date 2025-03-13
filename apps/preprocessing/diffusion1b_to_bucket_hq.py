@@ -4,13 +4,13 @@
 # sudo apt install mongodb-database-tools
 # mongoexport --uri="mongodb+srv://nucleusadmin:eMPF9pgRy2UqJW3@imagedata.global.mongocluster.cosmos.azure.com/?tls=true&authMechanism=SCRAM-SHA-256&retrywrites=false&maxIdleTimeMS=120000" \
 #     --db=world_model \
-#     --collection=diffusion1b-part-03-of-16 \
-#     --out=/mnt/pollux/mongo_db_cache/diffusion1b-part-03-of-16.json \
-#     --query='{"$or": [{ "base_model": "v2" },{"base_model":"SDXL_LIGHTNING"},{"base_model":"stable-diffusion-xl"},{"base_model":"PHOENIX"},{"base_model":"Playground_v2.5"},{"base_model":"Playground_v2"},{"base_model":"midjourney"},{ "like_count": { "$gt": 20 } }]}' --jsonArray
+#     --collection=diffusion1b_part_09_of_16_filtered \
+#     --out=/mnt/pollux/mongo_db_cache/diffusion1b_part_09_of_16_filtered.json \
+#     --jsonArray
 # mongoimport --uri="mongodb+srv://nucleusadmin:eMPF9pgRy2UqJW3@imagedata.global.mongocluster.cosmos.azure.com/?tls=true&authMechanism=SCRAM-SHA-256&retrywrites=false&maxIdleTimeMS=120000" \
 # --db=world_model \
-# --collection=bucket-256-2 \
-# --file=/mnt/pollux/mongo_db_cache/diffusion1b-part-02-of-16_processed.json --jsonArray
+# --collection=bucket-256-3 \
+# --file=/mnt/pollux/mongo_db_cache/diffusion1b_part_03_of_16_filtered_processed.json --jsonArray
 import json
 import requests
 from PIL import Image
@@ -22,7 +22,7 @@ from tqdm_joblib import tqdm_joblib
 from pymongo import MongoClient
 from bson import ObjectId
 
-file_path = "/mnt/pollux/mongo_db_cache/diffusion1b-part-02-of-16.json"
+file_path = "/mnt/pollux/mongo_db_cache/diffusion1b_part_03_of_16_filtered.json"
 
 
 def update_doc(doc):
@@ -32,10 +32,10 @@ def update_doc(doc):
     try:
         for key, value in doc.items():
             if key == "_id":
-                doc_return["source_id"] = value["$oid"]
+                doc_return["source_id"] = value
             if key == "prompt":
                 doc_return["caption"] = value
-            if key == "url":
+            if key == "azure_url":
                 doc_return["media_path"] = value
             if key == "width":
                 doc_return["width"] = value
@@ -43,7 +43,7 @@ def update_doc(doc):
                 doc_return["height"] = value
             if key == "partition_id":
                 doc_return["partition_key"] = value
-        doc_return["source"] = "diffusion1b-part-02-of-16"
+        doc_return["source"] = "diffusion1b_part_03_of_16_filtered"
         return doc_return
     except Exception as e:
         print(f"Error processing element {doc['_id']}: {e}")
@@ -66,7 +66,7 @@ for doc in tqdm(data):
     # processed_results = [res for res in processed_results if res is not None]
 print(processed_results[:10])
 with open(
-    "/mnt/pollux/mongo_db_cache/diffusion1b-part-02-of-16_processed.json",
+    "/mnt/pollux/mongo_db_cache/diffusion1b_part_03_of_16_filtered_processed.json",
     "w",
     encoding="utf-8",
 ) as f:
