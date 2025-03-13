@@ -161,7 +161,13 @@ class AutoDataLoader:
             )
             record_batch_size = args.dataloader.batch_size
             args.dataloader.batch_size = 1
-        elif args.data_name in ["gen-eval", "dpg-bench", "MJHQ-30k"]:
+        elif args.data_name in [
+            "gen-eval",
+            "dpg-bench",
+            "MJHQ-30k",
+            "parti-prompts",
+            "GenAI-Bench-1600",
+        ]:
             dataset = MongoDBCaptionDataLoad(
                 collection_name=args.data_name,
                 query=args.query,

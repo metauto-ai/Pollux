@@ -37,11 +37,12 @@ class MJHQ_Dataset(torch.utils.data.Dataset):
         csv_dir_list = glob.glob(os.path.join(csv_path, '*.csv'))
         print (csv_dir_list)
 
-        #image_dict = {prompt: image, ...}
+        image_dict = {} #{prompt: image, ...}
         for csv_dir in csv_dir_list:
             with open(csv_dir, mode='r', newline='', encoding='utf-8') as file:
                 reader = csv.reader(file)
-                image_dict = {str(rows[0]): str(rows[1]) for rows in reader}
+                for rows in reader:
+                    image_dict[str(rows[0])] = str(rows[1]) 
         print (len(image_dict))
         return image_dict
 
@@ -91,7 +92,7 @@ if __name__ == '__main__':
         image_features /= image_features.norm(dim=-1, keepdim=True)
         text_features /= text_features.norm(dim=-1, keepdim=True)
         score = (100.0 * (image_features * text_features).sum(axis=-1))
-        print (score.sum().item()/args.batch_size)
+        # print (score.sum().item()/args.batch_size)
         clip_score += score.sum().item()
 
 

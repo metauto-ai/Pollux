@@ -1,7 +1,7 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 
 from dataclasses import dataclass, field
-from typing import Tuple
+from typing import Tuple, Optional
 import logging
 import random
 import torch
@@ -26,6 +26,7 @@ class ModelArgs:
     gen_weight: float = 1.0
     with_vae: bool = False
     vae_args: LatentVideoVAEArgs = field(default_factory=LatentVideoVAEArgs)
+    pre_trained_weight: Optional[str] = None
 
 
 class Latent_Pollux(nn.Module):
@@ -73,8 +74,19 @@ class Latent_Pollux(nn.Module):
         self.gen_model.eval()
 
     def init_weights(self, args: ModelArgs):
-        self.plan_model.init_weights(args=args.plan)
-        self.gen_model.init_weights(args=args.gen)
+        if args.pre_trained_weight:
+            args.plan.llm.pre_trained_path = None
+            args.gen.gen_transformer.pre_trained_path = None
+            self.plan_model.init_weights(args=args.plan)
+            self.gen_model.init_weights(args=args.gen)
+            logger.info(f"Loading pre-trained weights from {args.pre_trained_weight}")
+            pre_trained_state_dict = torch.load(args.pre_trained_weight)
+            if "model" in pre_trained_state_dict:
+                pre_trained_state_dict = pre_trained_state_dict["model"]
+            self.load_state_dict(pre_trained_state_dict)
+        else:
+            self.plan_model.init_weights(args=args.plan)
+            self.gen_model.init_weights(args=args.gen)
 
 
 # Optional policy for activation checkpointing. With None, we stick to the default (defined distributed.py: default_no_recompute_ops)
