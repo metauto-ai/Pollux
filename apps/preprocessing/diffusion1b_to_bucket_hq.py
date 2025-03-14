@@ -4,8 +4,8 @@
 # sudo apt install mongodb-database-tools
 # mongoexport --uri="mongodb+srv://nucleusadmin:eMPF9pgRy2UqJW3@imagedata.global.mongocluster.cosmos.azure.com/?tls=true&authMechanism=SCRAM-SHA-256&retrywrites=false&maxIdleTimeMS=120000" \
 #     --db=world_model \
-#     --collection=diffusion1b_part_09_of_16_filtered \
-#     --out=/mnt/pollux/mongo_db_cache/diffusion1b_part_09_of_16_filtered.json \
+#     --collection=diffusion1b_part_05_of_16_filtered \
+#     --out=/mnt/pollux/mongo_db_cache/diffusion1b_part_05_of_16_filtered.json \
 #     --jsonArray
 # mongoimport --uri="mongodb+srv://nucleusadmin:eMPF9pgRy2UqJW3@imagedata.global.mongocluster.cosmos.azure.com/?tls=true&authMechanism=SCRAM-SHA-256&retrywrites=false&maxIdleTimeMS=120000" \
 # --db=world_model \
