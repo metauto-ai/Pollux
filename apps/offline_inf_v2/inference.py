@@ -48,7 +48,9 @@ def main():
 
     # Metadata will have a new column named "image_latent"
     dataset_with_latents.save_metadata(
-        cfg.data.output_path, columns=[cfg.data.id_col, "doc_id", cfg.data.image_latent_column]
+        cfg.data.output_path, columns=[
+            cfg.data.id_col, "doc_id", cfg.data.image_latent_column, cfg.data.image_latent_shape_column
+        ]
     )
 
 

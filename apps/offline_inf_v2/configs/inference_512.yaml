@@ -11,8 +11,12 @@ model:
 data:
   data_path: /mnt/pollux/nemo/sample
   output_path: /mnt/pollux/nemo/sample_latents_512/
+  enable_checkpointing: true
   id_col: key
-  batch_size: 256
+  batch_size: 16
   num_threads_per_worker: 16
   image_size: 512
+  patch_size: 16
+  dynamic_crop_ratio: 1.0
   image_latent_column: image_latent_512
+  image_latent_shape_column: image_latent_shape_512
