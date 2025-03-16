@@ -1,8 +1,8 @@
 from collections import defaultdict
 import json
 import os
+from pathlib import Path
 from tqdm import tqdm
-from PIL import Image
 import cupy as cp
 from crossfit.backend.cudf.series import create_list_series_from_1d_or_2d_ar
 
@@ -24,7 +24,7 @@ from apps.offline_inf_v2.model import ModelArgs, VAE
 @pipeline_def
 def image_loading_pipeline(_tar_path: str, use_index_files: bool, data_args: DataArgs):
     if use_index_files:
-        index_paths = [f"{_tar_path.rsplit('.', 1)[0]}.idx"]
+        index_paths = [str(Path(_tar_path).with_suffix(".idx"))]
     else:
         index_paths = []
 
@@ -32,48 +32,32 @@ def image_loading_pipeline(_tar_path: str, use_index_files: bool, data_args: Dat
         paths=_tar_path,
         index_paths=index_paths,
         ext=["jpg", "txt", "json"],
-        missing_component_behavior="error",
+        missing_component_behavior="skip",
     )
-    images = fn.decoders.image(images_raw, device="mixed", output_type=types.RGB)
-    return images, text, json
-
-
-@pipeline_def
-def webdataset_pipeline(_tar_path: str, use_index_files: bool, data_args: DataArgs):
-    if use_index_files:
-        index_paths = [f"{_tar_path.rsplit('.', 1)[0]}.idx"]
-    else:
-        index_paths = []
-
-    images_raw, text, json = fn.readers.webdataset(
-        paths=_tar_path,
-        index_paths=index_paths,
-        ext=["jpg", "txt", "json"],
-        missing_component_behavior="error",
-    )
-    images = fn.decoders.image(images_raw, device="mixed", output_type=types.RGB)
     
-    images = fn.resize(
-        images, 
+    images_gen = fn.experimental.decoders.image(images_raw, device="mixed", output_type=types.RGB)
+
+    images_gen = fn.resize(
+        images_gen, 
         device="gpu",
-        resize_x=data_args.image_size, 
-        resize_y=data_args.image_size,
+        resize_x=data_args.image_sizes[1], 
+        resize_y=data_args.image_sizes[1],
         mode="not_smaller", 
         interp_type=types.DALIInterpType.INTERP_CUBIC
     )
 
     # get the dynamic crop size
     crop_size = fn.python_function(
-        images.shape(device="cpu"),
-        data_args.image_size,
+        images_gen.shape(device="cpu"),
+        data_args.image_sizes[1],
         data_args.patch_size,
         data_args.dynamic_crop_ratio,
         function=var_center_crop_size_fn,
         device="cpu"
     )
 
-    images = fn.crop_mirror_normalize(
-        images, 
+    images_gen = fn.crop_mirror_normalize(
+        images_gen, 
         device="gpu",
         crop_h=crop_size[0], 
         crop_w=crop_size[1],
@@ -85,8 +69,17 @@ def webdataset_pipeline(_tar_path: str, use_index_files: bool, data_args: DataAr
         std=[0.5 * 255, 0.5 * 255, 0.5 * 255],
         scale=1.0,
     )
+    
+    images_plan = fn.resize(
+        images_gen, 
+        device="gpu",
+        resize_x=data_args.image_sizes[0], 
+        resize_y=data_args.image_sizes[0],
+        mode="not_smaller", 
+        interp_type=types.DALIInterpType.INTERP_CUBIC
+    )
 
-    return images, text, json
+    return images_plan, images_gen, text, json
 
 
 class VAELatentExtractor:
@@ -128,72 +121,72 @@ class VAELatentExtractor:
             .json must contain the metadata for the record (including
             its ID). Images will be loaded using DALI.
         """
-        # # Create the DALI pipeline
-        # @pipeline_def(
-        #     batch_size=self.data_args.batch_size,
-        #     num_threads=self.data_args.num_threads_per_worker,
-        #     device_id=0,
-        #     exec_dynamic=True,
-        # )
-        # def webdataset_pipeline_wrapper(_tar_path: str, use_index_files: bool, data_args: DataArgs):
-        #     return webdataset_pipeline(_tar_path, use_index_files, data_args)
 
         dali_pipeline_args = {
             "batch_size": self.data_args.batch_size,
             "num_threads": self.data_args.num_threads_per_worker,
             "device_id": 0,
             "exec_dynamic": True,
+            "prefetch_queue_depth": 8,
         }
 
         if self.data_args.enable_checkpointing:
             dali_pipeline_args["enable_checkpointing"] = True
-            checkpoint_path = f"{tar_path.rsplit('.', 1)[0]}_{self.data_args.image_size}.pth"
+            checkpoint_path = f"{tar_path.rsplit('.', 1)[0]}.pth"
             if os.path.exists(checkpoint_path):
                 print (f"Restoring checkpoint from {checkpoint_path}")
                 checkpoint = open(checkpoint_path, 'rb').read()
                 dali_pipeline_args["checkpoint"] = checkpoint
 
-        pipeline = webdataset_pipeline(
+        image_dataset = image_loading_pipeline(
             tar_path, 
-            self.use_index_files, 
+            self.use_index_files,
             self.data_args,
             **dali_pipeline_args,
         )
-        pipeline.build()
 
-        total_samples = pipeline.epoch_size()
+        image_dataset.build()
+
+        total_samples = image_dataset.epoch_size()
         total_samples = total_samples[list(total_samples.keys())[0]]
 
         crop_size_list = generate_crop_size_list(
-            image_size=self.data_args.image_size, 
+            image_size=self.data_args.image_sizes[0], 
             patch_size=self.data_args.patch_size, 
             max_ratio=2.0
         )
 
-        bucket_img = defaultdict(list)
-        # bucket_text_cpu = defaultdict(list)
+        bucket_img_plan = defaultdict(list)
+        bucket_img_gen = defaultdict(list)
+        bucket_text = defaultdict(list)
         bucket_meta = defaultdict(list)
 
         # pbar = tqdm(total=total_samples, desc="Loading dataset shard")
 
         samples_completed = 0
         while samples_completed < total_samples:
-            image, text, meta = pipeline.run()
+            image_plan, image_gen, text, meta = image_dataset.run()
             for i in range(self.data_args.batch_size):
-                img = image[i]
-                _, w, h = img.shape()
+                img_plan, img_gen = image_plan[i], image_gen[i]
+                _, w, h = img_plan.shape()
                 crop_size = (w, h)
-                bucket_img[crop_size].append(img)
-                # bucket_text_cpu[crop_size].append(text.at(i).tostring().decode("utf-8"))
+                bucket_img_plan[crop_size].append(img_plan)
+                bucket_img_gen[crop_size].append(img_gen)
+                bucket_text[crop_size].append(text.at(i).tostring().decode("utf-8"))
                 bucket_meta[crop_size].append(json.loads(meta.at(i).tostring().decode("utf-8")))
 
                 # if batch size is reached, yield the batch
-                if len(bucket_img[crop_size]) == self.data_args.batch_size:
-                    image_batch = TensorListGPU(bucket_img[crop_size]).as_tensor()
-                    image_torch = torch.empty(image_batch.shape(), dtype=torch.float32, device="cuda")
-                    feed_ndarray(image_batch, image_torch)  # COPY !!!
-                    yield image_torch, bucket_meta[crop_size]
-                    bucket_img[crop_size] = []
+                if len(bucket_img_plan[crop_size]) == self.data_args.batch_size:
+                    image_plan_batch = TensorListGPU(bucket_img_plan[crop_size]).as_tensor()
+                    image_gen_batch = TensorListGPU(bucket_img_gen[crop_size]).as_tensor()
+                    image_plan_torch = torch.empty(image_plan_batch.shape(), dtype=torch.float32, device="cuda")
+                    feed_ndarray(image_plan_batch, image_plan_torch)  # COPY !!!
+                    image_gen_torch = torch.empty(image_gen_batch.shape(), dtype=torch.float32, device="cuda")
+                    feed_ndarray(image_gen_batch, image_gen_torch)  # COPY !!!
+                    yield image_plan_torch, image_gen_torch, bucket_text[crop_size], bucket_meta[crop_size]
+                    bucket_img_plan[crop_size] = []
+                    bucket_img_gen[crop_size] = []
+                    bucket_text[crop_size] = []
                     bucket_meta[crop_size] = []
 
             samples_completed += self.data_args.batch_size
@@ -204,16 +197,19 @@ class VAELatentExtractor:
         # pbar.close()
 
         for crop_size in crop_size_list:
-            if not bucket_img[crop_size]:
+            if not bucket_img_plan[crop_size]:
                 continue
-            image_batch = TensorListGPU(bucket_img[crop_size]).as_tensor()
-            image_torch = torch.empty(image_batch.shape(), dtype=torch.float32, device="cuda")
-            feed_ndarray(image_batch, image_torch)  # COPY !!!
-            yield image_torch, bucket_meta[crop_size]
+            image_plan_batch = TensorListGPU(bucket_img_plan[crop_size]).as_tensor()
+            image_gen_batch = TensorListGPU(bucket_img_gen[crop_size]).as_tensor()
+            image_plan_torch = torch.empty(image_plan_batch.shape(), dtype=torch.float32, device="cuda")
+            feed_ndarray(image_plan_batch, image_plan_torch)  # COPY !!!
+            image_gen_torch = torch.empty(image_gen_batch.shape(), dtype=torch.float32, device="cuda")
+            feed_ndarray(image_gen_batch, image_gen_torch)  # COPY !!!
+            yield image_plan_torch, image_gen_torch, bucket_text[crop_size], bucket_meta[crop_size]
         
         # checkpoint final state
         if self.data_args.enable_checkpointing:
-            pipeline.checkpoint(checkpoint_path)
+            image_dataset.checkpoint(checkpoint_path)
 
     def load_model(self, model_args, device="cuda"):
         """
@@ -260,6 +256,11 @@ class VAELatentExtractor:
         else:
             latents = model(batch)
             return latents.cpu()  # Move to CPU immediately
+    
+    def _process_batch_pollux(self, model, image_plan_batch, image_gen_batch):
+        plan_latents = self._process_batch(model, image_plan_batch)
+        gen_latents = self._process_batch(model, image_gen_batch)
+        return plan_latents, gen_latents
 
     def __call__(self, dataset: ImageTextPairDataset) -> ImageTextPairDataset:
         """
@@ -273,8 +274,15 @@ class VAELatentExtractor:
                 classifier scores.
         """
         meta = dataset.metadata.dtypes.to_dict()
-        meta[self.data_args.image_latent_column] = "object"
-        meta[self.data_args.image_latent_shape_column] = "object"
+        latent_columns = [
+            f"{self.data_args.image_latent_column}_{self.data_args.image_sizes[0]}",
+            f"{self.data_args.image_latent_shape_column}_{self.data_args.image_sizes[0]}",
+            f"{self.data_args.image_latent_column}_{self.data_args.image_sizes[1]}",
+            f"{self.data_args.image_latent_shape_column}_{self.data_args.image_sizes[1]}",
+        ]
+        for col in latent_columns:
+            meta[col] = "object"
+        meta[self.data_args.caption_column] = "object"
 
         embedding_df = dataset.metadata.map_partitions(
             self._run_inference, dataset.tar_files, dataset.id_col, meta=meta
@@ -297,10 +305,10 @@ class VAELatentExtractor:
             {"model_args": self.model_args, "device": device},
         )
 
-        print(f"Model loaded on {device}")
-
         dataset = self.load_dataset_shard(tar_path)
-        final_image_latents = []
+        final_image_plan_latents = []
+        final_image_gen_latents = []
+        final_text_batch = []
         image_ids = []
         samples_completed = 0
         expected_samples = len(partition)
@@ -311,7 +319,7 @@ class VAELatentExtractor:
         
         # Process batches
         with torch.no_grad(), torch.amp.autocast(device_type="cuda", enabled=self.model_args.autocast):
-            for batch, metadata in dataset:
+            for image_plan_batch, image_gen_batch, text_batch, metadata in dataset:
                 # Only process as many samples as we expect from metadata
                 if samples_completed >= expected_samples:
                     break
@@ -322,13 +330,18 @@ class VAELatentExtractor:
                 
                 if actual_batch_size < len(metadata):
                     # Truncate batch and metadata if needed
-                    batch = batch[:actual_batch_size]
+                    image_plan_batch = image_plan_batch[:actual_batch_size]
+                    image_gen_batch = image_gen_batch[:actual_batch_size]
+                    text_batch = text_batch[:actual_batch_size]
                     metadata = metadata[:actual_batch_size]
                 
-                image_latents = self._process_batch(model, batch)
-                del batch
+                plan_latents, gen_latents = self._process_batch_pollux(model, image_plan_batch, image_gen_batch)
+                del image_plan_batch
+                del image_gen_batch
 
-                final_image_latents.append(image_latents)
+                final_image_plan_latents.append(plan_latents)
+                final_image_gen_latents.append(gen_latents)
+                final_text_batch.extend(text_batch)
                 image_ids.extend(m[id_col] for m in metadata)
 
                 samples_completed += actual_batch_size
@@ -346,97 +359,194 @@ class VAELatentExtractor:
             )
 
         # Process embeddings in memory-efficient way
-        return self._process_embeddings(partition, final_image_latents, image_ids)
-        
-    def _process_embeddings(self, partition, final_image_latents, image_ids):
+        partition = self._process_embeddings(partition, final_image_plan_latents, image_ids, image_size=self.data_args.image_sizes[0])
+        partition = self._process_embeddings(partition, final_image_gen_latents, image_ids, image_size=self.data_args.image_sizes[1])
+        partition = self._process_captions(partition, final_text_batch, image_ids)
+        return partition
+    
+    def _process_captions(self, partition, final_text_batch, image_ids):
+        sorted_indices = sorted(range(len(image_ids)), key=lambda k: image_ids[k])
+        sorted_text_batch = [final_text_batch[i] for i in sorted_indices]
+        partition[self.data_args.caption_column] = sorted_text_batch
+        return partition
+
+    def _process_embeddings(self, partition, final_image_latents, image_ids, image_size):
         """Process embeddings in a memory-efficient way"""
         
+        '''
         # Check if we need to handle variable-sized latents
         if self.data_args.dynamic_crop_ratio > 1.0:
             # Handle variable-sized latents
             return self._process_variable_sized_embeddings(partition, final_image_latents, image_ids)
         else:
-            # Order the output of the shard
-            sorted_indices = sorted(range(len(image_ids)), key=lambda k: image_ids[k])
-            # Process fixed-size latents as before
-            # Process in chunks to reduce memory usage
-            all_embeddings = torch.cat(final_image_latents, dim=0)
-            sorted_embeddings = all_embeddings[sorted_indices]
-            
-            embedding_shape_list = [emb.shape for emb in sorted_embeddings]
+        '''
 
-            # View the embeddings to be [N, 16*32*32]
-            sorted_embeddings = sorted_embeddings.view(sorted_embeddings.shape[0], -1)
-            
-            # Process in chunks to avoid OOM
-            chunk_size = 1000  # Adjust based on your GPU memory
-            concat_embedding_output = None
-            for i in range(0, sorted_embeddings.shape[0], chunk_size):
-                end_idx = min(i + chunk_size, sorted_embeddings.shape[0])
-                chunk = sorted_embeddings[i:end_idx].cuda()  # Move chunk to GPU
-                chunk_cp = cp.asarray(chunk)  # Convert to CuPy
-                
-                if concat_embedding_output is None:
-                    concat_embedding_output = chunk_cp
-                else:
-                    concat_embedding_output = cp.concatenate([concat_embedding_output, chunk_cp], axis=0)
-                
-                # Free GPU memory
-                del chunk
-                torch.cuda.empty_cache()
-
-            partition[self.data_args.image_latent_column] = create_list_series_from_1d_or_2d_ar(
-                concat_embedding_output, index=partition.index
-            )
-            
-            # Convert embedding_shape_list to a CuPy array before passing it
-            embedding_shape_array = cp.array(embedding_shape_list)
-            partition[self.data_args.image_latent_shape_column] = create_list_series_from_1d_or_2d_ar(
-                embedding_shape_array, index=partition.index
-            )
-
-            del concat_embedding_output
-            del final_image_latents
-            del embedding_shape_array  # Also clean up the new array
-            torch.cuda.empty_cache()
-
-            return partition
-            
-    def _process_variable_sized_embeddings(self, partition, final_image_latents, image_ids):
-        """Process embeddings with variable sizes due to dynamic cropping"""
         # Order the output of the shard
         sorted_indices = sorted(range(len(image_ids)), key=lambda k: image_ids[k])
+        # Process fixed-size latents as before
+        # Process in chunks to reduce memory usage
+        all_embeddings = torch.cat(final_image_latents, dim=0)
+        sorted_embeddings = all_embeddings[sorted_indices]
+        
+        embedding_shape_list = [emb.shape for emb in sorted_embeddings]
 
-        # Flatten our list of tensors
-        flat_embeddings = []
-        current_idx = 0
+        # View the embeddings to be [N, 16*32*32]
+        sorted_embeddings = sorted_embeddings.view(sorted_embeddings.shape[0], -1)
         
-        for batch_tensors in final_image_latents:
-            batch_size = batch_tensors.shape[0]
-            for i in range(batch_size):
-                flat_embeddings.append(batch_tensors[i])
-                current_idx += 1
-        
-        # Create sorted embeddings list
-        sorted_embeddings = [flat_embeddings[idx] for idx in sorted_indices]
-        del flat_embeddings
-        
-        # Process each embedding individually and create a list of numpy arrays
-        embedding_list = []
-        embedding_shape_list = []
-        for emb in sorted_embeddings:
-            # Flatten the embedding to 1D
-            embedding_shape_list.append(emb.shape)
-            flat_emb = emb.view(-1).numpy()  # Convert to numpy array
-            embedding_list.append(flat_emb)
+        # Process in chunks to avoid OOM
+        chunk_size = 1000  # Adjust based on your GPU memory
+        concat_embedding_output = None
+        for i in range(0, sorted_embeddings.shape[0], chunk_size):
+            end_idx = min(i + chunk_size, sorted_embeddings.shape[0])
+            chunk = sorted_embeddings[i:end_idx].cuda()  # Move chunk to GPU
+            chunk_cp = cp.asarray(chunk)  # Convert to CuPy
             
-        # Assign to partition
-        partition[self.data_args.image_latent_column] = embedding_list
-        partition[self.data_args.image_latent_shape_column] = embedding_shape_list
+            if concat_embedding_output is None:
+                concat_embedding_output = chunk_cp
+            else:
+                concat_embedding_output = cp.concatenate([concat_embedding_output, chunk_cp], axis=0)
+            
+            # Free GPU memory
+            del chunk
+            torch.cuda.empty_cache()
+
+        partition[f"{self.data_args.image_latent_column}_{image_size}"] = create_list_series_from_1d_or_2d_ar(
+            concat_embedding_output, index=partition.index
+        )
         
-        del embedding_list
-        del sorted_embeddings
+        # Convert embedding_shape_list to a CuPy array before passing it
+        embedding_shape_array = cp.array(embedding_shape_list)
+        partition[f"{self.data_args.image_latent_shape_column}_{image_size}"] = create_list_series_from_1d_or_2d_ar(
+            embedding_shape_array, index=partition.index
+        )
+
+        del concat_embedding_output
         del final_image_latents
+        del embedding_shape_array  # Also clean up the new array
         torch.cuda.empty_cache()
-        
+
         return partition
+        
+    # def _process_variable_sized_embeddings(self, partition, final_image_latents, image_ids):
+    #     """Process embeddings with variable sizes due to dynamic cropping"""
+    #     # Order the output of the shard
+    #     sorted_indices = sorted(range(len(image_ids)), key=lambda k: image_ids[k])
+
+    #     # Flatten our list of tensors
+    #     flat_embeddings = []
+    #     current_idx = 0
+        
+    #     for batch_tensors in final_image_latents:
+    #         batch_size = batch_tensors.shape[0]
+    #         for i in range(batch_size):
+    #             flat_embeddings.append(batch_tensors[i])
+    #             current_idx += 1
+        
+    #     # Create sorted embeddings list
+    #     sorted_embeddings = [flat_embeddings[idx] for idx in sorted_indices]
+    #     del flat_embeddings
+        
+    #     # Process each embedding individually and create a list of numpy arrays
+    #     embedding_list = []
+    #     embedding_shape_list = []
+    #     for emb in sorted_embeddings:
+    #         # Flatten the embedding to 1D
+    #         embedding_shape_list.append(emb.shape)
+    #         flat_emb = emb.view(-1).numpy()  # Convert to numpy array
+    #         embedding_list.append(flat_emb)
+            
+    #     # Assign to partition
+    #     partition[self.data_args.image_latent_column] = embedding_list
+    #     partition[self.data_args.image_latent_shape_column] = embedding_shape_list
+        
+    #     del embedding_list
+    #     del sorted_embeddings
+    #     del final_image_latents
+    #     torch.cuda.empty_cache()
+        
+    #     return partition
+
+
+    def load_dataset_shard2(self, tar_path: str):
+        """
+        Loads a WebDataset tar shard using DALI.
+
+        Args:
+            tar_path (str): The path of the tar shard to load.
+
+        Returns:
+            Iterable: An iterator over the dataset. Each tar file
+            must have 3 files per record: a .jpg file, a .txt file,
+            and a .json file. The .jpg file must contain the image, the
+            .txt file must contain the associated caption, and the
+            .json must contain the metadata for the record (including
+            its ID). Images will be loaded using DALI.
+        """
+
+        dali_pipeline_args = {
+            "batch_size": self.data_args.batch_size,
+            "num_threads": self.data_args.num_threads_per_worker,
+            "device_id": 0,
+            "exec_dynamic": True,
+            "prefetch_queue_depth": 8,
+        }
+
+        if self.data_args.enable_checkpointing:
+            dali_pipeline_args["enable_checkpointing"] = True
+            checkpoint_path = f"{tar_path.rsplit('.', 1)[0]}.pth"
+            if os.path.exists(checkpoint_path):
+                print (f"Restoring checkpoint from {checkpoint_path}")
+                checkpoint = open(checkpoint_path, 'rb').read()
+                dali_pipeline_args["checkpoint"] = checkpoint
+
+        image_dataset = image_loading_pipeline(
+            tar_path, 
+            self.use_index_files,
+            self.data_args,
+            **dali_pipeline_args,
+        )
+
+        image_dataset.build()
+
+        total_samples = image_dataset.epoch_size()
+        total_samples = total_samples[list(total_samples.keys())[0]]
+
+        # pbar = tqdm(total=total_samples, desc="Loading dataset shard")
+
+        samples_completed = 0
+        while samples_completed < total_samples:
+            image_plan, image_gen, text, meta = image_dataset.run()
+            
+            image_plan = image_plan.as_tensor()
+            image_plan_torch = torch.empty(image_plan.shape(), dtype=torch.float32, device="cuda")
+            feed_ndarray(image_plan, image_plan_torch)  # COPY !!!
+            image_plan = image_plan_torch
+
+            image_gen = image_gen.as_tensor()
+            image_gen_torch = torch.empty(image_gen.shape(), dtype=torch.float32, device="cuda")
+            feed_ndarray(image_gen, image_gen_torch)  # COPY !!!
+            image_gen = image_gen_torch
+            
+            captions = [text.at(i).tostring().decode("utf-8") for i in range(len(text))]
+            metadata = [
+                json.loads(meta.at(i).tostring().decode("utf-8"))
+                for i in range(len(meta))
+            ]
+            
+            remaining_samples = total_samples - samples_completed
+            if image_plan.shape[0] >= remaining_samples:
+                image_plan = image_plan[:remaining_samples]
+                image_gen = image_gen[:remaining_samples]
+                captions = captions[:remaining_samples]
+                metadata = metadata[:remaining_samples]
+
+            remaining_samples = total_samples - samples_completed
+
+            samples_completed += min(image_plan.shape[0], remaining_samples)
+
+            yield image_plan, image_gen, captions, metadata
+        
+        # checkpoint final state
+        if self.data_args.enable_checkpointing:
+            image_dataset.checkpoint(checkpoint_path)
+    

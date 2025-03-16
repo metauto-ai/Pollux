@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import List, Optional
 
 @dataclass
 class DataArgs:
@@ -9,8 +9,9 @@ class DataArgs:
     id_col: str = field(default="key")
     batch_size: int = field(default=1)
     num_threads_per_worker: int = field(default=4)
-    image_size: int = field(default=256)
+    image_sizes: List[int] = field(default_factory=lambda: [256, 512])
     patch_size: int = field(default=16)
     dynamic_crop_ratio: float = field(default=1.0)
     image_latent_column: str = field(default="image_latent")
     image_latent_shape_column: str = field(default="image_latent_shape")
+    caption_column: str = field(default="caption")

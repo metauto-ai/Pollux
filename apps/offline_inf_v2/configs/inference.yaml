@@ -9,14 +9,14 @@ model:
   autocast: true
 
 data:
-  data_path: /mnt/pollux/nemo/sample
-  output_path: /mnt/pollux/nemo/sample_latents_256/
+  data_path: /mnt/pollux/nemo/data/bucket-256-1-1/
+  output_path: /mnt/pollux/nemo/data/bucket-256-1-1-latents
   enable_checkpointing: true
   id_col: key
   batch_size: 16
-  num_threads_per_worker: 16
-  image_size: 256
+  num_threads_per_worker: 32
+  image_sizes: [256, 512]
   patch_size: 16
   dynamic_crop_ratio: 1.0
-  image_latent_column: image_latent_256
-  image_latent_shape_column: image_latent_shape_256
+  image_latent_column: image_latent
+  image_latent_shape_column: image_latent_shape

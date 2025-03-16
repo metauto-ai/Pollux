@@ -42,14 +42,22 @@ def main():
     latent_extractor = VAELatentExtractor(
         model_args=cfg.model,
         data_args=cfg.data,
+        use_index_files=True,
     )
 
     dataset_with_latents = latent_extractor(dataset)
 
+    latent_columns = [
+        f"{cfg.data.image_latent_column}_{cfg.data.image_sizes[0]}",
+        f"{cfg.data.image_latent_shape_column}_{cfg.data.image_sizes[0]}",
+        f"{cfg.data.image_latent_column}_{cfg.data.image_sizes[1]}",
+        f"{cfg.data.image_latent_shape_column}_{cfg.data.image_sizes[1]}",
+    ]
+
     # Metadata will have a new column named "image_latent"
     dataset_with_latents.save_metadata(
         cfg.data.output_path, columns=[
-            cfg.data.id_col, "doc_id", cfg.data.image_latent_column, cfg.data.image_latent_shape_column
+            cfg.data.id_col, "_id", cfg.data.caption_column, *latent_columns
         ]
     )
 
