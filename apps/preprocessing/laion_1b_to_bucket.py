@@ -9,9 +9,9 @@
 
 # mongoimport --uri="mongodb+srv://nucleusadmin:eMPF9pgRy2UqJW3@imagedata.global.mongocluster.cosmos.azure.com/?tls=true&authMechanism=SCRAM-SHA-256&retrywrites=false&maxIdleTimeMS=120000" \
 # --db=world_model \
-# --collection=bucket-256-6 \
-# --file=/mnt/pollux/mongo_db_cache/diffusion1b_part_03_of_16_filtered_processed.json --jsonArray
-# python -m apps.preprocessing.diffusion1b_to_bucket_hq
+# --collection=bucket-256-8 \
+# --file=/mnt/pollux/mongo_db_cache/LAION1B-02_processed.json --jsonArray
+# python -m apps.preprocessing.laion_1b_to_bucket
 import json
 import requests
 from PIL import Image
@@ -22,29 +22,24 @@ from tqdm import tqdm
 from tqdm_joblib import tqdm_joblib
 from pymongo import MongoClient
 from bson import ObjectId
+import ijson
 
-file_path = "/mnt/pollux/mongo_db_cache/diffusion1b_part_15_of_16_filtered.json"
+file_path = "/mnt/pollux/mongo_db_cache/LAION1B-02.json"
 
 
 def update_doc(doc):
     doc_return = {}
     if "partition_id" not in doc:
         doc_return["partition_key"] = random.randint(0, 10000)
+    if doc["aesthetic_score"] < 5.0:
+        return None
     try:
-        for key, value in doc.items():
-            if key == "_id":
-                doc_return["source_id"] = value["$oid"]
-            if key == "prompt":
-                doc_return["caption"] = value
-            if key == "azure_url":
-                doc_return["media_path"] = value
-            if key == "width":
-                doc_return["width"] = value
-            if key == "height":
-                doc_return["height"] = value
-            if key == "partition_id":
-                doc_return["partition_key"] = value
-        doc_return["source"] = "diffusion1b_part_15_of_16_filtered"
+        doc_return["source_id"] = doc["_id"]["$oid"]
+        doc_return["source"] = "LAION1B-02"
+        doc_return["caption"] = doc["text"]
+        doc_return["media_path"] = doc["azure_url"]
+        doc_return["width"] = int(doc["width"])
+        doc_return["height"] = int(doc["height"])
         return doc_return
     except Exception as e:
         print(f"Error processing element {doc['_id']}: {e}")
@@ -57,17 +52,17 @@ def update_doc(doc):
 # collection = db["pexel_images"]
 
 
-with open(file_path, "r", encoding="utf-8") as f:
-    data = json.load(f)  # Load JSON array
 processed_results = []
-for doc in tqdm(data):
-    res_doc = update_doc(doc)
-    if res_doc is not None:
-        processed_results.append(res_doc)
+
+with open(file_path, "r") as file:
+    for item in tqdm(ijson.items(file, "item")):
+        res_doc = update_doc(item)
+        if res_doc != None:
+            processed_results.append(res_doc)
     # processed_results = [res for res in processed_results if res is not None]
 print(processed_results[:10])
 with open(
-    "/mnt/pollux/mongo_db_cache/diffusion1b_part_15_of_16_filtered_processed.json",
+    "/mnt/pollux/mongo_db_cache/LAION1B-02_processed.json",
     "w",
     encoding="utf-8",
 ) as f:
