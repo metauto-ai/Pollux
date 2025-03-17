@@ -12,7 +12,7 @@ from apps.offline_inf_v2.data import DataArgs
 
 def decode_image_raw(image_raw):
     try:
-        image = Image.open(BytesIO(image_raw))
+        image = Image.open(BytesIO(image_raw)).convert('RGB')
         return np.asarray(image, dtype=np.uint8), np.ones(1, dtype=np.uint8)
     except Exception as e:
         print(f"Error decoding image: {e}")
