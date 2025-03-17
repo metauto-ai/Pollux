@@ -4,13 +4,13 @@
 # sudo apt install mongodb-database-tools
 # mongoexport --uri="mongodb+srv://nucleusadmin:eMPF9pgRy2UqJW3@nucleus.mongocluster.cosmos.azure.com/?tls=true&authMechanism=SCRAM-SHA-256&retrywrites=false&maxIdleTimeMS=120000" \
 # --db=world_model \
-# --collection=diffusion1b_part_15_of_16_filtered \
-# --out=/mnt/pollux/mongo_db_cache/diffusion1b_part_15_of_16_filtered.json --jsonArray
+# --collection=LAION1B-02 \
+# --out=/mnt/pollux/mongo_db_cache/LAION1B-02.json --jsonArray
 
 # mongoimport --uri="mongodb+srv://nucleusadmin:eMPF9pgRy2UqJW3@imagedata.global.mongocluster.cosmos.azure.com/?tls=true&authMechanism=SCRAM-SHA-256&retrywrites=false&maxIdleTimeMS=120000" \
 # --db=world_model \
-# --collection=bucket-256-8 \
-# --file=/mnt/pollux/mongo_db_cache/diffusion1b_part_15_of_16_filtered_processed.json --jsonArray
+# --collection=bucket-256-6 \
+# --file=/mnt/pollux/mongo_db_cache/diffusion1b_part_03_of_16_filtered_processed.json --jsonArray
 # python -m apps.preprocessing.diffusion1b_to_bucket_hq
 import json
 import requests
