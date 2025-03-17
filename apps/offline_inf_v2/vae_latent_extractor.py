@@ -19,67 +19,7 @@ from nemo_curator.utils.distributed_utils import load_object_on_worker
 from apps.main.modules.preprocess import generate_crop_size_list, var_center_crop_size_fn
 from apps.offline_inf_v2.data import DataArgs
 from apps.offline_inf_v2.model import ModelArgs, VAE
-
-
-@pipeline_def
-def image_loading_pipeline(_tar_path: str, use_index_files: bool, data_args: DataArgs):
-    if use_index_files:
-        index_paths = [str(Path(_tar_path).with_suffix(".idx"))]
-    else:
-        index_paths = []
-
-    images_raw, text, json = fn.readers.webdataset(
-        paths=_tar_path,
-        index_paths=index_paths,
-        ext=["jpg", "txt", "json"],
-        missing_component_behavior="skip",
-    )
-    
-    images_gen = fn.experimental.decoders.image(images_raw, device="mixed", output_type=types.RGB)
-
-    images_gen = fn.resize(
-        images_gen, 
-        device="gpu",
-        resize_x=data_args.image_sizes[1], 
-        resize_y=data_args.image_sizes[1],
-        mode="not_smaller", 
-        interp_type=types.DALIInterpType.INTERP_CUBIC
-    )
-
-    # get the dynamic crop size
-    crop_size = fn.python_function(
-        images_gen.shape(device="cpu"),
-        data_args.image_sizes[1],
-        data_args.patch_size,
-        data_args.dynamic_crop_ratio,
-        function=var_center_crop_size_fn,
-        device="cpu"
-    )
-
-    images_gen = fn.crop_mirror_normalize(
-        images_gen, 
-        device="gpu",
-        crop_h=crop_size[0], 
-        crop_w=crop_size[1],
-        crop_pos_x=0.5, 
-        crop_pos_y=0.5, 
-        mirror=fn.random.coin_flip(probability=0.5),
-        dtype=types.DALIDataType.FLOAT, 
-        mean=[0.5 * 255, 0.5 * 255, 0.5 * 255], 
-        std=[0.5 * 255, 0.5 * 255, 0.5 * 255],
-        scale=1.0,
-    )
-    
-    images_plan = fn.resize(
-        images_gen, 
-        device="gpu",
-        resize_x=data_args.image_sizes[0], 
-        resize_y=data_args.image_sizes[0],
-        mode="not_smaller", 
-        interp_type=types.DALIInterpType.INTERP_CUBIC
-    )
-
-    return images_plan, images_gen, text, json
+from apps.offline_inf_v2.pipeline import image_loading_pipeline
 
 
 class VAELatentExtractor:
@@ -127,7 +67,7 @@ class VAELatentExtractor:
             "num_threads": self.data_args.num_threads_per_worker,
             "device_id": 0,
             "exec_dynamic": True,
-            "prefetch_queue_depth": 8,
+            "prefetch_queue_depth": 4,
         }
 
         if self.data_args.enable_checkpointing:
@@ -160,12 +100,12 @@ class VAELatentExtractor:
         bucket_img_gen = defaultdict(list)
         bucket_text = defaultdict(list)
         bucket_meta = defaultdict(list)
-
+        bucket_valid = defaultdict(list)
         # pbar = tqdm(total=total_samples, desc="Loading dataset shard")
 
         samples_completed = 0
         while samples_completed < total_samples:
-            image_plan, image_gen, text, meta = image_dataset.run()
+            image_plan, image_gen, text, meta, valid = image_dataset.run()
             for i in range(self.data_args.batch_size):
                 img_plan, img_gen = image_plan[i], image_gen[i]
                 _, w, h = img_plan.shape()
@@ -174,7 +114,7 @@ class VAELatentExtractor:
                 bucket_img_gen[crop_size].append(img_gen)
                 bucket_text[crop_size].append(text.at(i).tostring().decode("utf-8"))
                 bucket_meta[crop_size].append(json.loads(meta.at(i).tostring().decode("utf-8")))
-
+                bucket_valid[crop_size].append(valid.at(i).tolist())
                 # if batch size is reached, yield the batch
                 if len(bucket_img_plan[crop_size]) == self.data_args.batch_size:
                     image_plan_batch = TensorListGPU(bucket_img_plan[crop_size]).as_tensor()
@@ -183,12 +123,12 @@ class VAELatentExtractor:
                     feed_ndarray(image_plan_batch, image_plan_torch)  # COPY !!!
                     image_gen_torch = torch.empty(image_gen_batch.shape(), dtype=torch.float32, device="cuda")
                     feed_ndarray(image_gen_batch, image_gen_torch)  # COPY !!!
-                    yield image_plan_torch, image_gen_torch, bucket_text[crop_size], bucket_meta[crop_size]
+                    yield image_plan_torch, image_gen_torch, bucket_text[crop_size], bucket_meta[crop_size], bucket_valid[crop_size]
                     bucket_img_plan[crop_size] = []
                     bucket_img_gen[crop_size] = []
                     bucket_text[crop_size] = []
                     bucket_meta[crop_size] = []
-
+                    bucket_valid[crop_size] = []
             samples_completed += self.data_args.batch_size
 
             # if samples_completed % (100 * self.data_args.batch_size) == 0 and self.data_args.enable_checkpointing is not None:
@@ -205,7 +145,7 @@ class VAELatentExtractor:
             feed_ndarray(image_plan_batch, image_plan_torch)  # COPY !!!
             image_gen_torch = torch.empty(image_gen_batch.shape(), dtype=torch.float32, device="cuda")
             feed_ndarray(image_gen_batch, image_gen_torch)  # COPY !!!
-            yield image_plan_torch, image_gen_torch, bucket_text[crop_size], bucket_meta[crop_size]
+            yield image_plan_torch, image_gen_torch, bucket_text[crop_size], bucket_meta[crop_size], bucket_valid[crop_size]
         
         # checkpoint final state
         if self.data_args.enable_checkpointing:
@@ -245,9 +185,9 @@ class VAELatentExtractor:
         
     def _process_batch(self, model, batch):
         """Helper method to process a batch with appropriate chunking"""
-        if batch.shape[0] > 16 and batch.shape[0] % 16 == 0:
-            # Process in chunks of 16 to avoid OOM
-            sub_batches = batch.chunk(batch.shape[0] // 16)
+        if batch.shape[0] > self.data_args.mini_batch_size and batch.shape[0] % self.data_args.mini_batch_size == 0:
+            # Process in chunks of mini_batch_size to avoid OOM
+            sub_batches = batch.chunk(batch.shape[0] // self.data_args.mini_batch_size)
             sub_latents = []
             for sub_batch in sub_batches:
                 sub_latent = model(sub_batch)
@@ -283,7 +223,7 @@ class VAELatentExtractor:
         for col in latent_columns:
             meta[col] = "object"
         meta[self.data_args.caption_column] = "object"
-
+        meta[self.data_args.valid_column] = "object"
         embedding_df = dataset.metadata.map_partitions(
             self._run_inference, dataset.tar_files, dataset.id_col, meta=meta
         )
@@ -305,11 +245,12 @@ class VAELatentExtractor:
             {"model_args": self.model_args, "device": device},
         )
 
-        dataset = self.load_dataset_shard(tar_path)
+        dataset = self.load_dataset_shard2(tar_path)
         final_image_plan_latents = []
         final_image_gen_latents = []
         final_text_batch = []
         image_ids = []
+        is_valid = []
         samples_completed = 0
         expected_samples = len(partition)
         progress_bar = tqdm(
@@ -319,7 +260,7 @@ class VAELatentExtractor:
         
         # Process batches
         with torch.no_grad(), torch.amp.autocast(device_type="cuda", enabled=self.model_args.autocast):
-            for image_plan_batch, image_gen_batch, text_batch, metadata in dataset:
+            for image_plan_batch, image_gen_batch, text_batch, metadata, valid in dataset:
                 # Only process as many samples as we expect from metadata
                 if samples_completed >= expected_samples:
                     break
@@ -334,6 +275,7 @@ class VAELatentExtractor:
                     image_gen_batch = image_gen_batch[:actual_batch_size]
                     text_batch = text_batch[:actual_batch_size]
                     metadata = metadata[:actual_batch_size]
+                    valid = valid[:actual_batch_size]
                 
                 plan_latents, gen_latents = self._process_batch_pollux(model, image_plan_batch, image_gen_batch)
                 del image_plan_batch
@@ -343,7 +285,7 @@ class VAELatentExtractor:
                 final_image_gen_latents.append(gen_latents)
                 final_text_batch.extend(text_batch)
                 image_ids.extend(m[id_col] for m in metadata)
-
+                is_valid.extend(valid)
                 samples_completed += actual_batch_size
                 progress_bar.update(actual_batch_size)
                 
@@ -362,12 +304,19 @@ class VAELatentExtractor:
         partition = self._process_embeddings(partition, final_image_plan_latents, image_ids, image_size=self.data_args.image_sizes[0])
         partition = self._process_embeddings(partition, final_image_gen_latents, image_ids, image_size=self.data_args.image_sizes[1])
         partition = self._process_captions(partition, final_text_batch, image_ids)
+        partition = self._process_valid(partition, is_valid, image_ids)
         return partition
     
     def _process_captions(self, partition, final_text_batch, image_ids):
         sorted_indices = sorted(range(len(image_ids)), key=lambda k: image_ids[k])
         sorted_text_batch = [final_text_batch[i] for i in sorted_indices]
         partition[self.data_args.caption_column] = sorted_text_batch
+        return partition
+    
+    def _process_valid(self, partition, is_valid, image_ids):
+        sorted_indices = sorted(range(len(image_ids)), key=lambda k: image_ids[k])
+        sorted_valid = [is_valid[i] for i in sorted_indices]
+        partition[self.data_args.valid_column] = sorted_valid
         return partition
 
     def _process_embeddings(self, partition, final_image_latents, image_ids, image_size):
@@ -515,7 +464,7 @@ class VAELatentExtractor:
 
         samples_completed = 0
         while samples_completed < total_samples:
-            image_plan, image_gen, text, meta = image_dataset.run()
+            image_plan, image_gen, text, meta, valid = image_dataset.run()
             
             image_plan = image_plan.as_tensor()
             image_plan_torch = torch.empty(image_plan.shape(), dtype=torch.float32, device="cuda")
@@ -532,7 +481,7 @@ class VAELatentExtractor:
                 json.loads(meta.at(i).tostring().decode("utf-8"))
                 for i in range(len(meta))
             ]
-            
+            valid = [valid.at(i).tolist() for i in range(len(valid))]
             remaining_samples = total_samples - samples_completed
             if image_plan.shape[0] >= remaining_samples:
                 image_plan = image_plan[:remaining_samples]
@@ -544,7 +493,7 @@ class VAELatentExtractor:
 
             samples_completed += min(image_plan.shape[0], remaining_samples)
 
-            yield image_plan, image_gen, captions, metadata
+            yield image_plan, image_gen, captions, metadata, valid
         
         # checkpoint final state
         if self.data_args.enable_checkpointing:
