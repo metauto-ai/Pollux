@@ -26,7 +26,8 @@ from apps.main.utils.mongodb_data_load import (
     MongoDBCaptionDataLoad,
 )
 from apps.main.utils.sampler import StatefulDistributedSampler
-from apps.main.utils.mongodb_data_load import DictTensorBatchIterator
+from apps.main.utils.local_parquet_data_load import LocalParquetDataLoad
+
 
 logger = logging.getLogger()
 
@@ -89,7 +90,7 @@ class DataArgs:
     mapping_field: Optional[Dict[str, str]] = field(
         default_factory=dict
     )  # which parquet column name field is used in parquet data. it is a dataset specific field
-
+    shape_field: Optional[Dict[str, str]] = field(default_factory=dict)
     # * DataLoader specific args
     dataloader: DataLoaderArgs = field(default_factory=DataLoaderArgs)
 
@@ -117,6 +118,8 @@ class AutoDataLoader:
             try:
                 if dataset_config.source == "mongodb":
                     return self._create_mongodb_dataloader(dataset_config)
+                elif dataset_config.source == "local_parquet":
+                    return self._create_local_parquet_dataloader(dataset_config)
                 else:
                     raise ValueError(
                         f"Unsupported data source: {dataset_config.source}"
@@ -195,6 +198,25 @@ class AutoDataLoader:
             raise ValueError(f"Unsupported MongoDB dataset: {args.data_name}")
 
         dataset.set_local_partition()
+        self.dataset = dataset
+        data_loader, sampler = self._warp_dataloader_with_stateful_sampler(
+            args, dataset
+        )
+        args.dataloader.batch_size = record_batch_size
+        return data_loader, sampler
+
+    def _create_local_parquet_dataloader(
+        self, args: DataArgs
+    ) -> Tuple[DataLoader, StatefulDistributedSampler]:
+        dataset = LocalParquetDataLoad(
+            root_dir=args.root_dir,
+            num_shards=self.num_shards,
+            shard_idx=self.shard_id,
+            mapping_field=args.mapping_field,
+            shape_field=args.shape_field,
+        )
+        record_batch_size = args.dataloader.batch_size
+        args.dataloader.batch_size = 1
         self.dataset = dataset
         data_loader, sampler = self._warp_dataloader_with_stateful_sampler(
             args, dataset

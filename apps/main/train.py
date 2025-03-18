@@ -57,7 +57,8 @@ from lingua.metrics import (
 from lingua.optim import OptimArgs, build_optimizer
 from lingua.profiling import ProfilerArgs, maybe_run_profiler
 
-from apps.main.data import AutoDataLoader, DataArgs, DictTensorBatchIterator
+from apps.main.data import AutoDataLoader, DataArgs
+from apps.main.utils.dict_tensor_data_load import DictTensorBatchIterator
 from apps.main.modules.schedulers import SchedulerArgs
 from apps.main.utils.sampler import StatefulDistributedSampler
 from apps.main.model import (
@@ -376,8 +377,10 @@ def train(args: TrainArgs):
                 # we do garbage collection manually otherwise different processes
                 # run the GC at different times so they slow down the whole pipeline
                 gc.collect()
-            if "gen_latent_code" in batch and "plan_latent_code" in batch:
+            if "gen_latent_code" in batch:
                 batch["gen_latent_code"] = batch["gen_latent_code"].cuda()
+                if "plan_latent_code" not in batch:
+                    batch["plan_latent_code"] = batch["gen_latent_code"].cuda()
                 batch["plan_latent_code"] = batch["plan_latent_code"].cuda()
                 nwords_since_last_log += batch["gen_latent_code"].numel()
                 nwords_since_last_log += batch["plan_latent_code"].numel()
