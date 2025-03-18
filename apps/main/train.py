@@ -386,6 +386,7 @@ def train(args: TrainArgs):
                 nwords_since_last_log += batch["plan_latent_code"].numel()
             elif "image" in batch:
                 batch["image"] = batch["image"].cuda()
+                batch["image_cond"] = batch["image_cond"].cuda()
                 nwords_since_last_log += batch["image"].numel()
             else:
                 raise ValueError("No image or latent code in batch")
