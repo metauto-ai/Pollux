@@ -134,7 +134,19 @@ class AutoDataLoader:
         self, args: DataArgs
     ) -> Tuple[DataLoader, StatefulDistributedSampler]:
         record_batch_size = args.dataloader.batch_size
-        if args.data_name in ["cc12m", "bucket-256-1", "bucket-hq", "bucket-256-2"]:
+        if args.data_name in [
+            "cc12m",
+            "bucket-256-1",
+            "bucket-hq",
+            "bucket-256-2",
+            "bucket-256-3",
+            "bucket-256-4",
+            "bucket-256-5",
+            "bucket-256-6",
+            "bucket-256-7",
+            "bucket-256-8",
+            "bucket-256-9",
+        ]:
             dataset = MongoDBImageDataLoad(
                 collection_name=args.data_name,
                 query=args.query,
@@ -142,6 +154,7 @@ class AutoDataLoader:
                 num_shards=self.num_shards,
                 extract_field=args.extract_field,  # {"s3url": "image",}
                 partition_key=args.partition_key,
+                root_dir=args.root_dir,
                 args=args,
             )
         elif args.data_name in [
@@ -155,6 +168,7 @@ class AutoDataLoader:
                 query=args.query,
                 shard_idx=self.shard_id,
                 num_shards=self.num_shards,
+                root_dir=args.root_dir,
                 extract_field=args.extract_field,  # {"parquet_size": "sample_num","parquet_path": "path",}
                 mapping_field=args.mapping_field,  # {"HunyuanVideo_latent_code": "latent_code","LLAMA3_3B_text_embedding": "text_embedding",},
                 partition_key=args.partition_key,
@@ -173,6 +187,7 @@ class AutoDataLoader:
                 query=args.query,
                 shard_idx=self.shard_id,
                 num_shards=self.num_shards,
+                root_dir=args.root_dir,
                 mapping_field=args.mapping_field,
                 partition_key=args.partition_key,
             )
