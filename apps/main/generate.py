@@ -58,6 +58,7 @@ class LatentGenerator(nn.Module):
         self.scheduler = model.gen_model.scheduler.scheduler
         self.num_inference_steps = cfg.inference_steps
         self.tvae = tvae
+        self.model.gen_model.gen_transformer.token_drop_ratio = 0
 
     def prepare_latent(self, context, device):
         bsz = len(context["caption"])
@@ -135,7 +136,7 @@ class LatentGenerator(nn.Module):
                 x=latent_model_input,
                 time_steps=timestep,
                 condition=context,
-            )
+            )["sample"]
             noise_pred_text, noise_pred_uncond = noise_pred.chunk(2)
             noise_pred = noise_pred_uncond + self.guidance_scale * (
                 noise_pred_text - noise_pred_uncond

@@ -1,11 +1,11 @@
-# torchrun --standalone --nnodes 1 --nproc-per-node 4 -m apps.main.train config=apps/main/configs/train_bucket_256_latent_code.yaml
+# torchrun --standalone --nnodes 1 --nproc-per-node 2 -m apps.main.train config=apps/main/configs/train_bucket_3840_image_from_pretrain.yaml
 
 # Set up single experiment
 version: v1.0
 # From now on, start to align train, data, and model setting with train stage (just finish refactor for dara)
 train_stage: stage-1 # options: preliminary, pretraining, posttraining; aligned with data setting
-name: Pollux_v1.0_token_drop_1 # used for local dump and wandb log
-output_dir: /jfs/checkpoints/dump
+name: Pollux_v1.0_pre-trained_token_drop-added-extended-tokens-new  #used for local dump and wandb log
+output_dir: /mnt/pollux/checkpoints/dump/
 dump_dir: '' # No need now
 steps: 500000
 seed: 777
@@ -17,9 +17,9 @@ optim:
     weight_decay: 0.01
 
 distributed:
-    gpus: 0,1,2,3
+    gpus: 2,3
     fsdp_type: full_shard
-    dp_shard: 4
+    dp_shard: 2
     dp_replicate: 1
     compile: false
     model_dtype: bf16 # options: `fb8` is only supported by H100
@@ -59,7 +59,7 @@ model:
             gen_seqlen: 256
             condition_seqlen: 320
             norm_eps: 1e-5
-            pre_trained_path:  /jfs/checkpoints/Llama-3.2-1B/original/consolidated.00.pth
+            pre_trained_path:  /mnt/pollux/checkpoints/Llama-3.2-1B/original/consolidated.00.pth
             attn_type: 'full'
             plan_transformer_dim: 3072
             token_drop_ratio: 0.25
@@ -72,7 +72,7 @@ model:
             patchify_size: 2
             output_dim: 3072
         tokenizer:
-            model_name: "/jfs/checkpoints/Llama-3.2-3B"
+            model_name: "/mnt/pollux/checkpoints/Llama-3.2-3B"
         llm:
             dim: 3072
             ffn_dim_multiplier: 1.0
@@ -82,37 +82,45 @@ model:
             n_kv_heads: 8
             norm_eps: 1e-5
             rope_theta: 500000.0
-            pre_trained_path: /jfs/checkpoints/Llama-3.2-3B/original/consolidated.00.pth
+            pre_trained_path: /mnt/pollux/checkpoints/Llama-3.2-3B/original/consolidated.00.pth
             from_llama: true
             gen_seqlen: 256
             condition_seqlen: 320
             text_seqlen: 128
+
         codebook_size: 16
-        is_train: true
+        is_train: false
     plan_weight: 1.0
-data:  
+    gen_weight: 1.0
+    with_vae: true
+    vae_args:
+        model_name: Hunyuan
+        pretrained_model_name_or_path: '/mnt/pollux/checkpoints/HunyuanVideo/vae'
+        enable_tiling: false
+        enable_slicing: false
+data:
   - stage: stage-1
     id: 1
-    data_name: bucket-256-parquet-new
+    data_name: bucket-hq
     task: latent_text_to_image
     source: mongodb
     partition_key: 'partition_key'
     retries: 3
     extract_field:
-        "parquet_size": "sample_num"
-        "parquet_path": "path"
-    mapping_field:
-        "HunyuanVideo_gen_latent_code": "gen_latent_code"
-        "HunyuanVideo_plan_latent_code": "plan_latent_code"
-        "caption": "caption"
+        "media_path": "image"
     use: True
     dataloader:
-        batch_size: 14
+        batch_size: 1
         num_workers: 4
         seed: 1024
         shuffle: True
         pin_memory: False
         drop_last: False
+    query:
+        width:
+            $gte: 3840
+    image_size: 3840
+    condition_image_size: 256
 
 profiling:
     run: false
