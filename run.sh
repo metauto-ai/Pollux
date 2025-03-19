@@ -1,0 +1,1 @@
+torchrun --standalone --nnodes 1 --nproc-per-node 2 -m apps.main.train config=./apps/main/configs/train_bucket_3840_image_from_pretrain.yaml
