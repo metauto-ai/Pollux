@@ -55,6 +55,8 @@ class GenTransformerArgs(BaseTransformerArgs):
     gen_seqlen: int = 1000
     pre_trained_path: Optional[str] = None
     attn_type: str = "full"  # Options: 'full', 'bi_causal' and 'causal'.
+    token_mixer_depth: int = 4
+    token_drop_ratio: float = 0.0
 
 
 @dataclass
@@ -139,7 +141,6 @@ class BaseDiffusionTransformer(nn.Module):
         self.gen_seqlen = args.gen_seqlen
         self.attn_type = args.attn_type
         self.layers = nn.ModuleList()
-        assert not (self.attn_type == "bi_causal" and args.n_layers % 2 != 0)
         for _ in range(args.n_layers):
             self.layers.append(DiffusionTransformerBlock(args))
 
@@ -151,7 +152,7 @@ class BaseDiffusionTransformer(nn.Module):
         attn_impl: str = "sdpa",
     ):
 
-        if self.attn_type in ["causal", "bi_causal"]:
+        if self.attn_type == "causal":
             seqlen = h.size(1)
             mask = create_causal_mask(seqlen, attn_impl)
 
@@ -167,8 +168,6 @@ class BaseDiffusionTransformer(nn.Module):
                 h = layer(
                     h, freqs_cis, modulation_signal, mask=mask, attn_impl=attn_impl
                 )
-            if self.attn_type == "bi_causal":
-                h = h.flip(1)
         return h
 
     def reset_parameters(self):
@@ -243,6 +242,12 @@ class GenTransformer(BaseDiffusionTransformer):
         )
         self.ada_dim = args.ada_dim
         self.dim = args.dim
+        self.token_mixer_depth = args.token_mixer_depth
+        self.token_drop_ratio = args.token_drop_ratio
+        self.register_buffer(
+            "placeholder_token",
+            torch.zeros(1, 1, self.patch_size**2 * self.out_channels),
+        )
         self.cos_token = nn.Parameter(torch.zeros(1, 1, self.dim))
         self.coe_token = nn.Parameter(torch.zeros(1, 1, self.dim))
         self.norm = RMSNorm(args.dim, eps=args.norm_eps)
@@ -295,18 +300,53 @@ class GenTransformer(BaseDiffusionTransformer):
 
         freqs_cis_img = freqs_cis_img.to(x.device)
         freqs_cis_cond = self.rope_embeddings_conditions.freqs_cis[:c_l].to(x.device)
+        mask_dict = None
+        if self.token_drop_ratio > 0:
+            mask_dict = self.get_mask(
+                x.shape[0],
+                x.shape[1],
+                mask_ratio=self.token_drop_ratio,
+                device=x.device,
+            )
+
         x = torch.cat([condition_, x], dim=1)
         freqs_cis = torch.cat([freqs_cis_cond, freqs_cis_img], dim=0)
+        h = self.full_token_mixer(x, freqs_cis, modulation_signal, attn_impl=attn_impl)
+        if self.token_drop_ratio > 0:
+            condition_ = h[:, :c_l, :]
+            x = h[:, c_l:, :]
+            freqs_cis_cond = freqs_cis[:c_l]
+            freqs_cis_img = freqs_cis[c_l:]
+            x = torch.gather(
+                x,
+                dim=1,
+                index=mask_dict["ids_keep"].unsqueeze(-1).repeat(1, 1, x.shape[2]),
+            )
+            freqs_cis_img = torch.index_select(
+                freqs_cis_img, 0, mask_dict["ids_keep"][0]
+            )
 
-        h = super().forward(x, freqs_cis, modulation_signal, attn_impl=attn_impl)
+            h = torch.cat([condition_, x], dim=1)
+            freqs_cis = torch.cat([freqs_cis_cond, freqs_cis_img], dim=0)
 
-        h = h[:, -x_l:, :]
+        h = self.masked_token_mixer(
+            h, freqs_cis, modulation_signal, attn_impl=attn_impl
+        )
+
+        h = h[:, c_l:, :]
 
         out = self.img_output(self.norm(h))
 
-        x = self.unpatchify_image(out, img_size)
+        if self.token_drop_ratio > 0:
+            out = self.unmask_tokens(
+                out, mask_dict["ids_restore"], self.placeholder_token
+            )
 
-        return x
+        x = self.unpatchify_image(out, img_size)
+        if mask_dict is not None:
+            return {"sample": x, "mask": mask_dict["mask"]}
+        else:
+            return {"sample": x}
 
     def unpatchify_image(
         self, x: torch.Tensor, img_size: Tuple[int, int]
@@ -318,6 +358,105 @@ class GenTransformer(BaseDiffusionTransformer):
         x = x[:, :L].view(B, H // pH, W // pW, pH, pW, self.out_channels)
         x = x.permute(0, 5, 1, 3, 2, 4).flatten(4, 5).flatten(2, 3)
         return x
+
+    def full_token_mixer(
+        self,
+        h: torch.Tensor,
+        freqs_cis: torch.Tensor,
+        modulation_signal: torch.Tensor,
+        attn_impl: str = "sdpa",
+    ) -> torch.Tensor:
+
+        if self.attn_type == "causal":
+            seqlen = h.size(1)
+            mask = create_causal_mask(seqlen, attn_impl)
+
+        elif self.attn_type == "full":
+            mask = None
+        else:
+            raise NotImplementedError(f"Not support attention type: {self.attn_type}")
+
+        for idx in range(self.token_mixer_depth):
+            layer = self.layers[idx]
+            if modulation_signal == None:
+                h = layer(h, freqs_cis, mask=mask, attn_impl=attn_impl)
+            else:
+                h = layer(
+                    h, freqs_cis, modulation_signal, mask=mask, attn_impl=attn_impl
+                )
+        return h
+
+    def masked_token_mixer(
+        self,
+        h: torch.Tensor,
+        freqs_cis: torch.Tensor,
+        modulation_signal: torch.Tensor,
+        attn_impl: str = "sdpa",
+    ) -> torch.Tensor:
+        if self.attn_type == "causal":
+            seqlen = h.size(1)
+            mask = create_causal_mask(seqlen, attn_impl)
+
+        elif self.attn_type == "full":
+            mask = None
+        else:
+            raise NotImplementedError(f"Not support attention type: {self.attn_type}")
+
+        for idx in range(self.token_mixer_depth, len(self.layers), 1):
+            layer = self.layers[idx]
+            if modulation_signal == None:
+                h = layer(h, freqs_cis, mask=mask, attn_impl=attn_impl)
+            else:
+                h = layer(
+                    h, freqs_cis, modulation_signal, mask=mask, attn_impl=attn_impl
+                )
+        return h
+
+    def get_mask(
+        self,
+        batch: int,
+        length: int,
+        mask_ratio: float,
+        device: torch.device,
+    ) -> Dict[str, torch.Tensor]:
+        """Get binary mask for input sequence.
+
+        mask: binary mask, 0 is keep, 1 is remove
+        ids_keep: indices of tokens to keep
+        ids_restore: indices to restore the original order
+        from https://github.com/SonyResearch/micro_diffusion/blob/main/micro_diffusion/models/utils.py#L382
+        """
+        len_keep = int(length * (1 - mask_ratio))
+        noise = torch.rand(1, length, device=device).repeat(batch, 1)  # noise in [0, 1]
+        ids_shuffle = torch.argsort(
+            noise, dim=1
+        )  # ascend: small is keep, large is remove
+        ids_restore = torch.argsort(ids_shuffle, dim=1)
+        # keep the first subset
+        ids_keep = ids_shuffle[:, :len_keep]
+
+        mask = torch.ones([1, length], device=device).repeat(batch, 1)
+        mask[:, :len_keep] = 0
+        mask = torch.gather(mask, dim=1, index=ids_restore)
+
+        return {
+            "mask": mask,
+            "ids_keep": ids_keep,
+            "ids_restore": ids_restore,
+        }
+
+    def unmask_tokens(
+        self, x: torch.Tensor, ids_restore: torch.Tensor, mask_token: torch.Tensor
+    ) -> torch.Tensor:
+        """Unmask tokens using provided mask token."""
+        mask_tokens = mask_token.repeat(
+            x.shape[0], ids_restore.shape[1] - x.shape[1], 1
+        )
+        x_ = torch.cat([x, mask_tokens], dim=1)
+        x_ = torch.gather(
+            x_, dim=1, index=ids_restore.unsqueeze(-1).repeat(1, 1, x.shape[2])
+        )  # unshuffle
+        return x_
 
     def reset_parameters(self, init_std=None):
         # Either use fixed base std or sqrt model dim
@@ -392,11 +531,20 @@ class LatentPollux_Gen(nn.Module):
         output = self.gen_transformer(
             x=noised_x, time_steps=t, condition=conditional_signal
         )
-        batch["prediction"] = output
+        batch["prediction"] = output["sample"]
         batch["target"] = target
-        target = target.to(output.dtype)
-        loss = F.mse_loss(output, target)
-
+        target = target.to(output["sample"].dtype)
+        if "mask" in output:
+            batch["mask"] = output["mask"]
+            loss = F.mse_loss(output["sample"], target, reduction="none")
+            loss = F.avg_pool2d(
+                loss.mean(dim=1), self.gen_transformer.patch_size
+            ).flatten(1)
+            unmask = 1 - output["mask"]
+            loss = (loss * unmask).sum(dim=1) / unmask.sum(dim=1)  # (N,)
+            loss = loss.mean()
+        else:
+            loss = F.mse_loss(output["sample"], target)
         return batch, loss
 
     def set_train(self):
