@@ -110,8 +110,8 @@ data:
         "media_path": "image"
     use: True
     dataloader:
-        batch_size: 1
-        num_workers: 4
+        batch_size: 2
+        num_workers: 2
         seed: 1024
         shuffle: True
         pin_memory: False
