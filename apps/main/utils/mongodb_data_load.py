@@ -26,6 +26,8 @@ import torch
 import s3fs
 import boto3
 import wandb
+from apps.main.utils.dict_tensor_data_load import DictTensorBatchIterator
+import ijson
 
 logging.getLogger("pymongo").setLevel(logging.WARNING)
 boto3.set_stream_logger("boto3", level=logging.WARNING)
@@ -59,6 +61,7 @@ class MongoDBDataLoad(Dataset):
         collection_name: str,
         partition_key: str,
         query: dict[str, Any],
+        root_dir: str = None,
     ) -> None:
         super().__init__()
         assert shard_idx >= 0 and shard_idx < num_shards, "Invalid shard index"
@@ -68,6 +71,7 @@ class MongoDBDataLoad(Dataset):
         self.shard_idx = shard_idx
         self.data = None
         self.partition_key = partition_key
+        self.root_dir = root_dir
 
     def set_local_partition(self):
         """
@@ -85,31 +89,45 @@ class MongoDBDataLoad(Dataset):
         );
         """
         logging.info("Data partition begins!")
-        client = MongoClient(MONGODB_URI, tlsCAFile=certifi.where())
-        db = client["world_model"]
-        collection = db[self.collection_name]
-        self.query.update(
-            {
-                f"{self.partition_key}": {"$exists": True},
-                "$expr": {
-                    "$eq": [
-                        {
-                            "$mod": [
-                                {"$toInt": f"${self.partition_key}"},
-                                self.num_shards,  # Total number of shards
-                            ]
-                        },
-                        self.shard_idx,  # Current shard index
-                    ]
-                },
-            }
-        )
-        logging.info(f"Query: {self.query}")
-
         start_time = time.time()  # Record the start time
-        # * download the sub table head for this shard gpu
-        # self.data = list(collection.find(self.query))
-        self.data = pd.DataFrame(list(collection.find(self.query))).reset_index()
+        if self.root_dir is None:
+            client = MongoClient(MONGODB_URI, tlsCAFile=certifi.where())
+            db = client["world_model"]
+            collection = db[self.collection_name]
+            self.query.update(
+                {
+                    f"{self.partition_key}": {"$exists": True},
+                    "$expr": {
+                        "$eq": [
+                            {
+                                "$mod": [
+                                    {"$toInt": f"${self.partition_key}"},
+                                    self.num_shards,  # Total number of shards
+                                ]
+                            },
+                            self.shard_idx,  # Current shard index
+                        ]
+                    },
+                }
+            )
+            logging.info(f"Query: {self.query}")
+
+            # * download the sub table head for this shard gpu
+            # self.data = list(collection.find(self.query))
+            self.data = pd.DataFrame(list(collection.find(self.query))).reset_index()
+
+            client.close()
+        else:
+            logging.info(f"Loading data from local parquet files: {self.root_dir}")
+
+            file_path = os.path.join(self.root_dir, f"{self.collection_name}.json")
+            data = []
+            with open(file_path, "r") as file:
+                for item in ijson.items(file, "item"):
+                    partition_key = int(item[self.partition_key])
+                    if partition_key % self.num_shards == self.shard_idx:
+                        data.append(item)
+            self.data = pd.DataFrame(data).reset_index()
         end_time = time.time()  # Record the end time
         # Calculate the duration in seconds
         elapsed_time = end_time - start_time
@@ -118,8 +136,6 @@ class MongoDBDataLoad(Dataset):
         logging.info(
             f"Data Index retrieval from MongoDB completed in {int(minutes)} minutes and {seconds:.2f} seconds."
         )
-
-        client.close()
 
     def __len__(self) -> int:
         return self.data.index.max()
@@ -134,6 +150,7 @@ class MongoDBImageDataLoad(MongoDBDataLoad):
         num_shards,
         shard_idx,
         query,
+        root_dir,
         collection_name,
         extract_field,
         partition_key,
@@ -145,6 +162,7 @@ class MongoDBImageDataLoad(MongoDBDataLoad):
             collection_name=collection_name,
             query=query,
             partition_key=partition_key,
+            root_dir=root_dir,
         )
         self.image_processing = PolluxImageProcessing(args)
         self.extract_field = extract_field
@@ -203,6 +221,7 @@ class MongoDBParquetDataLoad(MongoDBDataLoad):
         extract_field,
         mapping_field,
         partition_key,
+        root_dir,
         parallel_parquet=4,
         batch_size=64,
     ) -> None:
@@ -212,6 +231,7 @@ class MongoDBParquetDataLoad(MongoDBDataLoad):
             collection_name=collection_name,
             query=query,
             partition_key=partition_key,
+            root_dir=root_dir,
         )
         self.index_boundaries = []  # Cumulative row boundaries for each file
         self.current_df = None
@@ -293,6 +313,7 @@ class MongoDBCaptionDataLoad(MongoDBDataLoad):
         shard_idx,
         query,
         collection_name,
+        root_dir,
         mapping_field,
         partition_key,
     ) -> None:
@@ -302,6 +323,7 @@ class MongoDBCaptionDataLoad(MongoDBDataLoad):
             collection_name=collection_name,
             query=query,
             partition_key=partition_key,
+            root_dir=root_dir,
         )
         self.mapping_field = mapping_field
 
@@ -321,61 +343,3 @@ class MongoDBCaptionDataLoad(MongoDBDataLoad):
                 caption = ""
             return_sample[v] = caption
         return return_sample
-
-
-class DictTensorBatchIterator:
-    def __init__(self, data_dict, batch_size):
-        """
-        Initialize the iterator for batching a dictionary containing tensors and strings.
-
-        Args:
-            data_dict (dict): Dictionary where keys map to strings or tensors.
-            batch_size (int): Desired batch size for the tensors.
-        """
-        self.data_dict = data_dict
-        self.batch_size = batch_size
-
-        # Validate and prepare tensors
-        self.tensor_keys = [
-            key for key, value in data_dict.items() if isinstance(value, torch.Tensor)
-        ]
-
-        self.total_batches = None
-        self.current_batch = 0
-
-        # Remove singleton dimensions (first dimension = 1)
-        for key in self.tensor_keys:
-            tensor = data_dict[key]
-            if tensor.shape[0] == 1:
-                self.data_dict[key] = tensor.squeeze(0)  # Remove singleton dimension
-
-        # Calculate the total number of batches (using the first tensor's shape)
-        if self.tensor_keys:
-            self.total_batches = (
-                self.data_dict[self.tensor_keys[0]].shape[0] // batch_size
-            )
-
-    def __iter__(self):
-        return self
-
-    def __next__(self):
-        """
-        Return the next batch of the dictionary.
-
-        Returns:
-            dict: A dictionary with batched tensors and unchanged strings.
-
-        Raises:
-            StopIteration: If all batches are processed.
-        """
-        if self.tensor_keys and self.current_batch >= self.total_batches:
-            raise StopIteration
-
-        batch = {}
-        for key, value in self.data_dict.items():
-            start_idx = self.current_batch * self.batch_size
-            end_idx = start_idx + self.batch_size
-            batch[key] = value[start_idx:end_idx]
-
-        self.current_batch += 1
-        return batch
