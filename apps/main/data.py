@@ -26,7 +26,8 @@ from apps.main.utils.mongodb_data_load import (
     MongoDBCaptionDataLoad,
 )
 from apps.main.utils.sampler import StatefulDistributedSampler
-from apps.main.utils.mongodb_data_load import DictTensorBatchIterator
+from apps.main.utils.local_parquet_data_load import LocalParquetDataLoad
+
 
 logger = logging.getLogger()
 
@@ -89,7 +90,7 @@ class DataArgs:
     mapping_field: Optional[Dict[str, str]] = field(
         default_factory=dict
     )  # which parquet column name field is used in parquet data. it is a dataset specific field
-
+    shape_field: Optional[Dict[str, str]] = field(default_factory=dict)
     # * DataLoader specific args
     dataloader: DataLoaderArgs = field(default_factory=DataLoaderArgs)
 
@@ -117,6 +118,8 @@ class AutoDataLoader:
             try:
                 if dataset_config.source == "mongodb":
                     return self._create_mongodb_dataloader(dataset_config)
+                elif dataset_config.source == "local_parquet":
+                    return self._create_local_parquet_dataloader(dataset_config)
                 else:
                     raise ValueError(
                         f"Unsupported data source: {dataset_config.source}"
@@ -134,7 +137,19 @@ class AutoDataLoader:
         self, args: DataArgs
     ) -> Tuple[DataLoader, StatefulDistributedSampler]:
         record_batch_size = args.dataloader.batch_size
-        if args.data_name in ["cc12m", "bucket-256-1", "bucket-hq", "bucket-256-2"]:
+        if args.data_name in [
+            "cc12m",
+            "bucket-256-1",
+            "bucket-hq",
+            "bucket-256-2",
+            "bucket-256-3",
+            "bucket-256-4",
+            "bucket-256-5",
+            "bucket-256-6",
+            "bucket-256-7",
+            "bucket-256-8",
+            "bucket-256-9",
+        ]:
             dataset = MongoDBImageDataLoad(
                 collection_name=args.data_name,
                 query=args.query,
@@ -142,6 +157,7 @@ class AutoDataLoader:
                 num_shards=self.num_shards,
                 extract_field=args.extract_field,  # {"s3url": "image",}
                 partition_key=args.partition_key,
+                root_dir=args.root_dir,
                 args=args,
             )
         elif args.data_name in [
@@ -155,6 +171,7 @@ class AutoDataLoader:
                 query=args.query,
                 shard_idx=self.shard_id,
                 num_shards=self.num_shards,
+                root_dir=args.root_dir,
                 extract_field=args.extract_field,  # {"parquet_size": "sample_num","parquet_path": "path",}
                 mapping_field=args.mapping_field,  # {"HunyuanVideo_latent_code": "latent_code","LLAMA3_3B_text_embedding": "text_embedding",},
                 partition_key=args.partition_key,
@@ -173,6 +190,7 @@ class AutoDataLoader:
                 query=args.query,
                 shard_idx=self.shard_id,
                 num_shards=self.num_shards,
+                root_dir=args.root_dir,
                 mapping_field=args.mapping_field,
                 partition_key=args.partition_key,
             )
@@ -180,6 +198,25 @@ class AutoDataLoader:
             raise ValueError(f"Unsupported MongoDB dataset: {args.data_name}")
 
         dataset.set_local_partition()
+        self.dataset = dataset
+        data_loader, sampler = self._warp_dataloader_with_stateful_sampler(
+            args, dataset
+        )
+        args.dataloader.batch_size = record_batch_size
+        return data_loader, sampler
+
+    def _create_local_parquet_dataloader(
+        self, args: DataArgs
+    ) -> Tuple[DataLoader, StatefulDistributedSampler]:
+        dataset = LocalParquetDataLoad(
+            root_dir=args.root_dir,
+            num_shards=self.num_shards,
+            shard_idx=self.shard_id,
+            mapping_field=args.mapping_field,
+            shape_field=args.shape_field,
+        )
+        record_batch_size = args.dataloader.batch_size
+        args.dataloader.batch_size = 1
         self.dataset = dataset
         data_loader, sampler = self._warp_dataloader_with_stateful_sampler(
             args, dataset

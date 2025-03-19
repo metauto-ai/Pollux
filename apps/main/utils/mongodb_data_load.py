@@ -27,6 +27,10 @@ import s3fs
 import boto3
 import wandb
 from apps.main.utils.dict_tensor_data_load import DictTensorBatchIterator
+<<<<<<< HEAD
+=======
+import ijson
+>>>>>>> 356b16039900258f4dfdd11fa6bddbd637f0b99a
 
 logging.getLogger("pymongo").setLevel(logging.WARNING)
 boto3.set_stream_logger("boto3", level=logging.WARNING)
@@ -60,6 +64,7 @@ class MongoDBDataLoad(Dataset):
         collection_name: str,
         partition_key: str,
         query: dict[str, Any],
+        root_dir: str = None,
     ) -> None:
         super().__init__()
         assert shard_idx >= 0 and shard_idx < num_shards, "Invalid shard index"
@@ -69,6 +74,7 @@ class MongoDBDataLoad(Dataset):
         self.shard_idx = shard_idx
         self.data = None
         self.partition_key = partition_key
+        self.root_dir = root_dir
 
     def set_local_partition(self):
         """
@@ -86,31 +92,45 @@ class MongoDBDataLoad(Dataset):
         );
         """
         logging.info("Data partition begins!")
-        client = MongoClient(MONGODB_URI, tlsCAFile=certifi.where())
-        db = client["world_model"]
-        collection = db[self.collection_name]
-        self.query.update(
-            {
-                f"{self.partition_key}": {"$exists": True},
-                "$expr": {
-                    "$eq": [
-                        {
-                            "$mod": [
-                                {"$toInt": f"${self.partition_key}"},
-                                self.num_shards,  # Total number of shards
-                            ]
-                        },
-                        self.shard_idx,  # Current shard index
-                    ]
-                },
-            }
-        )
-        logging.info(f"Query: {self.query}")
-
         start_time = time.time()  # Record the start time
-        # * download the sub table head for this shard gpu
-        # self.data = list(collection.find(self.query))
-        self.data = pd.DataFrame(list(collection.find(self.query))).reset_index()
+        if self.root_dir is None:
+            client = MongoClient(MONGODB_URI, tlsCAFile=certifi.where())
+            db = client["world_model"]
+            collection = db[self.collection_name]
+            self.query.update(
+                {
+                    f"{self.partition_key}": {"$exists": True},
+                    "$expr": {
+                        "$eq": [
+                            {
+                                "$mod": [
+                                    {"$toInt": f"${self.partition_key}"},
+                                    self.num_shards,  # Total number of shards
+                                ]
+                            },
+                            self.shard_idx,  # Current shard index
+                        ]
+                    },
+                }
+            )
+            logging.info(f"Query: {self.query}")
+
+            # * download the sub table head for this shard gpu
+            # self.data = list(collection.find(self.query))
+            self.data = pd.DataFrame(list(collection.find(self.query))).reset_index()
+
+            client.close()
+        else:
+            logging.info(f"Loading data from local parquet files: {self.root_dir}")
+
+            file_path = os.path.join(self.root_dir, f"{self.collection_name}.json")
+            data = []
+            with open(file_path, "r") as file:
+                for item in ijson.items(file, "item"):
+                    partition_key = int(item[self.partition_key])
+                    if partition_key % self.num_shards == self.shard_idx:
+                        data.append(item)
+            self.data = pd.DataFrame(data).reset_index()
         end_time = time.time()  # Record the end time
         # Calculate the duration in seconds
         elapsed_time = end_time - start_time
@@ -119,8 +139,6 @@ class MongoDBDataLoad(Dataset):
         logging.info(
             f"Data Index retrieval from MongoDB completed in {int(minutes)} minutes and {seconds:.2f} seconds."
         )
-
-        client.close()
 
     def __len__(self) -> int:
         return self.data.index.max()
@@ -135,6 +153,7 @@ class MongoDBImageDataLoad(MongoDBDataLoad):
         num_shards,
         shard_idx,
         query,
+        root_dir,
         collection_name,
         extract_field,
         partition_key,
@@ -146,6 +165,7 @@ class MongoDBImageDataLoad(MongoDBDataLoad):
             collection_name=collection_name,
             query=query,
             partition_key=partition_key,
+            root_dir=root_dir,
         )
         self.image_processing = PolluxImageProcessing(args)
         self.extract_field = extract_field
@@ -204,6 +224,7 @@ class MongoDBParquetDataLoad(MongoDBDataLoad):
         extract_field,
         mapping_field,
         partition_key,
+        root_dir,
         parallel_parquet=4,
         batch_size=64,
     ) -> None:
@@ -213,6 +234,7 @@ class MongoDBParquetDataLoad(MongoDBDataLoad):
             collection_name=collection_name,
             query=query,
             partition_key=partition_key,
+            root_dir=root_dir,
         )
         self.index_boundaries = []  # Cumulative row boundaries for each file
         self.current_df = None
@@ -294,6 +316,7 @@ class MongoDBCaptionDataLoad(MongoDBDataLoad):
         shard_idx,
         query,
         collection_name,
+        root_dir,
         mapping_field,
         partition_key,
     ) -> None:
@@ -303,6 +326,7 @@ class MongoDBCaptionDataLoad(MongoDBDataLoad):
             collection_name=collection_name,
             query=query,
             partition_key=partition_key,
+            root_dir=root_dir,
         )
         self.mapping_field = mapping_field
 
