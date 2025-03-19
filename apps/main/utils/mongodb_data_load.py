@@ -27,10 +27,7 @@ import s3fs
 import boto3
 import wandb
 from apps.main.utils.dict_tensor_data_load import DictTensorBatchIterator
-<<<<<<< HEAD
-=======
 import ijson
->>>>>>> 356b16039900258f4dfdd11fa6bddbd637f0b99a
 
 logging.getLogger("pymongo").setLevel(logging.WARNING)
 boto3.set_stream_logger("boto3", level=logging.WARNING)

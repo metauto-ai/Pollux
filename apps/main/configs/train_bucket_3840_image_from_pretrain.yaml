@@ -62,8 +62,6 @@ model:
             pre_trained_path:  /mnt/pollux/checkpoints/Llama-3.2-1B/original/consolidated.00.pth
             attn_type: 'full'
             plan_transformer_dim: 3072
-            token_drop_ratio: 0.25
-            token_mixer_depth: 8
     plan:
         text_cfg_ratio: 0.1
         image_cfg_ratio: 0.1
