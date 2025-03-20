@@ -6,6 +6,7 @@ from transformers import (
 from qwen_vl_utils import process_vision_info
 from io import BytesIO
 import base64
+import re
 
 
 class MultimodalAsJudge:
@@ -14,47 +15,57 @@ class MultimodalAsJudge:
             "/mnt/pollux/checkpoints/Qwen2.5-VL-7B-Instruct",
             torch_dtype="auto",
         ).cuda()
+        min_pixels = 256 * 28 * 28
+        max_pixels = 1024 * 28 * 28
         self.processor = AutoProcessor.from_pretrained(
-            "/mnt/pollux/checkpoints/Qwen2.5-VL-7B-Instruct"
+            "/mnt/pollux/checkpoints/Qwen2.5-VL-7B-Instruct",
+            min_pixels=min_pixels,
+            max_pixels=max_pixels,
         )
         self.system_prompt = """
         Role:
+        You are an expert vision-language model designed to evaluate two images based on their alignment with a given text prompt and their visual quality.
+
+        Task Description:
+        Evaluate two images based on their alignment with the provided prompt and their visual quality. Assign a float score between 0 and 1, where:
+
+        Score close to 1 — Image 1 is significantly better aligned with the prompt and has superior visual quality.
+        Score close to 0 — Image 2 is significantly better aligned with the prompt and has superior visual quality.
         
-        You are an expert vision-language model trained to evaluate image quality and alignment with a given text prompt. Your goal is to assess two images and assign a score that reflects their overall alignment with the prompt and visual quality.
+        Input Format:
+        You will receive:
+        Two images: Image 1 and Image 2
+        A text prompt describing the desired visual content
 
         Evaluation Criteria:
 
         Prompt Alignment:
-
         Assess how accurately the content, composition, and key visual elements match the provided prompt.
         Prioritize fidelity to the described scene, objects, and attributes.
+        
         Visual Quality:
-
         Evaluate clarity, sharpness, and detail.
         Penalize artifacts, distortions, and unrealistic visual elements.
-        Scoring Guidelines:
+        
+        Prompt Alignment is important than Visual Quality. If both images are equally aligned with the prompt, prioritize Visual Quality.
 
-        Assign a float score between 0 and 1:
-        1.0 — Perfect alignment with the prompt and flawless visual quality.
-        0.8 - 0.9 — Strong alignment with minimal imperfections.
-        0.6 - 0.7 — Partial alignment with notable quality issues or prompt deviation.
-        0.3 - 0.5 — Weak alignment or significant visual defects.
-        0.0 - 0.2 — Severe distortion, irrelevant content, or complete mismatch.
         Output Format:
-
-        Return only the score in the format: Score: <value>
-        Do not provide explanations unless requested.
+        Return a single float score in the format: Score: <value>
+        Avoid additional comments or explanations unless explicitly requested.
+        
         Example Prompt:
         "A cat sitting on a wooden table in a cozy room with warm lighting."
 
-        Example Image Evaluations:
+        Example Output:
+        If Image 1 is significantly better: Score: 0.9
+        If Image 2 is significantly better: Score: 0.1
 
-        Image A: Clear, sharp, and faithfully represents the scene — Score: 0.9
-        Image B: Blurry with distorted lighting and missing key elements — Score: 0.4
-        Instructions:
+        Important Notes:
 
-        Maintain consistency in scoring.
-        Focus strictly on visual alignment and quality without external bias.
+        The score should only reflect relative comparison — not absolute quality scores.
+        Maintain consistency in scoring even if both images are poor-quality or fail to align with the prompt.
+    
+
         """
 
     def generate_image_caption(self, messages):
@@ -94,6 +105,13 @@ class MultimodalAsJudge:
         image.save(buffered, format="JPEG")
         return base64.b64encode(buffered.getvalue()).decode("utf-8")
 
+    def filter_caption(self, caption):
+        match = re.search(r"Score:\s*([0-9]*\.?[0-9]+)", caption)
+        if match:
+            return float(match.group(1))
+        else:
+            raise ValueError("Score not found in response.")
+
     def scoring(self, batch):
         assert "caption" in batch, "The batch must contain a 'caption' key."
         assert "img_model_1" in batch, "The batch must contain an 'image_1' key."
@@ -115,20 +133,26 @@ class MultimodalAsJudge:
                             {
                                 "type": "image",
                                 "image": f'data:image;base64,{batch["img_model_1"][idx]}',
+                                "min_pixels": 50176,
+                                "max_pixels": 50176,
                             },
                             {
                                 "type": "image",
                                 "image": f'data:image;base64,{batch["img_model_2"][idx]}',
+                                "min_pixels": 50176,
+                                "max_pixels": 50176,
                             },
                             {
                                 "type": "text",
-                                "text": f'The caption is {batch["caption"][idx]}.',
+                                "text": f'The prompt is {batch["caption"][idx]}.',
                             },
                         ],
                     },
                 ]
             )
-        return self.generate_image_caption(messages)
+        results = self.generate_image_caption(messages)
+        filtered_results = [self.filter_caption(res) for res in results]
+        return filtered_results
 
 
 if __name__ == "__main__":
@@ -136,21 +160,22 @@ if __name__ == "__main__":
     from PIL import Image
     from io import BytesIO
 
-    url = "https://ayon.blob.core.windows.net/flickr-images/13586111764.jpg"
+    url = "https://ayon.blob.core.windows.net/pexelimages/22863019.jpg"
     response = requests.get(url)
     response.raise_for_status()  # Ensure the request was successful
 
     # Open the image with PIL
     image_1 = Image.open(BytesIO(response.content))
 
-    url = "https://ayon.blob.core.windows.net/flickr-images/13587636944.jpg"
+    url = "https://ayon.blob.core.windows.net/pexelimages/18853330.jpg"
     response = requests.get(url)
     response.raise_for_status()  # Ensure the request was successful
 
     # Open the image with PIL
     image_2 = Image.open(BytesIO(response.content))
 
-    prompt = "A serene harbor scene unfolds with several boats gently bobbing on the calm waters, their reflections shimmering on the surface. In the foreground, a small white boat with a black outboard motor is anchored, while a larger boat with a blue cover and a wooden deck is moored nearby. The backdrop features a picturesque row of vibrant, multicolored buildings with terracotta roofs, standing against a backdrop of a hill crowned with a medieval castle. The sky is clear and bright, casting a warm glow over the scene, and the overall mood is tranquil and idyllic, reminiscent of a classic Mediterranean coastal town."
+    # prompt = "A close-up portrait of a charming orange and white cat with striking green eyes and a pink nose, lounging comfortably in front of a lush, vibrant bouquet of lavender flowers. The cat's fur is a mix of soft, creamy white and warm, rich orange, with a tuft of white fur on its chest. The lavender flowers, with their delicate purple petals and green leaves, are arranged in a tall, slender vase, adding a touch of natural elegance to the scene. The lighting is soft and warm, casting gentle shadows and highlighting the cat's expressive features and the intricate details of the flowers. The composition is intimate and cozy, capturing the serene and peaceful atmosphere of a moment spent with a beloved pet."
+    prompt = "A meticulously arranged table setting features a three-tiered tiered tray with a top layer adorned with fresh rosemary leaves, a middle layer showcasing neatly sliced lemons, and a bottom layer with a variety of small, round, yellow biscuits. Adjacent to the tray, a wooden bowl filled with dark, aromatic spices sits on a wooden stand, while another bowl contains small, bright red berries. Behind the tray, an assortment of bottles with labels such as `S` and `Gin` are arranged in a row, creating a warm and inviting atmosphere with soft, ambient lighting."
 
     batch = {"caption": [prompt], "img_model_1": [image_1], "img_model_2": [image_2]}
     mm_judge = MultimodalAsJudge()
