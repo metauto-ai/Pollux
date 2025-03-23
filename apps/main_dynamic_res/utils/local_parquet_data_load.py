@@ -100,15 +100,23 @@ class LocalParquetDataLoad(Dataset):
                             )
                     else:
                         return_parquet[k_].append(v)
-        for k, v in return_parquet.items():
-            if isinstance(v[0], torch.Tensor):
-                return_parquet[k] = torch.stack(v, dim=0)
         return return_parquet
 
 
 if __name__ == "__main__":
-    file = "/mnt/pollux/nemo/data/sample-latents/00000.parquet"
-    table = pq.read_table(file, memory_map=True)
-    cur_df = table.to_pandas()
-    records = cur_df.to_dict(orient="records")
-    print(records)
+    data = LocalParquetDataLoad(
+        root_dir="/mnt/pollux/nemo/data/sample-latents",
+        num_shards=1,
+        shard_idx=0,
+        mapping_field={
+            "image_latent_512": "gen_latent_code",
+            "image_latent_256": "plan_latent_code",
+            "caption": "caption",
+        },
+        shape_field={
+            "image_latent_256": "image_latent_shape_256",
+            "image_latent_512": "image_latent_shape_512",
+        },
+    )
+    print(len(data[0]["caption"]))
+    print(data[0]["gen_latent_code"][0].shape)
