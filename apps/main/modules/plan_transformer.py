@@ -542,6 +542,8 @@ class Latent_Pollux_Plan(nn.Module):
             images_embs_pad = self.mask_token.expand(
                 B, L - len_keep, D
             )  # [16, 52, 3072]
+            images_embs_pad = images_embs_pad + torch.randn_like(images_embs_pad) * 1e-4
+
             freqs_cis_img_mask = torch.index_select(
                 freqs_cis_img, 0, ids_mask[0]
             )  # [52, 64, 2, 2]

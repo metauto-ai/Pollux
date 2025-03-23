@@ -1,11 +1,11 @@
-# torchrun --standalone --nnodes 1 --nproc-per-node 8 -m apps.main.train config=apps/main/configs/train_bucket_256_latent_code.yaml
+# torchrun --standalone --nnodes 1 --nproc-per-node 4 -m apps.main.train config=apps/main/configs/train_bucket_256_latent_code.yaml
 
 # Set up single experiment
 version: v1.0
 # From now on, start to align train, data, and model setting with train stage (just finish refactor for dara)
 train_stage: stage-1 # options: preliminary, pretraining, posttraining; aligned with data setting
-name: Pollux_v1.0_joint_training_config_update_double_check #used for local dump and wandb log
-output_dir: /jfs/checkpoints/dump
+name: Pollux_v1.0_joint_training_noised_mask #used for local dump and wandb log
+output_dir: /mnt/pollux/checkpoints/dump
 dump_dir: '' # No need now
 steps: 500000
 seed: 777
@@ -17,9 +17,9 @@ optim:
     weight_decay: 0.01
 
 distributed:
-    gpus: 0,1,2,3,4,5,6,7
+    gpus: 0,1,2,3
     fsdp_type: full_shard
-    dp_shard: 8
+    dp_shard: 4
     dp_replicate: 1
     compile: false
     model_dtype: bf16 # options: `fb8` is only supported by H100
@@ -59,7 +59,7 @@ model:
             gen_seqlen: 256
             condition_seqlen: 320
             norm_eps: 1e-5
-            pre_trained_path:  /jfs/checkpoints/Llama-3.2-1B/original/consolidated.00.pth
+            pre_trained_path:  /mnt/pollux/checkpoints/Llama-3.2-1B/original/consolidated.00.pth
             attn_type: 'full'
             plan_transformer_dim: 3072
     plan:
@@ -70,7 +70,7 @@ model:
             patchify_size: 2
             output_dim: 3072
         tokenizer:
-            model_name: "/jfs/checkpoints/Llama-3.2-3B"
+            model_name: "/mnt/pollux/checkpoints/Llama-3.2-3B"
         llm:
             dim: 3072
             ffn_dim_multiplier: 1.0
@@ -80,7 +80,7 @@ model:
             n_kv_heads: 8
             norm_eps: 1e-5
             rope_theta: 500000.0
-            pre_trained_path: /jfs/checkpoints/Llama-3.2-3B/original/consolidated.00.pth
+            pre_trained_path: /mnt/pollux/checkpoints/Llama-3.2-3B/original/consolidated.00.pth
             from_llama: true
             gen_seqlen: 256
             condition_seqlen: 320
@@ -105,7 +105,7 @@ data:
         "caption": "caption"
     use: True
     dataloader:
-        batch_size: 18
+        batch_size: 16
         num_workers: 4
         seed: 1024
         shuffle: True
