@@ -58,7 +58,7 @@ model:
             gen_seqlen: 256
             condition_seqlen: 320
             norm_eps: 1e-5
-            pre_trained_path:  /jfs/checkpoints/Llama-3.2-1B/original/consolidated.00.pth
+            pre_trained_path:  /mnt/pollux/checkpoints/Llama-3.2-1B/original/consolidated.00.pth
             attn_type: 'full'
             plan_transformer_dim: 3072
     plan:
@@ -69,7 +69,7 @@ model:
             patchify_size: 2
             output_dim: 3072
         tokenizer:
-            model_name: "/jfs/checkpoints/Llama-3.2-3B"
+            model_name: "/mnt/pollux/checkpoints/Llama-3.2-3B"
         llm:
             dim: 3072
             ffn_dim_multiplier: 1.0
@@ -79,7 +79,7 @@ model:
             n_kv_heads: 8
             norm_eps: 1e-5
             rope_theta: 500000.0
-            pre_trained_path: /jfs/checkpoints/Llama-3.2-3B/original/consolidated.00.pth
+            pre_trained_path: /mnt/pollux/checkpoints/Llama-3.2-3B/original/consolidated.00.pth
             from_llama: true
             gen_seqlen: 256
             condition_seqlen: 320
@@ -88,7 +88,7 @@ model:
     with_vae: true
     vae_args:
         model_name: Hunyuan
-        pretrained_model_name_or_path: '/jfs/checkpoints/models--tencent--HunyuanVideo/snapshots/2a15b5574ee77888e51ae6f593b2ceed8ce813e5/vae'
+        pretrained_model_name_or_path: '/mnt/pollux/checkpoints/HunyuanVideo/vae'
         enable_tiling: false
         enable_slicing: false
 data:  

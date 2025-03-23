@@ -24,7 +24,7 @@ class DictTensorBatchIterator:
         # Remove singleton dimensions (first dimension = 1)
         for key in self.tensor_keys:
             tensor = data_dict[key]
-            if tensor.shape[0] == 1:
+            if tensor.shape[0] == 1 and len(tensor.shape) > 4:
                 self.data_dict[key] = tensor.squeeze(0)  # Remove singleton dimension
 
         # Calculate the total number of batches (using the first tensor's shape)
