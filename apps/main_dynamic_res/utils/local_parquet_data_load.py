@@ -104,6 +104,11 @@ class LocalParquetDataLoad(Dataset):
 
 
 if __name__ == "__main__":
+    from torch.utils.data import Dataset, DataLoader
+    from apps.main_dynamic_res.utils.dict_tensor_data_load import (
+        DictTensorBatchIterator,
+    )
+
     data = LocalParquetDataLoad(
         root_dir="/mnt/pollux/nemo/data/sample-latents",
         num_shards=1,
@@ -118,5 +123,17 @@ if __name__ == "__main__":
             "image_latent_512": "image_latent_shape_512",
         },
     )
-    print(len(data[0]["caption"]))
-    print(data[0]["gen_latent_code"][1].shape)
+    sample_data = DataLoader(
+        data,
+        batch_size=1,
+        collate_fn=lambda x: x,
+    )
+    sample_data = iter(sample_data)
+    doc = next(sample_data)
+    batch = next(DictTensorBatchIterator(doc[0], batch_size=64))
+    for plan, gen in zip(batch["plan_latent_code"], batch["gen_latent_code"]):
+        print(plan.shape)
+        print(gen.shape)
+        print("==================")
+    print(batch["caption"])
+print("Done")

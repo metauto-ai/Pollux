@@ -13,25 +13,11 @@ class DictTensorBatchIterator:
         self.data_dict = data_dict
         self.batch_size = batch_size
 
-        # Validate and prepare tensors
-        self.tensor_keys = [
-            key for key, value in data_dict.items() if isinstance(value, torch.Tensor)
-        ]
-
         self.total_batches = None
         self.current_batch = 0
 
-        # Remove singleton dimensions (first dimension = 1)
-        for key in self.tensor_keys:
-            tensor = data_dict[key]
-            if tensor.shape[0] == 1:
-                self.data_dict[key] = tensor.squeeze(0)  # Remove singleton dimension
-
         # Calculate the total number of batches (using the first tensor's shape)
-        if self.tensor_keys:
-            self.total_batches = (
-                self.data_dict[self.tensor_keys[0]].shape[0] // batch_size
-            )
+        self.total_batches = len(next(iter(self.data_dict.values()))) // batch_size
 
     def __iter__(self):
         return self
@@ -46,7 +32,7 @@ class DictTensorBatchIterator:
         Raises:
             StopIteration: If all batches are processed.
         """
-        if self.tensor_keys and self.current_batch >= self.total_batches:
+        if self.current_batch >= self.total_batches:
             raise StopIteration
 
         batch = {}
