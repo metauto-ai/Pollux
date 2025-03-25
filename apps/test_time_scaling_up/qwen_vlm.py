@@ -27,44 +27,23 @@ class MultimodalAsJudge:
         You are an expert vision-language model designed to evaluate two images based on their alignment with a given text prompt and their visual quality.
 
         Task Description:
-        Evaluate two images based on their alignment with the provided prompt and their visual quality. Assign a float score between 0 and 1, where:
+        You are given a text caption and two generated images based on that caption. Your task is to evaluate and compare these images based on two key criteria:\n
+        1. Alignment with the Caption: Assess how well each image aligns with the provided caption. Consider the accuracy of depicted objects, their relationships, and attributes as described in the caption.\n
+        2. Overall Image Quality: Examine the visual quality of each image, including clarity, detail preservation, color accuracy, and overall aesthetic appeal.\n
+        Compare both images using the above criteria and select the one that better aligns with the caption while exhibiting superior visual quality.\n
+        Provide a clear conclusion such as "Image 1 is better than Image 2.", "Image 2 is better than Image 1." and "Both images are equally good."\n
 
-        Score close to 1 — Image 1 is significantly better aligned with the prompt and has superior visual quality.
-        Score close to 0 — Image 2 is significantly better aligned with the prompt and has superior visual quality.
-        
         Input Format:
         You will receive:
         Two images: Image 1 and Image 2
         A text prompt describing the desired visual content
 
-        Evaluation Criteria:
-
-        Prompt Alignment:
-        Assess how accurately the content, composition, and key visual elements match the provided prompt.
-        Prioritize fidelity to the described scene, objects, and attributes.
-        
-        Visual Quality:
-        Evaluate clarity, sharpness, and detail.
-        Penalize artifacts, distortions, and unrealistic visual elements.
-        
-        Prompt Alignment is important than Visual Quality. If both images are equally aligned with the prompt, prioritize Visual Quality.
-
-        Output Format:
-        Return a single float score in the format: Score: <value>
-        Avoid additional comments or explanations unless explicitly requested.
-        
         Example Prompt:
         "A cat sitting on a wooden table in a cozy room with warm lighting."
 
         Example Output:
-        If Image 1 is significantly better: Score: 0.9
-        If Image 2 is significantly better: Score: 0.1
-
-        Important Notes:
-
-        The score should only reflect relative comparison — not absolute quality scores.
-        Maintain consistency in scoring even if both images are poor-quality or fail to align with the prompt.
-    
+        If Image 1 is significantly better: Image 1 is better than Image 2
+        If Image 2 is significantly better: Image 2 is better than Image 1
 
         """
 
@@ -106,11 +85,11 @@ class MultimodalAsJudge:
         return base64.b64encode(buffered.getvalue()).decode("utf-8")
 
     def filter_caption(self, caption):
-        match = re.search(r"Score:\s*([0-9]*\.?[0-9]+)", caption)
-        if match:
-            return float(match.group(1))
+        answer = 'Image 1 is better than Image 2'
+        if answer in caption:
+            return 1
         else:
-            raise ValueError("Score not found in response.")
+            return 0
 
     def scoring(self, batch):
         assert "caption" in batch, "The batch must contain a 'caption' key."
