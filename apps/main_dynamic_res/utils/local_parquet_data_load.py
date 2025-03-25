@@ -119,4 +119,4 @@ if __name__ == "__main__":
         },
     )
     print(len(data[0]["caption"]))
-    print(data[0]["gen_latent_code"][0].shape)
+    print(data[0]["gen_latent_code"][1].shape)

@@ -7,11 +7,11 @@ import random
 import torch
 from torch import nn
 import torch.nn.functional as F
-from apps.main.modules.gen_transformer import ModelArgs as PolluxGenArgs
-from apps.main.modules.gen_transformer import LatentPollux_Gen
+from apps.main_dynamic_res.modules.gen_transformer import ModelArgs as PolluxGenArgs
+from apps.main_dynamic_res.modules.gen_transformer import LatentPollux_Gen
 
-from apps.main.modules.plan_transformer import ModelArgs as PolluxPlanArgs
-from apps.main.modules.plan_transformer import Latent_Pollux_Plan
+from apps.main_dynamic_res.modules.plan_transformer import ModelArgs as PolluxPlanArgs
+from apps.main_dynamic_res.modules.plan_transformer import Latent_Pollux_Plan
 
 from apps.main.modules.vae import build_vae, LatentVideoVAEArgs
 
@@ -49,8 +49,14 @@ class Latent_Pollux(nn.Module):
 
     def forward(self, batch: dict[str:any]) -> dict[str:any]:
         if hasattr(self, "compressor"):
-            batch["gen_latent_code"] = self.compressor.encode(batch["image"])
-            batch["plan_latent_code"] = self.compressor.encode(batch["image_cond"])
+            batch["gen_latent_code"] = [
+                self.compressor.encode(image.unsqueeze(0)) for image in batch["image"]
+            ]
+            batch["gen_latent_code"] = [
+                self.compressor.encode(image.unsqueeze(0))
+                for image in batch["image_cond"]
+            ]
+        raise NotImplementedError("This method is not implemented")
         with torch.set_grad_enabled(self.plan_model.is_train):
             plan_output, plan_loss = self.plan_model(batch)
         with torch.set_grad_enabled(self.gen_model.is_train):
