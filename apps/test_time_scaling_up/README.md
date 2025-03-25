@@ -1,6 +1,6 @@
 ## Test-time Scaling up 
 
-We use multiple SOTA test-time scaling up methods to score images from candidates to boost model performance.
+We use multiple SOTA test-time scaling up methods to score and select images from candidates to boost model performance.
 
 ## Environment Requirement
 
