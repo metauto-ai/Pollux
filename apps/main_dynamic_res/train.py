@@ -61,7 +61,7 @@ from apps.main_dynamic_res.data import AutoDataLoader, DataArgs
 from apps.main_dynamic_res.utils.dict_tensor_data_load import DictTensorBatchIterator
 from apps.main.modules.schedulers import SchedulerArgs
 from apps.main.utils.sampler import StatefulDistributedSampler
-from apps.main.model import (
+from apps.main_dynamic_res.model import (
     Latent_Pollux,
     ModelArgs,
     build_fsdp_grouping_plan,
@@ -367,7 +367,7 @@ def train(args: TrainArgs):
                     dataloader_iterator = iter(data_loader)
                     batch = next(dataloader_iterator)
                 parquet_iterator = DictTensorBatchIterator(
-                    batch, active_data[0].dataloader.batch_size
+                    batch[0], active_data[0].dataloader.batch_size
                 )
                 batch = next(parquet_iterator)
             if "_id" in batch:
@@ -378,15 +378,20 @@ def train(args: TrainArgs):
                 # run the GC at different times so they slow down the whole pipeline
                 gc.collect()
             if "gen_latent_code" in batch:
-                batch["gen_latent_code"] = batch["gen_latent_code"].cuda()
+                batch["gen_latent_code"] = [
+                    latent_code.cuda() for latent_code in batch["gen_latent_code"]
+                ]
                 if "plan_latent_code" not in batch:
-                    batch["plan_latent_code"] = batch["gen_latent_code"].cuda()
-                batch["plan_latent_code"] = batch["plan_latent_code"].cuda()
-                nwords_since_last_log += batch["gen_latent_code"].numel()
-                nwords_since_last_log += batch["plan_latent_code"].numel()
-            elif "image" in batch:
-                batch["image"] = batch["image"].cuda()
-                nwords_since_last_log += batch["image"].numel()
+                    batch["plan_latent_code"] = batch["gen_latent_code"]
+                batch["plan_latent_code"] = [
+                    latent_code.cuda() for latent_code in batch["plan_latent_code"]
+                ]
+                nwords_since_last_log += batch["gen_latent_code"][0].numel() * len(
+                    batch["gen_latent_code"]
+                )
+                nwords_since_last_log += batch["plan_latent_code"][0].numel() * len(
+                    batch["gen_latent_code"]
+                )
             else:
                 raise ValueError("No image or latent code in batch")
             data_load_time = round(timer() - data_load_start, 4)
