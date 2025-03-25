@@ -8,9 +8,6 @@ import PIL.Image
 from tqdm import tqdm
 from transformers import AutoModel
 
-model = None
-
-
 class NvilaVerifier():
     def __init__(self):
         model_name = "/mnt/pollux/checkpoints/NVILA-Lite-2B"
