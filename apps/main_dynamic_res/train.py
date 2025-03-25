@@ -57,8 +57,8 @@ from lingua.metrics import (
 from lingua.optim import OptimArgs, build_optimizer
 from lingua.profiling import ProfilerArgs, maybe_run_profiler
 
-from apps.main.data import AutoDataLoader, DataArgs
-from apps.main.utils.dict_tensor_data_load import DictTensorBatchIterator
+from apps.main_dynamic_res.data import AutoDataLoader, DataArgs
+from apps.main_dynamic_res.utils.dict_tensor_data_load import DictTensorBatchIterator
 from apps.main.modules.schedulers import SchedulerArgs
 from apps.main.utils.sampler import StatefulDistributedSampler
 from apps.main.model import (
