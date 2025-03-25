@@ -22,3 +22,4 @@ python-dotenv
 s3fs 
 boto3
 python-dotenv
+ijson
