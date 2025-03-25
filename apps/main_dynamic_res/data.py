@@ -95,6 +95,10 @@ class DataArgs:
     dataloader: DataLoaderArgs = field(default_factory=DataLoaderArgs)
 
 
+def identity_collate(batch):
+    return batch
+
+
 class AutoDataLoader:
     def __init__(
         self,
@@ -161,11 +165,13 @@ class AutoDataLoader:
             rank=self.shard_id,
             shuffle=dataloader_args.shuffle,
         )
+
         return (
             DataLoader(
                 dataset,
                 batch_size=dataloader_args.batch_size,
                 sampler=sampler,
+                collate_fn=identity_collate,
                 worker_init_fn=partial(worker_init, seed=dataloader_args.seed),
                 drop_last=dataloader_args.drop_last,
                 pin_memory=dataloader_args.pin_memory,
