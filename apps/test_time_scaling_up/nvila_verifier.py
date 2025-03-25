@@ -11,7 +11,7 @@ from transformers import AutoModel
 model = None
 
 
-class NvilaSana():
+class NvilaVerifier():
     def __init__(self):
         model_name = "/mnt/pollux/checkpoints/NVILA-Lite-2B"
         cache_dir = '/mnt/pollux/wentian/'
