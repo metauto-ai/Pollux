@@ -21,7 +21,6 @@ model_name = 'gemma-2-2b-it-sana'
 prompt = 'Write a hello world program'
 text_encoder = TextEncoder(model_name)
 prompt_embeds = text_encoder.get_t5_prompt_embeds(prompt)
-print (prompt_embeds.shape)
 ```
 
 
