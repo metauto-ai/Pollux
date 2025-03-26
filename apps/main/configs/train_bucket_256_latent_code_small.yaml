@@ -56,7 +56,7 @@ model:
             in_channels: 16
             out_channels: 16
             tmb_size: 256
-            gen_seqlen: 36
+            gen_seqlen: 16
             condition_seqlen: 258
             norm_eps: 1e-5
             pre_trained_path:  /mnt/pollux/checkpoints/Llama-3.2-1B/original/consolidated.00.pth
@@ -82,7 +82,7 @@ model:
             rope_theta: 500000.0
             pre_trained_path:  /mnt/pollux/checkpoints/Llama-3.2-1B/original/consolidated.00.pth
             from_llama: true
-            gen_seqlen: 36
+            gen_seqlen: 16
             condition_seqlen: 130
             text_seqlen: 128
         codebook_size: 16
