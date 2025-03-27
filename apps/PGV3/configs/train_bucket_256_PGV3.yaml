@@ -84,7 +84,7 @@ data:
         "caption": "caption"
     use: True
     dataloader:
-        batch_size: 128
+        batch_size: 96
         num_workers: 4
         seed: 1024
         shuffle: True
