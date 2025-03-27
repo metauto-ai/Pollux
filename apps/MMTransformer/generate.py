@@ -6,7 +6,7 @@ from torch import nn
 from torch.nn import functional as F
 from torchvision.utils import save_image
 import numpy as np
-from apps.main.model import Latent_Pollux, ModelArgs
+from apps.MMTransformer.model import Latent_Pollux, ModelArgs
 from typing import List, Optional, Tuple, Union, Dict, Any
 from apps.main.modules.schedulers import retrieve_timesteps, calculate_shift
 from lingua.args import dataclass_from_dict
@@ -65,29 +65,6 @@ class LatentGenerator(nn.Module):
         latents = randn_tensor(latent_size, device=device, dtype=self.dtype)
         return latents
 
-    def prepare_cond_latent(self, context, device):
-        bsz = len(context["caption"])
-        latent_size = (bsz, self.in_channel, self.cond_resolution, self.cond_resolution)
-        latents = randn_tensor(latent_size, device=device, dtype=self.dtype)
-        return latents
-
-    @torch.no_grad()
-    def prepare_negative_context(self, context):
-        conditional_signal = self.model.gen_model.negative_token.repeat(
-            context["positive_text_embedding"].size(0),
-            context["positive_text_embedding"].size(1),
-            1,
-        )
-        context["negative_text_embedding"] = conditional_signal.to(self.dtype)
-        return context
-
-    @torch.no_grad()
-    def prepare_positive_context(self, context):
-        context["positive_text_embedding"] = self.model.plan_model.encode(context).to(
-            self.dtype
-        )
-        return context
-
     def return_seq_len(self):
         return (self.resolution // self.model.gen_model.gen_transformer.patch_size) ** 2
 
@@ -115,19 +92,16 @@ class LatentGenerator(nn.Module):
             mu=mu,
         )
         latent = self.prepare_latent(context, device=cur_device)
-        context["plan_latent_code"] = self.prepare_cond_latent(
-            context, device=cur_device
+        pos_conditional_signal = self.model.text_encoder(context)
+        negative_conditional_signal = self.model.gen_model.negative_token.repeat(
+            pos_conditional_signal.size(0), pos_conditional_signal.size(1), 1
         )
-        context = self.prepare_positive_context(context)
-        context = self.prepare_negative_context(context)
-        negative_conditional_signal = self.model.gen_model.token_proj(
-            context["negative_text_embedding"]
+        context = torch.cat(
+            [
+                self.model.gen_model.token_proj(pos_conditional_signal),
+                self.model.gen_model.token_proj(negative_conditional_signal),
+            ]
         )
-        pos_conditional_signal = self.model.gen_model.token_proj(
-            context["positive_text_embedding"]
-        )
-
-        context = torch.cat([pos_conditional_signal, negative_conditional_signal])
         for i, t in enumerate(timesteps):
             latent_model_input = torch.cat([latent] * 2)
             timestep = t.expand(latent_model_input.shape[0])
