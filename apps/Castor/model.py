@@ -108,3 +108,60 @@ def build_fsdp_grouping_plan(model_args: ModelArgs):
 
 def tp_parallelize(model, tp_mesh, model_args: ModelArgs, distributed_args):
     pass
+
+
+def build_2B_Castor():
+    diffusion_transformer = TransformerArgs(
+        dim=2048,
+        ffn_dim_multiplier=1.5,
+        multiple_of=256,
+        n_heads=32,
+        n_kv_heads=8,
+        n_layers=24,
+        time_step_dim=2048,
+        patch_size=2,
+        in_channels=16,
+        out_channels=16,
+        tmb_size=256,
+        gen_seqlen=16,
+        condition_seqlen=128,
+        norm_eps=1e-5,
+        condition_dim=512,
+    )
+    vae_args = VideoVAEArgs(
+        pretrained_model_name_or_path="/mnt/pollux/checkpoints/HunyuanVideo/vae",
+        enable_tiling=False,
+        enable_slicing=False,
+    )
+    text_encoder = CLIPArgs()
+    scheduler = SchedulerArgs(
+        num_train_timesteps=1000,
+        base_image_seq_len=256,
+        base_shift=0.5,
+        max_image_seq_len=4096,
+        max_shift=1.15,
+        shift=1.0,  # need consider 3.0 or 1.0
+        weighting_scheme="logit_normal",
+        logit_mean=0.0,
+        logit_std=1.0,
+        mode_scale=1.29,
+        use_dynamic_shifting=True,
+    )
+    model_arg = ModelArgs(
+        with_vae=False,
+        vae_args=vae_args,
+        text_encoder=text_encoder,
+        scheduler=scheduler,
+        text_cfg_ratio=1.0,
+        diffusion_model=diffusion_transformer,
+    )
+    return Castor(model_arg)
+
+
+if __name__ == "__main__":
+    model = build_2B_Castor()
+    total_params = sum(p.numel() for p in model.parameters())
+    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+
+    print(f"Total Params: {total_params / 1e9:.2f}B")
+    print(f"Trainable Params: {trainable_params / 1e9:.2f}B")
