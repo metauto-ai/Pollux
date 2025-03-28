@@ -1,5 +1,5 @@
 """
-CUDA_VISIBLE_DEVICES=0,1,2,3 torchrun --nnodes 1 --nproc-per-node 4 -m apps.MMTransformer.eval config=apps/MMTransformer/configs/eval.yaml
+CUDA_VISIBLE_DEVICES=0,1,2,3 torchrun --nnodes 1 --nproc-per-node 4 -m apps.PGV3.eval config=apps/PGV3/configs/eval.yaml
 """
 
 from collections import defaultdict
@@ -23,13 +23,13 @@ from lingua.distributed import (
     setup_torch_distributed,
 )
 from apps.main.data import AutoDataLoader, DataArgs
-from apps.MMTransformer.generate import (
+from apps.PGV3.generate import (
     LatentGenerator,
     GeneratorArgs,
     load_consolidated_model,
 )
 from apps.main.modules.vae import build_vae
-from apps.MMTransformer.model import Latent_Pollux, ModelArgs
+from apps.PGV3.model import Latent_Pollux, ModelArgs
 
 EVAL_FOLDER_NAME = "{:010d}"
 

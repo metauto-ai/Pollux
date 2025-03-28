@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import Optional, Tuple, Union
+from typing import Optional, Tuple, Union, List
 import logging
 import os
 
@@ -414,6 +414,7 @@ class PGV3(nn.Module):
         self.patchify_size = args.latent_projector.patchify_size
         self.scheduler = RectifiedFlow(args.scheduler)
         # assert self.patchify_size == 1, "Patchify size must be 1 for 16x16x8 TVAE."
+        self.latent_dim = args.latent_projector.latent_dim
         self.latent_projector = nn.Linear(
             self.patchify_size**2 * args.latent_projector.latent_dim,
             args.latent_projector.output_dim,
@@ -584,6 +585,80 @@ class PGV3(nn.Module):
         # compute loss
         pred_loss = F.mse_loss(pred_latent, target)
         return batch, pred_loss
+
+    def forward_inference(
+        self,
+        x: torch.Tensor,
+        captions: List[str],
+        time_steps: torch.Tensor,
+        attn_impl: str = "sdpa",
+    ) -> Tuple[dict[str, any], torch.Tensor]:
+
+        vae_embs, H_, W_, freqs_cis_img = self.patchify_and_embed(x)
+        # Text Embedding
+        tokenizer_output = self.llm_tokenizer(
+            captions,
+            max_length=self.args.llm.text_seqlen,
+            padding="max_length",
+            truncation=True,
+            return_tensors="pt",
+        )
+        text_input_ids = tokenizer_output["input_ids"].to(vae_embs.device)  # [B, L]
+
+        if text_input_ids.max().item() >= self.args.llm.vocab_size:
+            logger.warning(
+                f"Text input ids exceed the vocab size: {text_input_ids.max().item()} with caption: {captions}"
+            )
+        if text_input_ids.min().item() < 0:
+            logger.warning(
+                f"Text input ids are negative: {text_input_ids.min().item()} with caption: {captions}"
+            )
+
+        text_input_ids = torch.clamp(
+            text_input_ids, min=0, max=self.args.llm.vocab_size - 1
+        )
+        text_embs = self.llm.tok_embeddings(text_input_ids)  # [B, L, D]
+
+        # Concat
+        boi_emb = self.vision_boi_emb.unsqueeze(0).expand(vae_embs.size(0), -1, -1)
+        # eoi_emb = self.vision_eoi_emb.unsqueeze(0).expand(vae_embs.size(0), -1, -1)
+        t_emb = self.time_proj(time_steps).unsqueeze(1)
+        mm_embs = torch.cat(
+            [
+                text_embs,
+                t_emb,
+                boi_emb,
+                vae_embs,
+                # eoi_emb,
+            ],
+            dim=1,
+        )
+        vae_start_idx = text_embs.size(1) + 2
+
+        # rope freq
+        freqs_cis_text = self.rope_embeddings_conditions.freqs_cis[:vae_start_idx]
+        freqs_cis_text = freqs_cis_text.to(mm_embs.device)
+        freqs_cis_img = freqs_cis_img.to(mm_embs.device)
+        freqs_cis = torch.cat([freqs_cis_text, freqs_cis_img], dim=0)
+
+        # LLM Forward
+        h = self.llm(
+            h=mm_embs,
+            text_l=vae_start_idx,
+            visual_l=mm_embs.size(1) - vae_start_idx,
+            freq_cis=freqs_cis,
+            attn_impl=attn_impl,
+        )
+
+        # Latent Head
+        latent_hidden = h[:, vae_start_idx : vae_start_idx + vae_embs.size(1), :]
+        pred_latent = self.norm(latent_hidden)
+        pred_latent = self.latent_head(pred_latent)  # [B,M,D]
+        # restore the order of the latent codes
+        pred_latent = self.unpatchify_image(pred_latent, H_, W_)
+
+        # compute loss
+        return pred_latent
 
     def set_train(self):
         self.latent_projector.train()

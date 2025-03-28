@@ -6,7 +6,7 @@ from torch import nn
 from torch.nn import functional as F
 from torchvision.utils import save_image
 import numpy as np
-from apps.MMTransformer.model import Latent_Pollux, ModelArgs
+from apps.PGV3.model import Latent_Pollux, ModelArgs
 from typing import List, Optional, Tuple, Union, Dict, Any
 from apps.main.modules.schedulers import retrieve_timesteps, calculate_shift
 from lingua.args import dataclass_from_dict
@@ -53,7 +53,7 @@ class LatentGenerator(nn.Module):
         self.guidance_scale = cfg.guidance_scale
         self.show_progress = cfg.show_progress
         self.dtype = dict(fp32=torch.float32, bf16=torch.bfloat16)[cfg.dtype]
-        self.in_channel = model.gen_model.gen_transformer.in_channels
+        self.in_channel = model.gen_model.latent_dim
         self.sigma = cfg.sigma
         self.scheduler = model.gen_model.scheduler.scheduler
         self.num_inference_steps = cfg.inference_steps
@@ -66,7 +66,7 @@ class LatentGenerator(nn.Module):
         return latents
 
     def return_seq_len(self):
-        return (self.resolution // self.model.gen_model.gen_transformer.patch_size) ** 2
+        return (self.resolution // self.model.gen_model.patchify_size) ** 2
 
     @torch.no_grad()
     def forward(self, context: Dict[str, Any]) -> torch.Tensor:
@@ -92,23 +92,15 @@ class LatentGenerator(nn.Module):
             mu=mu,
         )
         latent = self.prepare_latent(context, device=cur_device)
-        pos_conditional_signal = self.model.text_encoder(context)
-        negative_conditional_signal = self.model.gen_model.negative_token.repeat(
-            pos_conditional_signal.size(0), pos_conditional_signal.size(1), 1
-        )
-        context = torch.cat(
-            [
-                self.model.gen_model.token_proj(pos_conditional_signal),
-                self.model.gen_model.token_proj(negative_conditional_signal),
-            ]
-        )
+        context = context["caption"]
+        context.extend([""] * len(context))
         for i, t in enumerate(timesteps):
             latent_model_input = torch.cat([latent] * 2)
             timestep = t.expand(latent_model_input.shape[0])
-            noise_pred = self.model.gen_model.gen_transformer(
+            noise_pred = self.model.gen_model.forward_inference(
                 x=latent_model_input,
                 time_steps=timestep,
-                condition=context,
+                captions=context,
             )
             noise_pred_text, noise_pred_uncond = noise_pred.chunk(2)
             noise_pred = noise_pred_uncond + self.guidance_scale * (

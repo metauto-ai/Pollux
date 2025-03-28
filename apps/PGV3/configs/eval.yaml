@@ -1,8 +1,8 @@
-# python -m apps.MMTransformer.generate config=apps/MMTransformer/configs/eval.yaml
+# python -m apps.PGV3.generate config=apps/PGV3/configs/eval.yaml
 name: "debug_evals"
 stage: eval
-ckpt_dir: "/mnt/pollux/checkpoints/dump/MMTrans_2B_Model_10M_12h/checkpoints/0000085000"
-dump_dir: "/mnt/pollux/checkpoints/dump/MMTrans_2B_Model_10M_12h/MJHQ/0000085000"
+ckpt_dir: "/mnt/pollux/checkpoints/dump/PGV3_2B_Model_10M_12h/checkpoints/0000070000"
+dump_dir: "/mnt/pollux/checkpoints/dump/PGV3_2B_Model_10M_12h/MJHQ/0000070000"
 generator:
   guidance_scale: 6.5
   dtype: bf16
