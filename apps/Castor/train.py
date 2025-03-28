@@ -61,8 +61,8 @@ from apps.main.data import AutoDataLoader, DataArgs
 from apps.main.utils.dict_tensor_data_load import DictTensorBatchIterator
 from apps.main.modules.schedulers import SchedulerArgs
 from apps.main.utils.sampler import StatefulDistributedSampler
-from apps.MMTransformer.model import (
-    Latent_Pollux,
+from apps.Castor.model import (
+    Castor,
     ModelArgs,
     build_fsdp_grouping_plan,
     tp_parallelize,
@@ -275,7 +275,7 @@ def train(args: TrainArgs):
         torch.manual_seed(args.seed)
         logger.info("Building model")
 
-        model = Latent_Pollux(args.model)
+        model = Castor(args.model)
         logger.info("Model is built !")
 
         model_param_count = get_num_params(model)
@@ -377,13 +377,9 @@ def train(args: TrainArgs):
                 # we do garbage collection manually otherwise different processes
                 # run the GC at different times so they slow down the whole pipeline
                 gc.collect()
-            if "gen_latent_code" in batch:
-                batch["gen_latent_code"] = batch["gen_latent_code"].cuda()
-                if "plan_latent_code" not in batch:
-                    batch["plan_latent_code"] = batch["gen_latent_code"].cuda()
-                batch["plan_latent_code"] = batch["plan_latent_code"].cuda()
-                nwords_since_last_log += batch["gen_latent_code"].numel()
-                nwords_since_last_log += batch["plan_latent_code"].numel()
+            if "latent_code" in batch:
+                batch["latent_code"] = batch["latent_code"].cuda()
+                nwords_since_last_log += batch["latent_code"].numel()
             elif "image" in batch:
                 batch["image"] = batch["image"].cuda()
                 nwords_since_last_log += batch["image"].numel()
@@ -455,9 +451,9 @@ def train(args: TrainArgs):
                 FLOPS = (
                     get_num_flop_per_token(
                         model_param_count,
-                        args.model.gen.gen_transformer.n_layers,
-                        args.model.gen.gen_transformer.dim,
-                        args.model.gen.gen_transformer.max_seqlen,
+                        args.model.diffusion_model.n_layers,
+                        args.model.diffusion_model.dim,
+                        args.model.diffusion_model.max_seqlen,
                     )
                     * wps
                 )
