@@ -6,9 +6,9 @@ from torch import nn
 from torch.nn import functional as F
 from torchvision.utils import save_image
 import numpy as np
-from apps.MMTransformer.model import Latent_Pollux, ModelArgs
+from apps.Castor.model import Castor, ModelArgs
 from typing import List, Optional, Tuple, Union, Dict, Any
-from apps.main.modules.schedulers import retrieve_timesteps, calculate_shift
+from .modules.schedulers import retrieve_timesteps, calculate_shift
 from lingua.args import dataclass_from_dict
 import logging
 from pathlib import Path
@@ -93,19 +93,21 @@ class LatentGenerator(nn.Module):
         )
         latent = self.prepare_latent(context, device=cur_device)
         pos_conditional_signal = self.model.text_encoder(context)
-        negative_conditional_signal = self.model.gen_model.negative_token.repeat(
-            pos_conditional_signal.size(0), pos_conditional_signal.size(1), 1
+        negative_conditional_signal = (
+            self.model.diffusion_transformer.negative_token.repeat(
+                pos_conditional_signal.size(0), pos_conditional_signal.size(1), 1
+            )
         )
         context = torch.cat(
             [
-                self.model.gen_model.token_proj(pos_conditional_signal),
-                self.model.gen_model.token_proj(negative_conditional_signal),
+                pos_conditional_signal,
+                negative_conditional_signal,
             ]
         )
         for i, t in enumerate(timesteps):
             latent_model_input = torch.cat([latent] * 2)
             timestep = t.expand(latent_model_input.shape[0])
-            noise_pred = self.model.gen_model.gen_transformer(
+            noise_pred = self.model.diffusion_transformer(
                 x=latent_model_input,
                 time_steps=timestep,
                 condition=context,
@@ -213,7 +215,7 @@ def main():
     gen_cfg = dataclass_from_dict(GeneratorArgs, cfg.generator, strict=False)
     print(gen_cfg)
     pollux, _ = load_consolidated_model(
-        cfg.ckpt_dir, model_cls=Latent_Pollux, model_args_cls=ModelArgs
+        cfg.ckpt_dir, model_cls=Castor, model_args_cls=ModelArgs
     )
     tvae = build_vae(gen_cfg.tvae)
     generator = LatentGenerator(gen_cfg, pollux, tvae).cuda()
