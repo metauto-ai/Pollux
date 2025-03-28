@@ -53,9 +53,9 @@ class LatentGenerator(nn.Module):
         self.guidance_scale = cfg.guidance_scale
         self.show_progress = cfg.show_progress
         self.dtype = dict(fp32=torch.float32, bf16=torch.bfloat16)[cfg.dtype]
-        self.in_channel = model.gen_model.gen_transformer.in_channels
+        self.in_channel = model.diffusion_transformer.in_channels
         self.sigma = cfg.sigma
-        self.scheduler = model.gen_model.scheduler.scheduler
+        self.scheduler = model.scheduler.scheduler
         self.num_inference_steps = cfg.inference_steps
         self.tvae = tvae
 
@@ -66,7 +66,7 @@ class LatentGenerator(nn.Module):
         return latents
 
     def return_seq_len(self):
-        return (self.resolution // self.model.gen_model.gen_transformer.patch_size) ** 2
+        return (self.resolution // self.model.diffusion_transformer.patch_size) ** 2
 
     @torch.no_grad()
     def forward(self, context: Dict[str, Any]) -> torch.Tensor:
