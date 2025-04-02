@@ -350,6 +350,7 @@ class Attention(nn.Module):
         n_heads: int,
         n_kv_heads: int,
         rope_theta: float,
+        qk_norm: bool = True,
     ):
         super().__init__()
 
@@ -383,6 +384,14 @@ class Attention(nn.Module):
             bias=False,
         )
 
+        if qk_norm:
+            self.q_norm = RMSNorm(head_dim)
+            self.k_norm = RMSNorm(head_dim)
+        else:
+            self.q_norm = nn.Identity()
+            self.k_norm = nn.Identity()
+        
+
     def forward(
         self,
         x: torch.Tensor,
@@ -402,6 +411,9 @@ class Attention(nn.Module):
         xq = xq.view(bsz, seq_len, self.n_heads, self.head_dim)
         xk = xk.view(bsz, seq_len, self.n_kv_heads, self.head_dim)
         xv = xv.view(bsz, seq_len, self.n_kv_heads, self.head_dim)
+
+        xq = self.q_norm(xq)
+        xk = self.k_norm(xk)
 
         xq, xk = apply_rotary_emb(xq, xk, 1, freq_cis[0:seq_len])
 
