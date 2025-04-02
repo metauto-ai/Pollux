@@ -123,7 +123,7 @@ class MongoDBDataLoad(Dataset):
             file_path = os.path.join(self.root_dir, f"{self.collection_name}.json")
             data = []
             with open(file_path, "r") as file:
-                for item in ijson.items(file, "item"):
+                for item in tqdm(ijson.items(file, "item"), desc=f"Loading data to shard {self.shard_idx}"):
                     partition_key = int(item[self.partition_key])
                     if partition_key % self.num_shards == self.shard_idx:
                         data.append(item)
