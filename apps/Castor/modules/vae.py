@@ -17,8 +17,44 @@ class VideoVAEArgs:
     enable_tiling: bool = True
     enable_slicing: bool = True
 
+class BaseLatentVideoVAE(nn.Module):
+    def __init__(self, args: VideoVAEArgs):
+        super().__init__()
+        self.cfg = args
 
-class HunyuanVideoVAE:
+    @torch.no_grad()
+    def encode(self, x: torch.Tensor) -> torch.Tensor:
+        raise NotImplementedError
+
+    @torch.no_grad()
+    def decode(self, x: torch.Tensor) -> torch.Tensor:
+        raise NotImplementedError
+
+    def enable_vae_slicing(self):
+        logger.warning(
+            f"Useless func call, {self.cfg.model_name} TVAE model doesn't support slicing !"
+        )
+        pass
+
+    def disable_vae_slicing(self):
+        logger.warning(
+            f"Useless func call, {self.cfg.model_name} TVAE model doesn't support slicing !"
+        )
+        pass
+
+    def enable_vae_tiling(self):
+        logger.warning(
+            f"Useless func call, {self.cfg.model_name} TVAE model doesn't support tiling !"
+        )
+        pass
+
+    def disable_vae_tiling(self):
+        logger.warning(
+            f"Useless func call, {self.cfg.model_name} TVAE model doesn't support tiling !"
+        )
+        pass
+
+class HunyuanVideoVAE(BaseLatentVideoVAE):
     def __init__(self, args: VideoVAEArgs):
         super().__init__(args)
         vae = AutoencoderKLHunyuanVideo.from_pretrained(
