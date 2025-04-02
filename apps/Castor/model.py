@@ -46,12 +46,8 @@ class Castor(nn.Module):
             batch["text_embedding"] = self.text_encoder(batch)
         conditional_signal = batch["text_embedding"]
         if random.random() <= self.text_cfg_ratio:
-            conditional_signal = (
-                torch.ones_like(conditional_signal)
-                * self.diffusion_transformer.negative_token.repeat(
-                    conditional_signal.size(0), conditional_signal.size(1), 1
-                )
-                + torch.zeros_like(conditional_signal) * conditional_signal
+            conditional_signal = self.diffusion_transformer.negative_token.repeat(
+                conditional_signal.size(0), conditional_signal.size(1), 1
             )
         if hasattr(self, "compressor"):
             batch["latent_code"] = self.compressor.encode(batch["image"])
@@ -85,6 +81,9 @@ class Castor(nn.Module):
             self.diffusion_transformer.init_weights(
                 pre_trained_path=args.diffusion_model.pre_trained_path
             )
+    
+    def get_checkpointing_wrap_module_list(self) -> List[nn.Module]:
+        return list(self.diffusion_transformer.layers)
 
 
 # Optional policy for activation checkpointing. With None, we stick to the default (defined distributed.py: default_no_recompute_ops)
