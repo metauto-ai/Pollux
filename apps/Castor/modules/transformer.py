@@ -43,6 +43,7 @@ class TransformerArgs(BaseTransformerArgs):
     condition_seqlen: int = 1000
     gen_seqlen: int = 1000
     pre_trained_path: Optional[str] = None
+    qk_norm: bool = True
 
 
 class DiffusionTransformerBlock(nn.Module):
@@ -65,6 +66,7 @@ class DiffusionTransformerBlock(nn.Module):
             n_heads=self.n_heads,
             n_kv_heads=self.n_kv_heads,
             rope_theta=args.rope_theta,
+            qk_norm=args.qk_norm,
         )
         self.feed_forward = FeedForward(
             dim=args.dim,

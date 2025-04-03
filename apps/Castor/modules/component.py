@@ -48,6 +48,8 @@ class BaseTransformerArgs:
 
     max_seqlen: int = 1024
 
+    qk_norm: bool = True
+
 
 def cross_entropy(pred, target, **kwargs):
     return F.nll_loss(
@@ -477,6 +479,11 @@ class Attention(nn.Module):
             a=-3 * init_std,
             b=3 * init_std,
         )
+        
+        if isinstance(self.q_norm, RMSNorm):
+            self.q_norm.reset_parameters()
+        if isinstance(self.k_norm, RMSNorm):
+            self.k_norm.reset_parameters()
 
 
 class FeedForward(nn.Module):
@@ -563,6 +570,7 @@ class TransformerBlock(nn.Module):
             n_heads=self.n_heads,
             n_kv_heads=self.n_kv_heads,
             rope_theta=args.rope_theta,
+            qk_norm=args.qk_norm,
         )
         self.feed_forward = FeedForward(
             dim=args.dim,
