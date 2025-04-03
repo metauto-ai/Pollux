@@ -11,10 +11,11 @@ from typing import Optional, List, Tuple
 class EMAArgs:
     decay: float = 0.95
     warmup_steps: int = 2000
+    update_buffers: bool = False
 
 
 class EMA:
-    def __init__(self, model: torch.nn.Module, decay: float, warmup_steps: int = 0):
+    def __init__(self, model: torch.nn.Module, decay: float, warmup_steps: int = 0, update_buffers: bool = False):
         """
         Initializes EMA with warmup support.
 
@@ -27,7 +28,7 @@ class EMA:
         self.decay = decay
         self.warmup_steps = warmup_steps
         self.global_step = 0  # Starts at step 0
-
+        self.update_buffers = update_buffers
         # Disable gradient computation for EMA model
         for param in self.ema_model.parameters():
             param.requires_grad = False
@@ -43,7 +44,7 @@ class EMA:
 
 
     @torch.no_grad()
-    def step(self, model: torch.nn.Module, update_buffers: bool = False):
+    def step(self, model: torch.nn.Module):
         """
         Updates the EMA model with the current model parameters.
 
@@ -68,7 +69,7 @@ class EMA:
             ema_params[name].mul_(effective_decay).add_(params[name].data, alpha=1 - effective_decay)
 
         # Update buffers (if needed)
-        if update_buffers:
+        if self.update_buffers:
             buffers = OrderedDict(model.named_buffers())
             ema_buffers = OrderedDict(self.ema_model.named_buffers())
             assert set(ema_buffers.keys()) == set(buffers.keys())

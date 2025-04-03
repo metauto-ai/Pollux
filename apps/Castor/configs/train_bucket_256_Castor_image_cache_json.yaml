@@ -70,7 +70,7 @@ model:
     ema:
         decay: 0.95
         warmup_steps: 2000
-
+        update_buffers: false
 data:  
   - stage: stage-1
     id: 1
