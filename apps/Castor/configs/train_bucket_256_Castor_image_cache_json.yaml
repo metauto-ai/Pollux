@@ -60,6 +60,7 @@ model:
     text_cfg_ratio: 0.1
     with_vae: true
     vae_args:
+        vae_type: "flux"
         pretrained_model_name_or_path: '/mnt/pollux/checkpoints/HunyuanVideo/vae'
         enable_tiling: false
         enable_slicing: false

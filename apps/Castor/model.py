@@ -10,7 +10,7 @@ import torch.nn.functional as F
 from .modules.transformer import TransformerArgs
 from .modules.transformer import DiffusionTransformer
 
-from .modules.vae import HunyuanVideoVAE, VideoVAEArgs
+from .modules.vae import create_vae, VideoVAEArgs
 from .modules.text_encoder import CLIP, CLIPArgs
 from .modules.schedulers import RectifiedFlow, SchedulerArgs
 
@@ -36,7 +36,7 @@ class Castor(nn.Module):
         super().__init__()
         self.diffusion_transformer = DiffusionTransformer(args.diffusion_model)
         if args.with_vae:
-            self.compressor = HunyuanVideoVAE(args.vae_args)
+            self.compressor = create_vae(args.vae_args)
         self.text_encoder = CLIP(args.text_encoder)
         self.scheduler = RectifiedFlow(args.scheduler)
         self.text_cfg_ratio = args.text_cfg_ratio
