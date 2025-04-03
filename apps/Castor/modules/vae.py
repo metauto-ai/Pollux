@@ -139,13 +139,13 @@ class HunyuanVideoVAE(BaseLatentVideoVAE):
 class FluxVAE(BaseLatentVideoVAE):
     def __init__(self, args: VideoVAEArgs):
         super().__init__(args)
-        self.vae = AutoencoderKL.from_pretrained("black-forest-labs/FLUX.1-dev", subfolder="vae", torch_dtype=torch.bfloat16)
+        self.vae = AutoencoderKL.from_pretrained("/mnt/pollux/checkpoints/FLUX.1-dev/vae").requires_grad_(False)
         self.scale = 0.3611
         self.shift = 0.1159
 
     @torch.no_grad()
     def encode(self, x: torch.Tensor) -> torch.Tensor:
-        x = (self.vae.encode(x.to(self.vae.dtype)).latent_dist.mode()[0] - self.shift) * self.scale
+        x = (self.vae.encode(x.to(self.vae.dtype)).latent_dist.mode() - self.shift) * self.scale
         return x
 
     @torch.no_grad()
