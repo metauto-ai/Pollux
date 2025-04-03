@@ -62,7 +62,7 @@ class EMA:
 
         assert set(ema_params.keys()) == set(params.keys())
         
-        # TODO: Consider applying only to params that require_grad to avoid small numerical changes of pos_embed
+        
 
         for name in params:
             ema_params[name].mul_(effective_decay).add_(params[name].data, alpha=1 - effective_decay)
