@@ -3,7 +3,7 @@
 import os
 import logging
 from dataclasses import dataclass, field
-from typing import Optional, Tuple, Union, Dict
+from typing import Optional, Tuple, Union, Dict, List
 
 import torch
 from torch import nn
@@ -248,28 +248,53 @@ class GenTransformer(BaseDiffusionTransformer):
         self.norm = RMSNorm(args.dim, eps=args.norm_eps)
 
     def patchify_and_embed_image(
-        self, x: torch.Tensor
+        self, x: Union[torch.Tensor, List[torch.Tensor]],
     ) -> Tuple[torch.Tensor, torch.Tensor, Tuple[int, int], torch.Tensor]:
         self.rope_embeddings_image.freqs_cis = self.rope_embeddings_image.freqs_cis.to(
             x[0].device
         )
         pH = pW = self.patch_size
-        B, C, H, W = x.size()
-        x = x.view(B, C, H // pH, pH, W // pW, pW).permute(0, 2, 4, 1, 3, 5).flatten(3)
-        x = self.img_embed(x)
-        x = x.flatten(1, 2)
-        freqs_cis = self.rope_embeddings_image.freqs_cis[: H // pH, : W // pW].flatten(
-            0, 1
-        )
-        return (
-            x,
-            (H, W),
-            freqs_cis,
-        )
+
+        use_dynamic_res = isinstance(x, list)
+        if use_dynamic_res:
+            bsz = len(x)
+            C = x[0].size(0)
+            H_list = [x[i].size(1) for i in range(bsz)]
+            W_list = [x[i].size(2) for i in range(bsz)]
+            H_max = max(H_list)
+            W_max = max(W_list)
+            x_new = torch.zeros(bsz, (H_max // pH) * (W_max // pW), self.dim).to(x[0].device)
+            for i in range(bsz):
+                _x = x[i]
+                C, H, W = x[i].size()
+                assert H % (pH) == 0, f"H should be divisible by {pH}, but now H = {H}."
+                assert W % (pW) == 0, f"W should be divisible by {pW}, but now W = {W}."
+                _x = _x.view(C, H // pH, pH, W // pW, pW).permute(1, 3, 0, 2, 4).flatten(2)
+                _x = self.img_embed(_x)
+                _x = _x.flatten(0, 1)  # [H/16*W/16, D]
+
+                x_new[i, :(H // pH) * (W // pW)] = _x
+
+            # rope embeddings
+            freqs_cis = self.rope_embeddings_image.freqs_cis[: H_max // pH, : W_max // pW].flatten(0, 1)
+            return x_new, (H_list, W_list), freqs_cis
+        else:
+            B, C, H, W = x.size()
+            x = x.view(B, C, H // pH, pH, W // pW, pW).permute(0, 2, 4, 1, 3, 5).flatten(3)
+            x = self.img_embed(x)
+            x = x.flatten(1, 2)
+            freqs_cis = self.rope_embeddings_image.freqs_cis[: H // pH, : W // pW].flatten(
+                0, 1
+            )
+            return (
+                x,
+                (H, W),
+                freqs_cis,
+            )
 
     def forward(
         self,
-        x: torch.Tensor,
+        x: Union[torch.Tensor, List[torch.Tensor]],
         time_steps: torch.Tensor,
         condition: torch.Tensor,
         attn_impl: str = "sdpa",
@@ -309,15 +334,26 @@ class GenTransformer(BaseDiffusionTransformer):
         return x
 
     def unpatchify_image(
-        self, x: torch.Tensor, img_size: Tuple[int, int]
+        self, x: torch.Tensor, img_size: Union[Tuple[int, int], Tuple[List[int], List[int]]],
     ) -> torch.Tensor:
         pH = pW = self.patch_size
         H, W = img_size
-        B = x.size(0)
-        L = (H // pH) * (W // pW)
-        x = x[:, :L].view(B, H // pH, W // pW, pH, pW, self.out_channels)
-        x = x.permute(0, 5, 1, 3, 2, 4).flatten(4, 5).flatten(2, 3)
-        return x
+
+        use_dynamic_res = isinstance(H, list) and isinstance(W, list)
+        if use_dynamic_res:
+            out_x_list = []
+            for i, (_H, _W) in enumerate(zip(H, W)):
+                _x = x[i, :(_H // pH) * (_W // pW)]
+                _x = _x.view(_H // pH, _W // pW, pH, pW, -1)
+                _x = _x.permute(4, 0, 2, 1, 3).flatten(3, 4).flatten(1, 2)  # [16,H/8,W/8]
+                out_x_list.append(_x)
+            return out_x_list
+        else:
+            B = x.size(0)
+            L = (H // pH) * (W // pW)
+            x = x[:, :L].view(B, H // pH, W // pW, pH, pW, self.out_channels)
+            x = x.permute(0, 5, 1, 3, 2, 4).flatten(4, 5).flatten(2, 3)
+            return x
 
     def reset_parameters(self, init_std=None):
         # Either use fixed base std or sqrt model dim
@@ -394,8 +430,12 @@ class LatentPollux_Gen(nn.Module):
         )
         batch["prediction"] = output
         batch["target"] = target
-        target = target.to(output.dtype)
-        loss = F.mse_loss(output, target)
+        if isinstance(target, list) and isinstance(output, list):
+            loss_list = [F.mse_loss(o, t.to(o.dtype)) for o, t in zip(output, target)]
+            loss = torch.mean(torch.stack(loss_list))
+        else:
+            target = target.to(output.dtype)
+            loss = F.mse_loss(output, target)
 
         return batch, loss
 

@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import Optional, Tuple, Union
+from typing import Optional, Tuple, Union, List
 import logging
 import os
 
@@ -478,26 +478,66 @@ class Latent_Pollux_Plan(nn.Module):
                 param.requires_grad = False
 
     def patchify_and_embed(
-        self, x: torch.Tensor
+        self, x: Union[torch.Tensor, List[torch.Tensor]]
     ) -> Tuple[torch.Tensor, int, int, torch.Tensor]:
         pH = pW = self.patchify_size
-        B, C, H, W = x.size()
-        x = x.view(B, C, H // pH, pH, W // pW, pW).permute(0, 2, 4, 1, 3, 5).flatten(3)
-        x = self.latent_projector(x)
-        x = x.flatten(1, 2)  # [B, H/16*W/16, D]
 
-        # rope embeddings
-        freqs_cis = self.rope_embeddings_image.freqs_cis[: H // pH, : W // pW]
-        freqs_cis = freqs_cis.flatten(0, 1)
-        return x, H, W, freqs_cis
+        use_dynamic_res = isinstance(x, list)
+        if use_dynamic_res:
+            bsz = len(x)
+            C = x[0].size(0)
+            H_list = [x[i].size(1) for i in range(bsz)]
+            W_list = [x[i].size(2) for i in range(bsz)]
+            H_max = max(H_list)
+            W_max = max(W_list)
+            x_new = torch.zeros(bsz, (H_max // pH) * (W_max // pW), self.dim).to(x[0].device)
+            for i in range(bsz):
+                _x = x[i]
+                C, H, W = x[i].size()
+                assert H % (pH) == 0, f"H should be divisible by {pH}, but now H = {H}."
+                assert W % (pW) == 0, f"W should be divisible by {pW}, but now W = {W}."
+                _x = _x.view(C, H // pH, pH, W // pW, pW).permute(1, 3, 0, 2, 4).flatten(2)
+                _x = self.latent_projector(_x)
+                _x = _x.flatten(0, 1)  # [H/16*W/16, D]
 
-    def unpatchify_image(self, x: torch.Tensor, H: int, W: int) -> torch.Tensor:
-        B = x.size(0)
+                x_new[i, :(H // pH) * (W // pW)] = _x
+            
+            # rope embeddings
+            freqs_cis = self.rope_embeddings_image.freqs_cis[: H_max // pH, : W_max // pW]
+            freqs_cis = freqs_cis.flatten(0, 1)
+            return x_new, H_list, W_list, freqs_cis
+        else:
+            B, C, H, W = x.size()
+            x = x.view(B, C, H // pH, pH, W // pW, pW).permute(0, 2, 4, 1, 3, 5).flatten(3)
+            x = self.latent_projector(x)
+            x = x.flatten(1, 2)  # [B, H/16*W/16, D]
+
+            # rope embeddings
+            freqs_cis = self.rope_embeddings_image.freqs_cis[: H // pH, : W // pW]
+            freqs_cis = freqs_cis.flatten(0, 1)
+            return x, H, W, freqs_cis
+
+    def unpatchify_image(
+            self,
+            x: torch.Tensor,
+            H: Union[int, List[int]],
+            W: Union[int, List[int]]) -> torch.Tensor:
+        use_dynamic_res = isinstance(H, list) and isinstance(W, list)
         pH = pW = self.patchify_size
 
-        x = x.view(B, H // pH, W // pW, pH, pW, -1)
-        x = x.permute(0, 5, 1, 3, 2, 4).flatten(4, 5).flatten(2, 3)  # [B,16,H/8,W/8]
-        return x
+        if use_dynamic_res:
+            out_x_list = []
+            for i, (_H, _W) in enumerate(zip(H, W)):
+                _x = x[i, :(_H // pH) * (_W // pW)]
+                _x = _x.view(_H // pH, _W // pW, pH, pW, -1)
+                _x = _x.permute(4, 0, 2, 1, 3).flatten(3, 4).flatten(1, 2)  # [16,H/8,W/8]
+                out_x_list.append(_x)
+            return out_x_list
+        else:
+            B = x.size(0)
+            x = x.view(B, H // pH, W // pW, pH, pW, -1)
+            x = x.permute(0, 5, 1, 3, 2, 4).flatten(4, 5).flatten(2, 3)  # [B,16,H/8,W/8]
+            return x
 
     def process_mask(
         self,
@@ -661,7 +701,11 @@ class Latent_Pollux_Plan(nn.Module):
         pred_latent = self.unpatchify_image(pred_latent, H_, W_)
 
         # compute loss
-        pred_loss = F.mse_loss(pred_latent, vae_latent)
+        if isinstance(vae_latent, list) and isinstance(pred_latent, list):
+            pred_loss_list = [F.mse_loss(_p, _v) for _p, _v in zip(pred_latent, vae_latent)]
+            pred_loss = torch.mean(torch.stack(pred_loss_list))
+        else:
+            pred_loss = F.mse_loss(pred_latent, vae_latent)
         return batch, pred_loss
 
     def encode(  # TODO: ADD MASK based condition
