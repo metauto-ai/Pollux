@@ -17,7 +17,7 @@ from lingua.checkpoint import (
     consolidate_checkpoints,
     CONSOLIDATE_FOLDER,
 )
-from apps.main.modules.vae import BaseLatentVideoVAE, build_vae, LatentVideoVAEArgs
+from apps.Castor.modules.vae import BaseLatentVideoVAE, create_vae, VideoVAEArgs
 
 logger = logging.getLogger()
 
@@ -34,7 +34,7 @@ class GeneratorArgs:
     sigma: Optional[float] = None
     inference_steps: int = 25
     vae_scale_factor: float = 8.0
-    tvae: LatentVideoVAEArgs = field(default_factory=LatentVideoVAEArgs)
+    tvae: VideoVAEArgs = field(default_factory=VideoVAEArgs)
 
 
 class LatentGenerator(nn.Module):
@@ -217,7 +217,7 @@ def main():
     pollux, _ = load_consolidated_model(
         cfg.ckpt_dir, model_cls=Castor, model_args_cls=ModelArgs
     )
-    tvae = build_vae(gen_cfg.tvae)
+    tvae = create_vae(gen_cfg.tvae)
     generator = LatentGenerator(gen_cfg, pollux, tvae).cuda()
     print("Model loaded successfully")
     context = {
@@ -225,6 +225,21 @@ def main():
             "A charming old building with a terracotta roof and white-washed walls stands prominently in a quaint European town. The building features several windows adorned with brown shutters, and a line of freshly laundered clothes hangs from a clothesline outside the second-floor window, adding a touch of domesticity to the scene. The sunlight casts gentle shadows, highlighting the textures of the aged walls and the rustic charm of the setting. The overall composition evokes a sense of nostalgia and simplicity, reminiscent of a bygone era, with the clear blue sky serving as a serene backdrop.",
             "Statue of Pharaonic Queen Cleopatra inside the Egyptian temple done from Limestone, full-body, Pottery utensils and sand dunes cover walls and rocks, painting in watercolor,",
             "On a wooden surface, a can of Positive Beverage Tropical Berry, with its vibrant blue and white label featuring a cheerful illustration of tropical fruits, sits next to a wooden rolling pin and a pile of flour. The can is surrounded by a large, golden-brown gingerbread dough with cutouts of star and gingerbread man shapes, creating a festive and cozy atmosphere. The scene is bathed in soft, natural light, highlighting the textures of the dough and the rustic wooden elements, evoking a warm and inviting holiday spirit.",
+            "A serene photograph capturing the golden reflection of the sun on a vast expanse of water. The sun is positioned at the top center, casting a brilliant, shimmering trail of light across the rippling surface. The water is textured with gentle waves, creating a rhythmic pattern that leads the eye towards the horizon. The entire scene is bathed in warm, golden hues, enhancing the tranquil and meditative atmosphere. High contrast, natural lighting, golden hour, photorealistic, expansive composition, reflective surface, peaceful, visually harmonious.",
+            "An angry duck doing heavy weightlifting at the gym.",
+            "Mona Lisa in winter",
+            "A corgi.",
+            "graffiti of a panda with snow goggles snowboarding on a street wall",
+            "A group of three teddy bears in suit in an office celebrating the birthday of their friend. There is a pizza cake on the desk",
+            "A photo of a smiling person with snow goggles on holding a snowboard",
+            "Photo of a bear catching salmon",
+            "an astronaut rides a pig through in the forest. next to a river, with clouds in the sky",
+            "Hot air balloons and flowers, collage art, photorealism, muted colors, 3D shading beautiful eldritch, mixed media, vaporous",
+            "A close-up photo of a baby sloth holding a treasure chest. A warm, golden light emanates from within the chest, casting a soft glow on the sloth's fur and the surrounding rainforest foliage.",
+            "A photo of a cat playing chess.",
+            "A cloud dragon flying over mountains, its body swirling with the wind",
+            "a clock on a desk, ghibli style",
+            "Temple in ruins, epic, forest, stairs, columns, cinematic, detailed, atmospheric, epic, concept art, matte painting, background, mist, photo-realistic, concept art, volumetric light, cinematic epic, 8k",
         ]
     }
     # Start generation
