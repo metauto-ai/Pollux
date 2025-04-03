@@ -56,7 +56,6 @@ class Latent_Pollux(nn.Module):
                 self.compressor.encode(image.unsqueeze(0))
                 for image in batch["image_cond"]
             ]
-        raise NotImplementedError("This method is not implemented")
         with torch.set_grad_enabled(self.plan_model.is_train):
             plan_output, plan_loss = self.plan_model(batch)
         with torch.set_grad_enabled(self.gen_model.is_train):
