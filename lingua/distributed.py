@@ -34,9 +34,6 @@ from torch.utils.checkpoint import (
 )
 from torch.distributed.device_mesh import DeviceMesh, init_device_mesh
 
-# for no recompute ops
-import xformers.ops
-
 from lingua.float8 import convert_linears_to_fp8
 
 logger = logging.getLogger()
@@ -466,9 +463,13 @@ def parallelize_model(
             )
 
         model = fully_shard(model, **fsdp_config, reshard_after_forward=True)
+        return model
     else:
         raise ValueError(f"Invalid fsdp_type: {distributed_args.fsdp_type}")
 
+
+
+def apply_activation_checkpointing(model, distributed_args: DistributedArgs):
     if distributed_args.selective_activation_checkpointing:
         non_reentrant_wrapper = partial(
             checkpoint_wrapper,
@@ -479,7 +480,10 @@ def parallelize_model(
             checkpoint_wrapper_fn=non_reentrant_wrapper,
             check_fn=lambda submodule: submodule in model.get_checkpointing_wrap_module_list(),
         )
+    return model
+    
 
+def apply_compile(model, distributed_args: DistributedArgs):
     if distributed_args.compile:
         torch._dynamo.config.cache_size_limit = (
             distributed_args.compile_cache_size_limit
