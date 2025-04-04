@@ -133,10 +133,10 @@ class BaseDiffusionTransformer(nn.Module):
     ):
         for idx, layer in enumerate(self.layers):
             if modulation_signal == None:
-                h = layer(h, freqs_cis, mask=x_mask, attn_impl=attn_impl)
+                h = layer(h, freqs_cis, mask=None, attn_impl=attn_impl)
             else:
                 h = layer(
-                    h, freqs_cis, modulation_signal, mask=x_mask, attn_impl=attn_impl
+                    h, freqs_cis, modulation_signal, mask=None, attn_impl=attn_impl
                 )
         return h
 
@@ -234,17 +234,16 @@ class DiffusionTransformer(BaseDiffusionTransformer):
         pH = pW = self.patch_size
         use_dynamic_res = isinstance(x, list)
         if use_dynamic_res:
-            cond_l = condition_mask.sum(dim=1).tolist()
+            cond_l = condition_mask.sum(dim=1, dtype=torch.int32).tolist()
+            max_cond_l = max(cond_l)
             bsz = len(x)
-            C = x[0].size(0)
             H_list = [x[i].size(1) for i in range(bsz)]
             W_list = [x[i].size(2) for i in range(bsz)]
             H_max = max(H_list)
             W_max = max(W_list)
-            max_cond_l = max(cond_l)
             max_seq_len = max_cond_l + (H_max // pH) * (W_max // pW)
-            x_new = torch.zeros(bsz, max_seq_len, self.dim).to(x[0].device)
-            x_mask = torch.zeros(bsz, max_seq_len).to(x[0].device)
+            x_new = torch.zeros(bsz, max_seq_len, self.dim, dtype=x[0].dtype).to(x[0].device)
+            x_mask = torch.zeros(bsz, max_seq_len, dtype=torch.bool).to(x[0].device)
             for i in range(bsz):
                 _x = x[i]
                 C, H, W = x[i].size()
@@ -254,9 +253,9 @@ class DiffusionTransformer(BaseDiffusionTransformer):
                 _x = self.img_embed(_x)
                 _x = _x.flatten(0, 1)  # [H/16*W/16, D]
 
-                x_new[i, :cond_l[i]] = condition[i]
+                x_new[i, :cond_l[i]] = condition[i, :cond_l[i]]     # TODO: assumes condition is right padded!
                 x_new[i, cond_l[i]:cond_l[i] + (H // pH) * (W // pW)] = _x
-                x_mask[i, :cond_l[i] + (H // pH) * (W // pW)] = 1
+                x_mask[i, :cond_l[i] + (H // pH) * (W // pW)] = True
             # rope embeddings
             freqs_cis_cond = self.rope_embeddings_conditions.freqs_cis[:max_cond_l].to(x[0].device)
             freqs_cis_img = self.rope_embeddings_image.freqs_cis[: H_max // pH, : W_max // pW].flatten(0, 1)
@@ -264,14 +263,16 @@ class DiffusionTransformer(BaseDiffusionTransformer):
             return x_new, x_mask, cond_l, (H_list, W_list), freqs_cis
         else:
             B, C, H, W = x.size()
+            cond_l = condition.size(1)
             x = x.view(B, C, H // pH, pH, W // pW, pW).permute(0, 2, 4, 1, 3, 5).flatten(3)
             x = self.img_embed(x)
             x = x.flatten(1, 2)
-            x_mask = torch.ones(B, H // pH, W // pW).to(x.device)
+            x_mask = torch.ones(B, (H // pH) * (W // pW), dtype=torch.bool).to(x.device)
+            x_mask = torch.cat([condition_mask, x_mask], dim=1)
             freqs_cis_img = self.rope_embeddings_image.freqs_cis[: H // pH, : W // pW].flatten(
                 0, 1
             )
-            cond_l = condition.size(1)
+            
             x = torch.cat([condition, x], dim=1)
             freqs_cis_cond = self.rope_embeddings_conditions.freqs_cis[:cond_l].to(x.device)
             freqs_cis = torch.cat([freqs_cis_cond, freqs_cis_img], dim=0)
@@ -293,20 +294,18 @@ class DiffusionTransformer(BaseDiffusionTransformer):
     ):
         condition = self.cond_proj(condition)
 
-        modulation_signal = torch.mean(
-            condition * condition_mask.unsqueeze(-1), 
-            dim=1, 
-            keepdim=False
-        ) / (condition_mask.sum(dim=1, keepdim=True) + 1e-8) + self.tmb_embed(time_steps)
+        mask_sum = condition_mask.sum(dim=1, keepdim=True)
+        if mask_sum.min() > 0:  # Only compute mean if at least one element is masked
+            modulation_signal = torch.mean(
+                condition * condition_mask.unsqueeze(-1), 
+                dim=1, 
+                keepdim=False
+            ) / (mask_sum + 1e-8) + self.tmb_embed(time_steps)
+        else:
+            # When mask is all zeros, skip the mean calculation
+            modulation_signal = self.tmb_embed(time_steps)
 
         x, x_mask, cond_l, img_size, freqs_cis = self.patchify_and_embed_image(x, condition, condition_mask)
-
-        # c_l = condition.size(1)
-
-        # freqs_cis_img = freqs_cis_img.to(x.device)
-        # freqs_cis_cond = self.rope_embeddings_conditions.freqs_cis[:c_l].to(x.device)
-        # x = torch.cat([condition, x], dim=1)
-        # freqs_cis = torch.cat([freqs_cis_cond, freqs_cis_img], dim=0)
 
         h = super().forward(x, x_mask, freqs_cis, modulation_signal, attn_impl=attn_impl)
 
@@ -317,7 +316,7 @@ class DiffusionTransformer(BaseDiffusionTransformer):
         return x
 
     def unpatchify_image(
-        self, x: torch.Tensor, cond_l: List[int], img_size: Tuple[int, int]
+        self, x: torch.Tensor, cond_l: Union[List[int], int], img_size: Tuple[int, int]
     ) -> torch.Tensor:
         pH = pW = self.patch_size
         H, W = img_size
@@ -331,7 +330,12 @@ class DiffusionTransformer(BaseDiffusionTransformer):
                 out_x_list.append(_x)
             return out_x_list
         else:
-            max_cond_l = max(cond_l)
+            # Handle the case where cond_l is an integer, not a list
+            if isinstance(cond_l, list):
+                max_cond_l = max(cond_l)
+            else:
+                max_cond_l = cond_l
+                
             B = x.size(0)
             L = (H // pH) * (W // pW)
             x = x[:, max_cond_l:max_cond_l + L].view(B, H // pH, W // pW, pH, pW, self.out_channels)
