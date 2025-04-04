@@ -42,24 +42,36 @@ class Castor(nn.Module):
         self.text_cfg_ratio = args.text_cfg_ratio
 
     def forward(self, batch: dict[str:any]) -> dict[str:any]:
+        if hasattr(self, "compressor"):
+            if isinstance(batch["image"], list):
+                batch["latent_code"] = [self.compressor.encode(img[None])[0] for img in batch["image"]]
+            else:
+                batch["latent_code"] = self.compressor.encode(batch["image"])
+        
         if "text_embedding" not in batch:
-            batch["text_embedding"] = self.text_encoder(batch)
-        conditional_signal = batch["text_embedding"]
+            batch["text_embedding"], batch["attention_mask"] = self.text_encoder(batch)
+        conditional_signal, conditional_mask = batch["text_embedding"], batch["attention_mask"]
+
         if random.random() <= self.text_cfg_ratio:
             conditional_signal = self.diffusion_transformer.negative_token.repeat(
                 conditional_signal.size(0), conditional_signal.size(1), 1
             )
-        if hasattr(self, "compressor"):
-            batch["latent_code"] = self.compressor.encode(batch["image"])
+            conditional_mask = torch.zeros_like(conditional_mask, dtype=conditional_signal.dtype)
+
         latent_code = batch["latent_code"]
         noised_x, t, target = self.scheduler.sample_noised_input(latent_code)
         output = self.diffusion_transformer(
-            x=noised_x, time_steps=t, condition=conditional_signal
+            x=noised_x, time_steps=t, condition=conditional_signal, condition_mask=conditional_mask
         )
+
         batch["prediction"] = output
         batch["target"] = target
-        target = target.to(output.dtype)
-        loss = F.mse_loss(output, target)
+        if isinstance(target, list) and isinstance(output, list):
+            loss_list = [F.mse_loss(o, t.to(o.dtype)) for o, t in zip(output, target)]
+            loss = torch.mean(torch.stack(loss_list))
+        else:
+            target = target.to(output.dtype)
+            loss = F.mse_loss(output, target)
         return batch, loss
 
     def set_train(self):

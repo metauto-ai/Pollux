@@ -250,6 +250,7 @@ class AutoDataLoader:
                     if dataloader_args.num_workers > 0
                     else None
                 ),
+                collate_fn=dataset.collate_fn if hasattr(dataset, "collate_fn") else None,
             ),
             sampler,
         )
