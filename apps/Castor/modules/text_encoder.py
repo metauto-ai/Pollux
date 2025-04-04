@@ -1,7 +1,7 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 
 from dataclasses import dataclass
-from typing import Tuple
+from typing import Optional
 import logging
 import torch
 import clip
@@ -28,7 +28,7 @@ class CLIP:
         self.clip_model.requires_grad_(False)
         self.dtype = dict(fp32=torch.float32, bf16=torch.bfloat16)[args.dtype]
 
-    def __call__(self, batch: dict[str:any]) -> Tuple[torch.Tensor, torch.Tensor]:
+    def __call__(self, batch: dict[str:any]) -> torch.Tensor:
         assert "caption" in batch
         if isinstance(batch["caption"][0], tuple):
             batch["caption"] = [x[0] for x in batch["caption"]]
@@ -37,15 +37,9 @@ class CLIP:
                 logger.warning(f"Expected string but got {type(x)}: {x}")
                 batch["caption"][idx] = ""
         text_tokens = clip.tokenize(batch["caption"], truncate=True).cuda()
-        
-        # Create attention mask (1 for real tokens, 0 for padding)
-        attention_mask = (text_tokens != 0).to(self.dtype)
-
         x = self.clip_model.token_embedding(text_tokens)
         x = x + self.clip_model.positional_embedding
         x = x.permute(1, 0, 2)
         x = self.clip_model.transformer(x)
         x = x.permute(1, 0, 2)
-
-        return x.to(self.dtype), attention_mask
-
+        return x.to(self.dtype)
