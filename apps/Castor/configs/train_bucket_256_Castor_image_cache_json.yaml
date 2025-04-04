@@ -60,8 +60,11 @@ model:
     text_cfg_ratio: 0.1
     with_vae: true
     vae_args:
-        vae_type: "hunyuan"
-        pretrained_model_name_or_path: '/mnt/pollux/checkpoints/HunyuanVideo/vae'
+        #Flux /mnt/pollux/checkpoints/FLUX.1-dev/vae 
+        #Hunyuan /mnt/pollux/checkpoints/HunyuanVideo/vae
+        #COSMOS /mnt/pollux/checkpoints/Cosmos/Cosmos-0.1-Tokenizer-CI8x8/
+        vae_type: " "
+        pretrained_model_name_or_path: '/mnt/pollux/checkpoints/Cosmos/Cosmos-0.1-Tokenizer-CI8x8/' 
         enable_tiling: false
         enable_slicing: false
     text_encoder:
