@@ -381,12 +381,8 @@ def train(args: TrainArgs):
                 batch["latent_code"] = batch["latent_code"].cuda()
                 nwords_since_last_log += batch["latent_code"].numel()
             elif "image" in batch:
-                if isinstance(batch["image"], list):
-                    batch["image"] = [img.to(device="cuda") for img in batch["image"]]
-                    nwords_since_last_log += sum([img.numel() for img in batch["image"]])
-                else:
-                    batch["image"] = batch["image"].to(device="cuda")
-                    nwords_since_last_log += batch["image"].numel()
+                batch["image"] = batch["image"].cuda()
+                nwords_since_last_log += batch["image"].numel()
             else:
                 raise ValueError("No image or latent code in batch")
             data_load_time = round(timer() - data_load_start, 4)

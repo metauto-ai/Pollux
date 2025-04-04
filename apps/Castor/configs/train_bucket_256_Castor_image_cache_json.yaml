@@ -5,7 +5,7 @@ version: v1.0
 # From now on, start to align train, data, and model setting with train stage (just finish refactor for dara)
 train_stage: stage-1 # options: preliminary, pretraining, posttraining; aligned with data setting
 name: Castor_2B_Model #used for local dump and wandb log
-output_dir: /mnt/pollux/checkpoints/chandan_masking
+output_dir: /mnt/pollux/checkpoints/chandan
 dump_dir: '' # No need now
 steps: 500000
 seed: 777
@@ -17,9 +17,9 @@ optim:
     weight_decay: 0.01
 
 distributed:
-    gpus: 1,2,3,4
+    gpus: 0,1,2,3,4,5,6,7
     fsdp_type: full_shard
-    dp_shard: 4
+    dp_shard: 8
     dp_replicate: 1
     compile: false
     model_dtype: bf16 # options: `fb8` is only supported by H100
