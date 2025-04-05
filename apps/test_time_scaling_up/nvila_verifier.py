@@ -10,12 +10,11 @@ from transformers import AutoModel
 
 class NvilaVerifier():
     def __init__(self):
-        model_name = "/mnt/pollux/checkpoints/NVILA-Lite-2B"
-        cache_dir = '/mnt/pollux/wentian/'
+        model_name = "/mnt/pollux/checkpoints/NVILA-Lite-2B-Verifier"
         print("loading NVILA model")
         self.model = AutoModel.from_pretrained(model_name, trust_remote_code=True, device_map="auto")
-        self.yes_id = model.tokenizer.encode("yes", add_special_tokens=False)[0]
-        self.no_id = model.tokenizer.encode("no", add_special_tokens=False)[0]
+        self.yes_id = self.model.tokenizer.encode("yes", add_special_tokens=False)[0]
+        self.no_id = self.model.tokenizer.encode("no", add_special_tokens=False)[0]
         print("loading NVILA finished")
 
 
@@ -31,9 +30,9 @@ class NvilaVerifier():
     The given prompt is:{prompt}. Please consider the prompt and the image to make a decision and response directly with 'yes' or 'no'.
     """
 
-        r1, scores1 = model.generate_content([image_1, prompt])
+        r1, scores1 = self.model.generate_content([image_1, prompt])
 
-        r2, scores2 = model.generate_content([image_2, prompt])
+        r2, scores2 = self.model.generate_content([image_2, prompt])
 
         return r1, scores1, r2, scores2
 
