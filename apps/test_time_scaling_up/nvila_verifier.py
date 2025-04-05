@@ -51,13 +51,13 @@ class NvilaVerifier():
             if r1 == r2:
                 if r1 == "yes":
                     # pick the one with higher score for yes
-                    if scores1[0][0, yes_id] > scores2[0][0, yes_id]:
+                    if scores1[0][0, self.yes_id] > scores2[0][0, self.yes_id]:
                         score.append(1)
                     else:
                         score.append(0)
                 else:
                     # pick the one with less score for no
-                    if scores1[0][0, no_id] < scores2[0][0, no_id]:
+                    if scores1[0][0, self.no_id] < scores2[0][0, self.no_id]:
                         score.append(1)
                     else:
                         score.append(0)
