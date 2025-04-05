@@ -13,6 +13,8 @@ from torch.nn.attention.flex_attention import (
     _mask_mod_signature,
     create_block_mask,
 )
+from liger_kernel.transformers import LigerSwiGLUMLP, LigerRMSNorm, liger_rotary_pos_emb
+from types import SimpleNamespace
 import warnings
 
 from . import probe
@@ -49,6 +51,9 @@ class BaseTransformerArgs:
     max_seqlen: int = 1024
 
     qk_norm: bool = True
+    liger_ffn: bool = True
+    liger_rms_norm: bool = True
+    liger_rotary_emb: bool = True
 
 
 def cross_entropy(pred, target, **kwargs):
@@ -171,7 +176,14 @@ def apply_rotary_emb(
     xk: torch.Tensor,
     seq_dim: int,
     freqs_cis: torch.Tensor,
+    liger_rotary_emb: bool = True,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
+    if liger_rotary_emb:
+        sin = freqs_cis[:, :, 1, 0]
+        cos = freqs_cis[:, :, 0, 0]
+        xq, xk = liger_rotary_pos_emb(xq, xk, cos, sin)
+        return xq, xk
+    
     xq_ = xq.reshape(*xq.shape[:-1], -1, 1, 2)  # B S H D -> B S H D/2 1 2
     xk_ = xk.reshape(*xk.shape[:-1], -1, 1, 2)  # B S H D -> B S H D/2 1 2
     freqs_cis = reshape_for_broadcast(
@@ -327,18 +339,27 @@ class RMSNorm(nn.Module):
 
     """
 
-    def __init__(self, dim: int, eps: float = 1e-6):
+    def __init__(self, dim: int, eps: float = 1e-6, liger_rms_norm: bool = True):
         super().__init__()
         self.eps = eps
-        self.weight = nn.Parameter(torch.ones(dim))
+        self.liger_rms_norm: bool = liger_rms_norm
+        if liger_rms_norm:
+            #  casting gemma: where everything is cast to fp32, then computed, then cast back to the original dtype.
+            #  casting llama: where only the inverse RMS is computed on fp32.
+            self.rms_norm = LigerRMSNorm(dim, init_fn="ones", eps=self.eps, casting_mode="llama")
+        else:
+            self.weight = nn.Parameter(torch.ones(dim))
 
     def _norm(self, x: torch.Tensor):
         return x * torch.rsqrt((x * x).mean(-1, keepdim=True) + self.eps)
 
     def forward(self, x: torch.Tensor):
-        x = probe.log_stats(x, "resid")
-        output = self._norm(x.float())
-        return (output * self.weight.float()).type_as(x)
+        if self.liger_rms_norm:
+            return self.rms_norm(x)
+        else:
+            x = probe.log_stats(x, "resid")
+            output = self._norm(x.float())
+            return (output * self.weight.float()).type_as(x)
 
     def reset_parameters(self):
         torch.nn.init.ones_(self.weight)  # type: ignore
@@ -353,6 +374,8 @@ class Attention(nn.Module):
         n_kv_heads: int,
         rope_theta: float,
         qk_norm: bool = True,
+        liger_rotary_emb: bool = True,
+        liger_rms_norm: bool = True,
     ):
         super().__init__()
 
@@ -363,6 +386,8 @@ class Attention(nn.Module):
         self.n_heads = n_heads
         self.n_kv_heads = n_kv_heads
         self.heads_per_group = self.n_heads // self.n_kv_heads
+
+        self.liger_rotary_emb = liger_rotary_emb
 
         self.wq = nn.Linear(
             dim,
@@ -387,8 +412,8 @@ class Attention(nn.Module):
         )
 
         if qk_norm:
-            self.q_norm = RMSNorm(head_dim)
-            self.k_norm = RMSNorm(head_dim)
+            self.q_norm = RMSNorm(head_dim, liger_rms_norm=liger_rms_norm)
+            self.k_norm = RMSNorm(head_dim, liger_rms_norm=liger_rms_norm)
         else:
             self.q_norm = nn.Identity()
             self.k_norm = nn.Identity()
@@ -417,7 +442,8 @@ class Attention(nn.Module):
         xq = self.q_norm(xq)
         xk = self.k_norm(xk)
 
-        xq, xk = apply_rotary_emb(xq, xk, 1, freq_cis[0:seq_len])
+
+        xq, xk = apply_rotary_emb(xq, xk, 1, freq_cis[0:seq_len], liger_rotary_emb=self.liger_rotary_emb)
 
         # This condition helps us be easily compatible
         # with inference by adding a pluggable KVCache
@@ -494,6 +520,7 @@ class FeedForward(nn.Module):
         multiple_of: int,
         ffn_dim_multiplier: Optional[float],
         mp_size: int = 1,
+        liger_ffn: bool = True,
     ):
         super().__init__()
 
@@ -505,25 +532,37 @@ class FeedForward(nn.Module):
 
         self.dim = dim
         self.hidden_dim = hidden_dim
+        self.liger_ffn = liger_ffn
 
-        self.w1 = nn.Linear(
-            dim,
-            hidden_dim,
-            bias=False,
-        )
-        self.w3 = nn.Linear(
-            dim,
-            hidden_dim,
-            bias=False,
-        )
-        self.w2 = nn.Linear(
-            hidden_dim,
-            dim,
-            bias=False,
-        )
+        if liger_ffn:
+            config = SimpleNamespace(
+                hidden_size=dim,
+                intermediate_size=hidden_dim,
+                hidden_act="silu",
+            )
+            self.ffn = LigerSwiGLUMLP(config)
+        else:
+            self.w1 = nn.Linear(
+                dim,
+                hidden_dim,
+                bias=False,
+            )
+            self.w3 = nn.Linear(
+                dim,
+                hidden_dim,
+                bias=False,
+            )
+            self.w2 = nn.Linear(
+                hidden_dim,
+                dim,
+                bias=False,
+            )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # B S D
+        if self.liger_ffn:
+            return self.ffn(x)
+        
         x1 = self.w1(x.view_as(x))
         x3 = self.w3(x.view_as(x))
         output = self.w2(F.silu(x1) * x3)
@@ -577,9 +616,10 @@ class TransformerBlock(nn.Module):
             hidden_dim=4 * args.dim,
             multiple_of=args.multiple_of,
             ffn_dim_multiplier=args.ffn_dim_multiplier,
+            liger_ffn=args.liger_ffn,
         )
-        self.attention_norm = RMSNorm(args.dim, eps=args.norm_eps)
-        self.ffn_norm = RMSNorm(args.dim, eps=args.norm_eps)
+        self.attention_norm = RMSNorm(args.dim, eps=args.norm_eps, liger_rms_norm=args.liger_rms_norm)
+        self.ffn_norm = RMSNorm(args.dim, eps=args.norm_eps, liger_rms_norm=args.liger_rms_norm)
 
     def forward(
         self,
