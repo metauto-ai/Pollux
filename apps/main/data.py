@@ -76,6 +76,7 @@ class DataArgs:
     # * Image specific args
     image_size: int = 256
     condition_image_size: int = 256
+    max_ratio: float = 2.0
 
     # * Huggingface specific args
     root_dir: Optional[str] = None  # For local/huggingface datasets

@@ -27,10 +27,11 @@ class ImageProcessing(nn.Module):
             ]
         )
         self.image_size = args.image_size
+        self.max_ratio = args.max_ratio
         self.cls_list = list(IMAGENET2012_CLASSES.items())
 
     def transform(self, x: Image) -> torch.Tensor:
-        x = center_crop_arr(x, self.image_size)
+        x = center_crop_arr(x, self.image_size, self.max_ratio)
         return self.normalize_transform(x)
 
     def forward(self, data: Dict) -> Dict:
@@ -70,9 +71,11 @@ class PolluxImageProcessing:
         )
         self.image_size = args.image_size
         self.condition_image_size = args.condition_image_size
+        self.max_ratio = args.max_ratio
 
     def transform(self, x: Image) -> torch.Tensor:
-        x = center_crop_arr(x, self.image_size)
+        x = center_crop_arr(x, self.image_size, self.max_ratio)
+        # TODO: cond_x should also be resized according to the max_ratio
         cond_x = x.resize(
             (self.condition_image_size, self.condition_image_size),
             resample=Image.BICUBIC,
@@ -143,7 +146,7 @@ def random_mask_images(img_tensor, mask_ratio, mask_patch, mask_all=False):
     return mask, masked_tensor
 
 
-def center_crop_arr(pil_image, image_size):
+def center_crop_arr(pil_image, image_size, max_ratio=1.0):
     """
     Center cropping implementation from ADM.
     https://github.com/openai/guided-diffusion/blob/8fb3ad9197f16bbc40620447b2742e13458d2831/guided_diffusion/image_datasets.py#L126
@@ -158,7 +161,7 @@ def center_crop_arr(pil_image, image_size):
         tuple(round(x * scale) for x in pil_image.size), resample=Image.BICUBIC
     )
 
-    crop_size = var_center_crop_size_fn(pil_image.size, image_size)
+    crop_size = var_center_crop_size_fn(pil_image.size, image_size, max_ratio=max_ratio)
 
     arr = np.array(pil_image)
     crop_y = (arr.shape[0] - crop_size[0]) // 2
@@ -168,8 +171,10 @@ def center_crop_arr(pil_image, image_size):
     )
 
 
-def generate_crop_size_list(image_size, patch_size, max_ratio=2.0):
+def generate_crop_size_list(image_size, max_ratio=2.0):
     assert max_ratio >= 1.0
+    patch_size = 32     # patch size increments
+    assert image_size % patch_size == 0
     min_wp, min_hp = image_size // patch_size, image_size // patch_size
     crop_size_list = []
     wp, hp = min_wp, min_hp
@@ -189,7 +194,7 @@ def is_valid_crop_size(cw, ch, orig_w, orig_h):
 
 
 # TODO: patch_size and max_ratio should be args
-def var_center_crop_size_fn(orig_img_shape, image_size=256, patch_size=32, max_ratio=2.0):
+def var_center_crop_size_fn(orig_img_shape, image_size, max_ratio=2.0):
     """
     Dynamic cropping from Lumina-Image-2.0
     https://github.com/Alpha-VLLM/Lumina-Image-2.0/blob/main/imgproc.py#L39
@@ -197,7 +202,6 @@ def var_center_crop_size_fn(orig_img_shape, image_size=256, patch_size=32, max_r
     w, h = orig_img_shape[:2]
     crop_size_list = generate_crop_size_list(
         image_size=image_size, 
-        patch_size=patch_size, 
         max_ratio=max_ratio
     )
     rem_percent = [
