@@ -378,12 +378,16 @@ def train(args: TrainArgs):
                 # run the GC at different times so they slow down the whole pipeline
                 gc.collect()
             if "latent_code" in batch:
-                batch["latent_code"] = batch["latent_code"].cuda()
-                nwords_since_last_log += batch["latent_code"].numel()
+                if isinstance(batch["latent_code"], list):
+                    batch["latent_code"] = [latent_code.cuda() for latent_code in batch["latent_code"]]
+                    nwords_since_last_log += batch["latent_code"][0].numel() * len(batch["latent_code"])
+                else:
+                    batch["latent_code"] = batch["latent_code"].cuda()
+                    nwords_since_last_log += batch["latent_code"].numel()
             elif "image" in batch:
                 if isinstance(batch["image"], list):
-                    batch["image"] = [img.to(device="cuda") for img in batch["image"]]
-                    nwords_since_last_log += sum([img.numel() for img in batch["image"]])
+                    batch["image"] = [image.to(device="cuda") for image in batch["image"]]
+                    nwords_since_last_log += batch["image"][0].numel() * len(batch["image"])
                 else:
                     batch["image"] = batch["image"].to(device="cuda")
                     nwords_since_last_log += batch["image"].numel()
