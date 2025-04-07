@@ -11,7 +11,7 @@ from .modules.transformer import TransformerArgs
 from .modules.transformer import DiffusionTransformer
 
 from .modules.vae import create_vae, VideoVAEArgs
-from .modules.text_encoder import CLIP, CLIPArgs
+from .modules.text_encoder import TextEncoderArgs, create_text_encoder
 from .modules.schedulers import RectifiedFlow, SchedulerArgs
 
 logger = logging.getLogger()
@@ -23,7 +23,7 @@ class ModelArgs:
     with_vae: bool = False
     vae_args: VideoVAEArgs = field(default_factory=VideoVAEArgs)
     pre_trained_weight: Optional[str] = None
-    text_encoder: CLIPArgs = field(default_factory=CLIPArgs)
+    text_encoder: TextEncoderArgs = field(default_factory=TextEncoderArgs)
     scheduler: SchedulerArgs = field(default_factory=SchedulerArgs)
     text_cfg_ratio: float = 0.1
 
@@ -37,7 +37,7 @@ class Castor(nn.Module):
         self.diffusion_transformer = DiffusionTransformer(args.diffusion_model)
         if args.with_vae:
             self.compressor = create_vae(args.vae_args)
-        self.text_encoder = CLIP(args.text_encoder)
+        self.text_encoder = create_text_encoder(args.text_encoder)
         self.scheduler = RectifiedFlow(args.scheduler)
         self.text_cfg_ratio = args.text_cfg_ratio
 
@@ -56,7 +56,7 @@ class Castor(nn.Module):
             conditional_signal = self.diffusion_transformer.negative_token.repeat(
                 conditional_signal.size(0), conditional_signal.size(1), 1
             )
-            conditional_mask = torch.zeros_like(conditional_mask, dtype=conditional_signal.dtype)
+            conditional_mask = torch.ones_like(conditional_mask, dtype=conditional_signal.dtype)
 
         latent_code = batch["latent_code"]
         noised_x, t, target = self.scheduler.sample_noised_input(latent_code)
