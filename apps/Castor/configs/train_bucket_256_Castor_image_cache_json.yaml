@@ -68,7 +68,10 @@ model:
         config_name: "ViT-B/32"
         dtype: "bf16"
         text_seqlen: 77
-
+    ema:
+        decay: 0.95
+        warmup_steps: 2000
+        update_buffers: false
 data:  
   - stage: stage-1
     id: 1

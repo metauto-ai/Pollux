@@ -42,6 +42,8 @@ from lingua.distributed import (
     get_world_size,
     get_local_rank,
     parallelize_model,
+    apply_activation_checkpointing,
+    apply_compile,
     setup_env,
     setup_torch_distributed,
     requeue_slurm_job,
@@ -68,10 +70,11 @@ from apps.Castor.model import (
     tp_parallelize,
     get_no_recompute_ops,
 )
-
+from apps.Castor.modules.ema import EMA, EMAArgs
 from apps.main.utils.cal_flops import get_num_flop_per_token
 
 logger = logging.getLogger()
+
 
 
 @dataclass
@@ -104,7 +107,7 @@ class TrainArgs:
     profiling: ProfilerArgs = field(default_factory=ProfilerArgs)
     logging: LoggingArgs = field(default_factory=LoggingArgs)
     scheduler: SchedulerArgs = field(default_factory=SchedulerArgs)
-
+    ema: EMAArgs = field(default_factory=EMAArgs)
     # If set to None, eval is run locally otherwise it launches a new job with the given number of gpus
     async_eval_gpus: Optional[int] = None
     eval: Optional[Any] = None
@@ -277,6 +280,7 @@ def train(args: TrainArgs):
 
         model = Castor(args.model)
         logger.info("Model is built !")
+        ema = EMA(model, decay=args.ema.decay, warmup_steps=args.ema.warmup_steps)
 
         model_param_count = get_num_params(model)
 
@@ -291,6 +295,8 @@ def train(args: TrainArgs):
             tp_parallelize=tp_parallelize,
             no_recompute_ops=get_no_recompute_ops(),
         )
+        model = apply_activation_checkpointing(model, args.distributed)
+        model = apply_compile(model, args.distributed)
         model = model.to(device="cuda")
 
         check_model_value_range(model, range=10.0, std=1.0)
@@ -298,6 +304,15 @@ def train(args: TrainArgs):
         # log model size
 
         logger.info(f"Model size: {model_param_count:,} total parameters")
+
+        ema.ema_model = parallelize_model(
+            ema.ema_model,
+            world_mesh,
+            args.model,
+            args.distributed,
+            fsdp_grouping_plan=build_fsdp_grouping_plan(args.model),
+        )
+        ema.ema_model = ema.ema_model.to(device="cuda")
 
         gpu_memory_monitor = GPUMemoryMonitor("cuda")
         logger.info(
@@ -414,6 +429,7 @@ def train(args: TrainArgs):
                 optimizer.step()
                 scheduler.step()
                 optimizer.zero_grad()
+                ema.step(model)
                 train_state.step += 1
 
             # updates the scale for next iteration

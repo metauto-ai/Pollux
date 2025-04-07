@@ -1,0 +1,3 @@
+"""
+Castor package initialization
+""" 
