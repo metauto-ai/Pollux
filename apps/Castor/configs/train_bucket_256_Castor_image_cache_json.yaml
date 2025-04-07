@@ -17,9 +17,9 @@ optim:
     weight_decay: 0.01
 
 distributed:
-    gpus: "7"
-    fsdp_type: no_shard
-    dp_shard: 1
+    gpus: "0,1,2,3"
+    fsdp_type: full_shard
+    dp_shard: 4
     dp_replicate: 1
     compile: false
     model_dtype: bf16 # options: `fb8` is only supported by H100
@@ -85,8 +85,8 @@ data:
     root_dir: "/mnt/pollux/mongo_db_cache_train"
     dataloader:
         prefetch_factor: 2
-        batch_size: 4
-        num_workers: 0
+        batch_size: 16
+        num_workers: 8
         seed: 1024
         shuffle: True
         pin_memory: True
@@ -103,12 +103,12 @@ checkpoint:
         every: 5000
         keep: 0 # Don't remove the ckpt
 
-# logging:
-#     freq: 100
-#     wandb:
-#         project: Pollux
-#         entity: metauto
-#         name: ''
+logging:
+    freq: 100
+    wandb:
+        project: Pollux
+        entity: franciszzj
+        name: ''
 
 env:
     ENABLE_INTRA_NODE_COMM: '0'  # '0' for local machine (otherwise errors happen); '1' for slurmn (need test)
