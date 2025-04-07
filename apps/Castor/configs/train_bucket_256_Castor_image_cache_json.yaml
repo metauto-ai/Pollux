@@ -5,7 +5,7 @@ version: v1.0
 # From now on, start to align train, data, and model setting with train stage (just finish refactor for dara)
 train_stage: stage-1 # options: preliminary, pretraining, posttraining; aligned with data setting
 name: Castor_2B_Model #used for local dump and wandb log
-output_dir: /mnt/pollux/checkpoints/chandan_masking
+output_dir: /mnt/pollux/checkpoints/chandan_qwen2_5_vl_masking_ratio_1.0
 dump_dir: '' # No need now
 steps: 500000
 seed: 777
@@ -17,9 +17,9 @@ optim:
     weight_decay: 0.01
 
 distributed:
-    gpus: 1,2,3,4
+    gpus: 0,1,2,3,4,5,6,7
     fsdp_type: full_shard
-    dp_shard: 4
+    dp_shard: 8
     dp_replicate: 1
     compile: false
     model_dtype: bf16 # options: `fb8` is only supported by H100
@@ -54,9 +54,9 @@ model:
         out_channels: 16
         tmb_size: 256
         gen_seqlen: 16
-        condition_seqlen: 128
+        condition_seqlen: 256
         norm_eps: 1e-5
-        condition_dim: 512
+        condition_dim: 2048
     text_cfg_ratio: 0.1
     with_vae: true
     vae_args:
@@ -65,9 +65,9 @@ model:
         enable_tiling: false
         enable_slicing: false
     text_encoder:
-        config_name: "ViT-B/32"
+        config_name: "Qwen/Qwen2.5-VL-3B-Instruct"
         dtype: "bf16"
-        text_seqlen: 77
+        text_seqlen: 256
 
 data:  
   - stage: stage-1
@@ -77,6 +77,7 @@ data:
     source: mongodb
     image_size: 256
     condition_image_size: 256
+    max_ratio: 1.0
     partition_key: 'partition_key'
     retries: 3
     extract_field:
