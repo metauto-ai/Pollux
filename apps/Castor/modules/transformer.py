@@ -294,16 +294,7 @@ class DiffusionTransformer(BaseDiffusionTransformer):
     ):
         condition = self.cond_proj(condition)
 
-        mask_sum = condition_mask.sum(dim=1, keepdim=True)
-        if mask_sum.min() > 0:  # Only compute mean if at least one element is masked
-            modulation_signal = torch.mean(
-                condition * condition_mask.unsqueeze(-1), 
-                dim=1, 
-                keepdim=False
-            ) / (mask_sum + 1e-8) + self.tmb_embed(time_steps)
-        else:
-            # When mask is all zeros, skip the mean calculation
-            modulation_signal = self.tmb_embed(time_steps)
+        modulation_signal = self.tmb_embed(time_steps)
 
         x, x_mask, cond_l, img_size, freqs_cis = self.patchify_and_embed_image(x, condition, condition_mask)
 
