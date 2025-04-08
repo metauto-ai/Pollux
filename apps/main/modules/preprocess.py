@@ -164,10 +164,10 @@ def center_crop_arr(pil_image, image_size, max_ratio=1.0):
     crop_size = var_center_crop_size_fn(pil_image.size, image_size, max_ratio=max_ratio)
 
     arr = np.array(pil_image)
-    crop_y = (arr.shape[0] - crop_size[0]) // 2
-    crop_x = (arr.shape[1] - crop_size[1]) // 2
+    crop_y = (arr.shape[0] - crop_size[1]) // 2
+    crop_x = (arr.shape[1] - crop_size[0]) // 2
     return Image.fromarray(
-        arr[crop_y : crop_y + crop_size[0], crop_x : crop_x + crop_size[1]]
+        arr[crop_y : crop_y + crop_size[1], crop_x : crop_x + crop_size[0]]
     )
 
 
