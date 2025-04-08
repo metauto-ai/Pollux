@@ -57,6 +57,9 @@ model:
         condition_seqlen: 128
         norm_eps: 1e-5
         condition_dim: 512
+        liger_ffn: true
+        liger_rms_norm: true
+        liger_rotary_emb: false
     text_cfg_ratio: 0.1
     with_vae: true
     vae_args:

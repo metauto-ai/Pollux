@@ -53,7 +53,7 @@ class BaseTransformerArgs:
     qk_norm: bool = True
     liger_ffn: bool = True
     liger_rms_norm: bool = True
-    liger_rotary_emb: bool = True
+    liger_rotary_emb: bool = False
 
 
 def cross_entropy(pred, target, **kwargs):
