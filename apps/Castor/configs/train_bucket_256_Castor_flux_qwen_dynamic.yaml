@@ -4,8 +4,8 @@
 version: v1.0
 # From now on, start to align train, data, and model setting with train stage (just finish refactor for dara)
 train_stage: stage-1 # options: preliminary, pretraining, posttraining; aligned with data setting
-name: Castor_2B_Model_qwen2_5_vl_masking_ratio_2.0 #used for local dump and wandb log
-output_dir: /mnt/pollux/checkpoints/chandan_qwen2_5_vl_masking_ratio_2.0
+name: qwen2_5_vl_flux_dynamic #used for local dump and wandb log
+output_dir: /mnt/pollux/checkpoints/chandan
 dump_dir: '' # No need now
 steps: 500000
 seed: 777
@@ -57,11 +57,12 @@ model:
         condition_seqlen: 256
         norm_eps: 1e-5
         condition_dim: 2048
+        qk_norm: false
     text_cfg_ratio: 0.1
     with_vae: true
     vae_args:
-        vae_type: "hunyuan"
-        pretrained_model_name_or_path: '/mnt/pollux/checkpoints/HunyuanVideo/vae'
+        vae_type: "flux"
+        pretrained_model_name_or_path: '/mnt/pollux/checkpoints/FLUX.1-dev/vae'
         enable_tiling: false
         enable_slicing: false
     text_encoder:
@@ -98,7 +99,7 @@ profiling:
 
 checkpoint:
     dump:
-        every: 5000
+        every: 2500
         keep: 0 # Don't remove the ckpt
     eval:
         every: 5000
@@ -113,3 +114,4 @@ logging:
 
 env:
     ENABLE_INTRA_NODE_COMM: '0'  # '0' for local machine (otherwise errors happen); '1' for slurmn (need test)
+    NCCL_DEBUG: 'ERROR'
