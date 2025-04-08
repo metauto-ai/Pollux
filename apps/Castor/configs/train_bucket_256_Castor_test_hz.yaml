@@ -1,11 +1,11 @@
-# torchrun --standalone --nnodes 1 --nproc-per-node 8 -m apps.Castor.train config=apps/Castor/configs/train_bucket_256_Castor_image_cache_json.yaml
+# torchrun --standalone --nnodes 1 --nproc-per-node 4 -m apps.Castor.train config=apps/Castor/configs/train_bucket_256_Castor_test_hz.yaml
 
 # Set up single experiment
 version: v1.0
 # From now on, start to align train, data, and model setting with train stage (just finish refactor for dara)
 train_stage: stage-1 # options: preliminary, pretraining, posttraining; aligned with data setting
-name: qwen2_5_vl_flux_dynamic #used for local dump and wandb log
-output_dir: /mnt/pollux/checkpoints/chandan
+name: Castor_2B_Model_test #used for local dump and wandb log
+output_dir: /mnt/pollux/checkpoints/
 dump_dir: '' # No need now
 steps: 500000
 seed: 777
@@ -57,12 +57,11 @@ model:
         condition_seqlen: 256
         norm_eps: 1e-5
         condition_dim: 2048
-        qk_norm: false
     text_cfg_ratio: 0.1
     with_vae: true
     vae_args:
-        vae_type: "flux"
-        pretrained_model_name_or_path: '/mnt/pollux/checkpoints/FLUX.1-dev/vae'
+        vae_type: "hunyuan"
+        pretrained_model_name_or_path: '/mnt/pollux/checkpoints/HunyuanVideo/vae'
         enable_tiling: false
         enable_slicing: false
     text_encoder:
@@ -99,19 +98,18 @@ profiling:
 
 checkpoint:
     dump:
-        every: 2500
+        every: 5000
         keep: 0 # Don't remove the ckpt
     eval:
         every: 5000
         keep: 0 # Don't remove the ckpt
 
-logging:
-    freq: 100
-    wandb:
-        project: Pollux
-        entity: franciszzj
-        name: ''
+# logging:
+#     freq: 100
+#     wandb:
+#         project: Pollux
+#         entity: metauto
+#         name: ''
 
 env:
     ENABLE_INTRA_NODE_COMM: '0'  # '0' for local machine (otherwise errors happen); '1' for slurmn (need test)
-    NCCL_DEBUG: 'ERROR'

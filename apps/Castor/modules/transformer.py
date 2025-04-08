@@ -17,6 +17,7 @@ from .component import (
     RMSNorm,
     FeedForward,
     Attention,
+    FlashAttention,
     InitStdFactor,
     RotaryEmbedding1D,
     RotaryEmbedding2D,
@@ -60,12 +61,18 @@ class DiffusionTransformerBlock(nn.Module):
         assert args.n_heads % self.n_kv_heads == 0
         assert args.dim % args.n_heads == 0
 
-        self.attention = Attention(
+        # self.attention = Attention(
+        #     dim=args.dim,
+        #     head_dim=self.head_dim,
+        #     n_heads=self.n_heads,
+        #     n_kv_heads=self.n_kv_heads,
+        #     rope_theta=args.rope_theta,
+        #     qk_norm=args.qk_norm,
+        # )
+        self.attention = FlashAttention(
             dim=args.dim,
-            head_dim=self.head_dim,
             n_heads=self.n_heads,
             n_kv_heads=self.n_kv_heads,
-            rope_theta=args.rope_theta,
             qk_norm=args.qk_norm,
         )
         self.feed_forward = FeedForward(
@@ -84,6 +91,7 @@ class DiffusionTransformerBlock(nn.Module):
     def forward(
         self,
         x: torch.Tensor,
+        x_mask: torch.Tensor,
         freqs_cis: torch.Tensor,
         modulation_signal: torch.Tensor,
         mask: Optional[Union[BlockMask, AttentionBias, str]] = None,
@@ -94,6 +102,7 @@ class DiffusionTransformerBlock(nn.Module):
         ).chunk(4, dim=1)
         h = x + gate_msa.unsqueeze(1).tanh() * self.attention(
             modulate(self.attention_norm(x), scale_msa),
+            x_mask,
             freqs_cis,
             tok_idx=None,
             mask=mask,
@@ -126,17 +135,17 @@ class BaseDiffusionTransformer(nn.Module):
     def forward(
         self,
         h,
-        x_mask,
+        h_mask,
         freqs_cis,
         modulation_signal: Optional[torch.Tensor] = None,
         attn_impl: str = "sdpa",
     ):
         for idx, layer in enumerate(self.layers):
             if modulation_signal == None:
-                h = layer(h, freqs_cis, mask=None, attn_impl=attn_impl)
+                h = layer(h, h_mask, freqs_cis, mask=None, attn_impl=attn_impl)
             else:
                 h = layer(
-                    h, freqs_cis, modulation_signal, mask=None, attn_impl=attn_impl
+                    h, h_mask, freqs_cis, modulation_signal, mask=None, attn_impl=attn_impl
                 )
         return h
 

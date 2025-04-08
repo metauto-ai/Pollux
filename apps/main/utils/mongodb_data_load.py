@@ -127,6 +127,9 @@ class MongoDBDataLoad(Dataset):
                     partition_key = int(item[self.partition_key])
                     if partition_key % self.num_shards == self.shard_idx:
                         data.append(item)
+                        # Note: used for debugging
+                        # if len(data) > 10000:
+                        #     break
             self.data = pd.DataFrame(data).reset_index()
         end_time = time.time()  # Record the end time
         # Calculate the duration in seconds
@@ -313,9 +316,10 @@ class MongoDBParquetDataLoad(MongoDBDataLoad):
             else:
                 for k, v in return_sample.items():
                     return_parquet[k].extend(v)
-        for k, v in return_parquet.items():
-            if isinstance(v[0], torch.Tensor):
-                return_parquet[k] = torch.stack(v, dim=0)
+        # Note: remove becasue of dynamic resoltion
+        # for k, v in return_parquet.items():
+        #     if isinstance(v[0], torch.Tensor):
+        #         return_parquet[k] = torch.stack(v, dim=0)
         return return_parquet
 
 
