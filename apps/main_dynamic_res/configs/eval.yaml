@@ -1,0 +1,98 @@
+# python -m apps.main.generate config=apps/main/configs/eval.yaml
+name: "debug_evals"
+stage: eval
+ckpt_dir: "/jfs/checkpoints/dump/Pollux_v1.0_joint_training_config_update_double_check/checkpoints/0000400000"
+dump_dir: "/jfs/checkpoints/dump/Pollux_v1.0_joint_training_config_update_double_check/MJHQ/0000400000"
+generator:
+  guidance_scale: 6.5
+  dtype: bf16
+  resolution: 256
+  show_progress: False
+  inference_steps: 50
+  vae_scale_factor: 8.0
+  tvae:
+    model_name: Hunyuan
+    pretrained_model_name_or_path: '/jfs/checkpoints/models--tencent--HunyuanVideo/snapshots/2a15b5574ee77888e51ae6f593b2ceed8ce813e5/vae'
+    enable_tiling: false
+    enable_slicing: false
+data:
+  - stage: eval
+    id: 1
+    data_name: gen-eval
+    task: latent_text_to_image
+    source: mongodb
+    partition_key: 'partition_key'
+    mapping_field:
+        "caption": "caption"
+    use: False
+    dataloader:
+        batch_size: 64
+        num_workers: 2
+        seed: 1024
+        shuffle: False
+        pin_memory: False
+        drop_last: False
+  - stage: eval
+    id: 2
+    data_name: dpg-bench
+    task: latent_text_to_image
+    source: mongodb
+    partition_key: 'partition_key'
+    mapping_field:
+        "caption": "caption"
+    use: False
+    dataloader:
+        batch_size: 64
+        num_workers: 2
+        seed: 1024
+        shuffle: False
+        pin_memory: False
+        drop_last: False
+  - stage: eval
+    id: 3
+    data_name: MJHQ-30k
+    task: latent_text_to_image
+    source: mongodb
+    partition_key: 'partition_key'
+    mapping_field:
+        "caption": "caption"
+    use: True
+    dataloader:
+        batch_size: 64
+        num_workers: 2
+        seed: 1024
+        shuffle: False
+        pin_memory: False
+        drop_last: False
+  - stage: eval
+    id: 3
+    data_name: GenAI-Bench-1600
+    task: latent_text_to_image
+    source: mongodb
+    partition_key: 'partition_key'
+    mapping_field:
+        "caption": "caption"
+    use: False
+    dataloader:
+        batch_size: 64
+        num_workers: 2
+        seed: 1024
+        shuffle: False
+        pin_memory: False
+        drop_last: False
+  - stage: eval
+    id: 3
+    data_name: parti-prompts
+    task: latent_text_to_image
+    source: mongodb
+    partition_key: 'partition_key'
+    mapping_field:
+        "caption": "caption"
+    use: False
+    dataloader:
+        batch_size: 64
+        num_workers: 2
+        seed: 1024
+        shuffle: False
+        pin_memory: False
+        drop_last: False
