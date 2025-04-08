@@ -4,8 +4,8 @@
 version: v1.0
 # From now on, start to align train, data, and model setting with train stage (just finish refactor for dara)
 train_stage: stage-1 # options: preliminary, pretraining, posttraining; aligned with data setting
-name: Castor_2B_Model #used for local dump and wandb log
-output_dir: /mnt/pollux/checkpoints/chandan
+name: liger_transformer #used for local dump and wandb log
+output_dir: /mnt/pollux/checkpoints/aj
 dump_dir: '' # No need now
 steps: 500000
 seed: 777
@@ -63,8 +63,8 @@ model:
         #Flux /mnt/pollux/checkpoints/FLUX.1-dev/vae 
         #Hunyuan /mnt/pollux/checkpoints/HunyuanVideo/vae
         #COSMOS /mnt/pollux/checkpoints/Cosmos/Cosmos-0.1-Tokenizer-CI8x8/
-        vae_type: " "
-        pretrained_model_name_or_path: '/mnt/pollux/checkpoints/Cosmos/Cosmos-0.1-Tokenizer-CI8x8/' 
+        vae_type: "hunyuan"
+        pretrained_model_name_or_path: '/mnt/pollux/checkpoints/HunyuanVideo/vae' 
         enable_tiling: false
         enable_slicing: false
     text_encoder:

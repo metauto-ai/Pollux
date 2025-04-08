@@ -362,7 +362,10 @@ class RMSNorm(nn.Module):
             return (output * self.weight.float()).type_as(x)
 
     def reset_parameters(self):
-        torch.nn.init.ones_(self.weight)  # type: ignore
+        if self.liger_rms_norm:
+            torch.nn.init.ones_(self.rms_norm.weight)
+        else:
+            torch.nn.init.ones_(self.weight)  # type: ignore
 
 
 class Attention(nn.Module):
@@ -572,21 +575,41 @@ class FeedForward(nn.Module):
         in_init_std = init_std or (self.dim ** (-0.5))
         out_init_std = init_std or (self.hidden_dim ** (-0.5))
         out_init_std = out_init_std / factor
-        for w in [self.w1, self.w3]:
+        if self.liger_ffn:
+            # Initialize LigerSwiGLUMLP parameters
+            # gate_proj and up_proj correspond to w1 and w3
+            for w in [self.ffn.gate_proj, self.ffn.up_proj]:
+                nn.init.trunc_normal_(
+                    w.weight,
+                    mean=0.0,
+                    std=in_init_std,
+                    a=-3 * in_init_std,
+                    b=3 * in_init_std,
+                )
+            # down_proj corresponds to w2
             nn.init.trunc_normal_(
-                w.weight,
+                self.ffn.down_proj.weight,
                 mean=0.0,
-                std=in_init_std,
-                a=-3 * in_init_std,
-                b=3 * in_init_std,
+                std=out_init_std,
+                a=-3 * out_init_std,
+                b=3 * out_init_std,
             )
-        nn.init.trunc_normal_(
-            self.w2.weight,
-            mean=0.0,
-            std=out_init_std,
-            a=-3 * out_init_std,
-            b=3 * out_init_std,
-        )
+        else:
+            for w in [self.w1, self.w3]:
+                nn.init.trunc_normal_(
+                    w.weight,
+                    mean=0.0,
+                    std=in_init_std,
+                    a=-3 * in_init_std,
+                    b=3 * in_init_std,
+                )
+            nn.init.trunc_normal_(
+                self.w2.weight,
+                mean=0.0,
+                std=out_init_std,
+                a=-3 * out_init_std,
+                b=3 * out_init_std,
+            )
 
 
 class TransformerBlock(nn.Module):
