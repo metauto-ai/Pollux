@@ -20,6 +20,7 @@ class TextEncoderArgs:
     config_name: str = "ViT-B/32"
     dtype: str = "bf16"
     text_seqlen: int = 77
+    model_path: str = ""
 
 
 class BaseTextEncoder:
@@ -40,12 +41,22 @@ class CLIP(BaseTextEncoder):
         super().__init__(args)
 
         self.clip_model = CLIPModel.from_pretrained(
-            "openai/clip-vit-large-patch14",
+            (
+                "openai/clip-vit-large-patch14"
+                if args.model_path == ""
+                else args.model_path
+            ),
             torch_dtype=self.dtype,
         ).cuda()
         self.clip_model.eval()
         self.clip_model.requires_grad_(False)
-        self.tokenizer = CLIPTokenizer.from_pretrained("openai/clip-vit-large-patch14")
+        self.tokenizer = CLIPTokenizer.from_pretrained(
+            (
+                "openai/clip-vit-large-patch14"
+                if args.model_path == ""
+                else args.model_path
+            ),
+        )
 
     def dim(self) -> int:
         return self.clip_model.config.hidden_size

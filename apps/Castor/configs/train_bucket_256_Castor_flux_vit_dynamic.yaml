@@ -67,8 +67,10 @@ model:
         enable_slicing: false
     text_encoder:
         config_name: "ViT-B/32"
+        model_path: "/mnt/pollux/checkpoints/clip-vit-large-patch14"
         dtype: "bf16"
-        text_seqlen: 77
+        text_seqlen: 256
+
 
 data:  
   - stage: stage-1
