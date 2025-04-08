@@ -83,13 +83,17 @@ class Qwen2_5_VL(BaseTextEncoder):
     def __init__(self, args: TextEncoderArgs):
         super().__init__(args)
         self.model = AutoModel.from_pretrained(
-            "Qwen/Qwen2.5-VL-3B-Instruct",
+            "Qwen/Qwen2.5-VL-3B-Instruct" if args.model_path == "" else args.model_path,
             torch_dtype=self.dtype,
         ).cuda()
         self.model.eval()
         self.model.requires_grad_(False)
-        self.tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen2.5-VL-3B-Instruct")
-        self.processor = AutoProcessor.from_pretrained("Qwen/Qwen2.5-VL-3B-Instruct")
+        self.tokenizer = AutoTokenizer.from_pretrained(
+            "Qwen/Qwen2.5-VL-3B-Instruct" if args.model_path == "" else args.model_path,
+        )
+        self.processor = AutoProcessor.from_pretrained(
+            "Qwen/Qwen2.5-VL-3B-Instruct" if args.model_path == "" else args.model_path,
+        )
 
     def dim(self) -> int:
         return self.model.config.hidden_size
