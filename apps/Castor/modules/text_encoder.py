@@ -10,7 +10,10 @@ from transformers import (
     AutoProcessor,
     CLIPTokenizer,
     CLIPModel,
+    GemmaTokenizerFast,
+    Gemma2Model,
 )
+import re
 
 logger = logging.getLogger()
 
@@ -141,10 +144,53 @@ class Qwen2_5_VL(BaseTextEncoder):
         return last_hidden_state, attention_mask
 
 
+class Gemma2_2B_it(BaseTextEncoder):
+    def __init__(self, args):
+        super().__init__(args)
+        self.tokenizer = GemmaTokenizerFast.from_pretrained(
+            args.model_path, subfolder="tokenizer"
+        )
+        self.text_encoder = Gemma2Model.from_pretrained(
+            args.model_path, subfolder="text_encoder", torch_dtype=self.dtype
+        ).cuda()
+
+    def dim(self) -> int:
+        return self.model.config.hidden_size
+
+    def __call__(self, batch: dict[str:any]) -> Tuple[torch.Tensor, torch.Tensor]:
+        assert "caption" in batch
+        if isinstance(batch["caption"][0], tuple):
+            batch["caption"] = [x[0] for x in batch["caption"]]
+        with torch.no_grad():
+            text_inputs = self.tokenizer(
+                batch["caption"],
+                padding="max_length",
+                max_length=self.text_seqlen,
+                truncation=True,
+                add_special_tokens=True,
+                return_tensors="pt",
+            )
+            text_input_ids = text_inputs.input_ids
+
+            prompt_attention_mask = text_inputs.attention_mask
+            prompt_attention_mask = prompt_attention_mask.to(self.text_encoder.device)
+
+            prompt_embeds = self.text_encoder(
+                text_input_ids.to(self.text_encoder.device),
+                attention_mask=prompt_attention_mask,
+            )
+            prompt_embeds = prompt_embeds[0].to(
+                dtype=self.dtype, device=self.text_encoder.device
+            )
+        return prompt_embeds, prompt_attention_mask
+
+
 def create_text_encoder(args: TextEncoderArgs) -> BaseTextEncoder:
     if args.config_name == "ViT-B/32":
         return CLIP(args)
     elif args.config_name == "Qwen/Qwen2.5-VL-3B-Instruct":
         return Qwen2_5_VL(args)
+    elif args.config_name == "Gemma2_2B_it":
+        return Gemma2_2B_it(args)
     else:
         raise ValueError(f"Unknown text encoder: {args.config_name}")
