@@ -221,8 +221,6 @@ class DiffusionTransformer(BaseDiffusionTransformer):
         )
         self.time_step_dim = args.time_step_dim
         self.dim = args.dim
-        self.cos_token = nn.Parameter(torch.zeros(1, 1, self.dim))
-        self.coe_token = nn.Parameter(torch.zeros(1, 1, self.dim))
         self.norm = RMSNorm(args.dim, eps=args.norm_eps)
         self.negative_token = nn.Parameter(torch.zeros(1, 1, args.condition_dim))
         self.cond_proj = nn.Linear(
@@ -365,6 +363,4 @@ class DiffusionTransformer(BaseDiffusionTransformer):
             a=-3 * init_std,
             b=3 * init_std,
         )
-        nn.init.normal_(self.cos_token, std=0.02)
-        nn.init.normal_(self.coe_token, std=0.02)
         nn.init.normal_(self.negative_token, std=0.02)

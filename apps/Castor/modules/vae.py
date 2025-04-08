@@ -139,7 +139,7 @@ class HunyuanVideoVAE(BaseLatentVideoVAE):
 class FluxVAE(BaseLatentVideoVAE):
     def __init__(self, args: VideoVAEArgs):
         super().__init__(args)
-        self.vae = AutoencoderKL.from_pretrained("/mnt/pollux/checkpoints/FLUX.1-dev/vae").requires_grad_(False)
+        self.vae = AutoencoderKL.from_pretrained(args.pretrained_model_name_or_path).requires_grad_(False)
         self.scale = 0.3611
         self.shift = 0.1159
 

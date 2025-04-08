@@ -144,7 +144,7 @@ def build_2B_Castor():
         enable_tiling=False,
         enable_slicing=False,
     )
-    text_encoder = CLIPArgs()
+    text_encoder = TextEncoderArgs()
     scheduler = SchedulerArgs(
         num_train_timesteps=1000,
         base_image_seq_len=256,
