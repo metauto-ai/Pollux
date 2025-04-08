@@ -42,8 +42,7 @@ class CLIP(BaseTextEncoder):
         self.clip_model = CLIPModel.from_pretrained(
             "openai/clip-vit-large-patch14",
             torch_dtype=self.dtype,
-        )
-        self.clip_model = self.clip_model.to(self.dtype).cuda()
+        ).cuda()
         self.clip_model.eval()
         self.clip_model.requires_grad_(False)
         self.tokenizer = CLIPTokenizer.from_pretrained("openai/clip-vit-large-patch14")
