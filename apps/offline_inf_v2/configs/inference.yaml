@@ -1,0 +1,25 @@
+name: inference
+
+model:
+  gen_vae:
+    model_name: Hunyuan
+    pretrained_model_name_or_path: '/jfs/checkpoints/models--tencent--HunyuanVideo/snapshots/2a15b5574ee77888e51ae6f593b2ceed8ce813e5/vae'
+    enable_tiling: false
+    enable_slicing: false
+  autocast: true
+
+data:
+  data_path: /mnt/pollux/nemo/data/bucket-256-1-0/
+  output_path: /mnt/pollux/nemo/data/bucket-256-1-0-latents
+  enable_checkpointing: true
+  id_col: key
+  batch_size: 64
+  mini_batch_size: 16
+  num_threads_per_worker: 16
+  image_sizes: [256, 512]
+  patch_size: 16
+  dynamic_crop_ratio: 1.0
+  image_latent_column: image_latent
+  image_latent_shape_column: image_latent_shape
+  caption_column: caption
+  valid_column: valid

@@ -166,6 +166,58 @@ def center_crop_arr(pil_image, image_size):
     )
 
 
+def generate_crop_size_list(image_size, patch_size, max_ratio=2.0):
+    assert max_ratio >= 1.0
+    min_wp, min_hp = image_size // patch_size, image_size // patch_size
+    crop_size_list = []
+    wp, hp = min_wp, min_hp
+    while hp / wp <= max_ratio:
+        crop_size_list.append((wp * patch_size, hp * patch_size))
+        hp += 1
+    wp, hp = min_wp + 1, min_hp
+    while wp / hp <= max_ratio:
+        crop_size_list.append((wp * patch_size, hp * patch_size))
+        wp += 1
+    return crop_size_list
+
+
+def is_valid_crop_size(cw, ch, orig_w, orig_h):
+    down_scale = max(cw / orig_w, ch / orig_h)
+    return cw <= orig_w * down_scale and ch <= orig_h * down_scale
+
+
+def var_center_crop_size_fn(orig_img_shape, image_size=256, patch_size=16, max_ratio=2.0):
+    w, h, _ = orig_img_shape
+    crop_size_list = generate_crop_size_list(
+        image_size=image_size, 
+        patch_size=patch_size, 
+        max_ratio=max_ratio
+    )
+    rem_percent = [
+        min(cw / w, ch / h) / max(cw / w, ch / h) 
+        if is_valid_crop_size(cw, ch, w, h) else 0 
+        for cw, ch in crop_size_list
+    ]
+    crop_size = sorted(
+        ((x, y) for x, y in zip(rem_percent, crop_size_list) if x > 0 and y[0] <= w and y[1] <= h), 
+        reverse=True
+    )[0][1]
+    return np.array(crop_size, dtype=np.float32)
+
+
+def downsample_resize_image(image, image_size):
+    """
+    Center cropping implementation from ADM.
+    https://github.com/openai/guided-diffusion/blob/8fb3ad9197f16bbc40620447b2742e13458d2831/guided_diffusion/image_datasets.py#L126
+    """
+    pil_image = Image.fromarray(image)
+    while min(*pil_image.size) >= 2 * image_size:
+        pil_image = pil_image.resize(
+            tuple(x // 2 for x in pil_image.size), resample=Image.BOX
+        )
+    return pil_image
+
+
 ######################## FOR TEXT ########################
 
 
