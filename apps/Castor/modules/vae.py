@@ -3,7 +3,7 @@ from typing import Optional, Literal, Type, Dict, List, Tuple, TypeVar, Generic
 import logging
 import torch
 from torch import nn
-from diffusers import AutoencoderKLHunyuanVideo
+from diffusers import AutoencoderKLHunyuanVideo, AutoencoderKL
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -11,14 +11,51 @@ logger.setLevel(logging.INFO)
 
 @dataclass
 class VideoVAEArgs:
+    vae_type: str = "hunyuan"  # can be "hunyuan" or "flux"
     pretrained_model_name_or_path: str = "tencent/HunyuanVideo"
     revision: Optional[str] = None
     variant: Optional[str] = None
     enable_tiling: bool = True
     enable_slicing: bool = True
 
+class BaseLatentVideoVAE(nn.Module):
+    def __init__(self, args: VideoVAEArgs):
+        super().__init__()
+        self.cfg = args
 
-class HunyuanVideoVAE:
+    @torch.no_grad()
+    def encode(self, x: torch.Tensor) -> torch.Tensor:
+        raise NotImplementedError
+
+    @torch.no_grad()
+    def decode(self, x: torch.Tensor) -> torch.Tensor:
+        raise NotImplementedError
+
+    def enable_vae_slicing(self):
+        logger.warning(
+            f"Useless func call, {self.cfg.model_name} TVAE model doesn't support slicing !"
+        )
+        pass
+
+    def disable_vae_slicing(self):
+        logger.warning(
+            f"Useless func call, {self.cfg.model_name} TVAE model doesn't support slicing !"
+        )
+        pass
+
+    def enable_vae_tiling(self):
+        logger.warning(
+            f"Useless func call, {self.cfg.model_name} TVAE model doesn't support tiling !"
+        )
+        pass
+
+    def disable_vae_tiling(self):
+        logger.warning(
+            f"Useless func call, {self.cfg.model_name} TVAE model doesn't support tiling !"
+        )
+        pass
+
+class HunyuanVideoVAE(BaseLatentVideoVAE):
     def __init__(self, args: VideoVAEArgs):
         super().__init__(args)
         vae = AutoencoderKLHunyuanVideo.from_pretrained(
@@ -97,3 +134,41 @@ class HunyuanVideoVAE:
         computing decoding in one step.
         """
         self.vae.disable_tiling()
+
+
+class FluxVAE(BaseLatentVideoVAE):
+    def __init__(self, args: VideoVAEArgs):
+        super().__init__(args)
+        self.vae = AutoencoderKL.from_pretrained(args.pretrained_model_name_or_path).requires_grad_(False)
+        self.scale = 0.3611
+        self.shift = 0.1159
+
+    @torch.no_grad()
+    def encode(self, x: torch.Tensor) -> torch.Tensor:
+        x = (self.vae.encode(x.to(self.vae.dtype)).latent_dist.mode() - self.shift) * self.scale
+        return x
+
+    @torch.no_grad()
+    def decode(self, x: torch.Tensor) -> torch.Tensor:
+        # Reverse the scaling and shifting from encode method
+        x = (x / self.scale + self.shift).to(self.vae.dtype)
+        # Use the VAE's decode method and get the sample
+        decoded = self.vae.decode(x).sample
+        return decoded
+
+    @torch.no_grad()
+    def forward(self, x=torch.Tensor):
+        x = self.encode(x)
+        return self.decode(x)
+    
+
+def create_vae(args: VideoVAEArgs) -> BaseLatentVideoVAE:
+    """
+    Create a VAE based on the type specified in the args.
+    """
+    if args.vae_type.lower() == "hunyuan":
+        return HunyuanVideoVAE(args)
+    elif args.vae_type.lower() == "flux":
+        return FluxVAE(args)
+    else:
+        raise ValueError(f"Unknown VAE type: {args.vae_type}")

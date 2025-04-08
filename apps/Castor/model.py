@@ -10,8 +10,8 @@ import torch.nn.functional as F
 from .modules.transformer import TransformerArgs
 from .modules.transformer import DiffusionTransformer
 
-from .modules.vae import HunyuanVideoVAE, VideoVAEArgs
-from .modules.text_encoder import CLIP, CLIPArgs
+from .modules.vae import create_vae, VideoVAEArgs
+from .modules.text_encoder import TextEncoderArgs, create_text_encoder
 from .modules.schedulers import RectifiedFlow, SchedulerArgs
 
 logger = logging.getLogger()
@@ -23,7 +23,7 @@ class ModelArgs:
     with_vae: bool = False
     vae_args: VideoVAEArgs = field(default_factory=VideoVAEArgs)
     pre_trained_weight: Optional[str] = None
-    text_encoder: CLIPArgs = field(default_factory=CLIPArgs)
+    text_encoder: TextEncoderArgs = field(default_factory=TextEncoderArgs)
     scheduler: SchedulerArgs = field(default_factory=SchedulerArgs)
     text_cfg_ratio: float = 0.1
 
@@ -36,34 +36,42 @@ class Castor(nn.Module):
         super().__init__()
         self.diffusion_transformer = DiffusionTransformer(args.diffusion_model)
         if args.with_vae:
-            self.compressor = HunyuanVideoVAE(args.vae_args)
-        self.text_encoder = CLIP(args.text_encoder)
+            self.compressor = create_vae(args.vae_args)
+        self.text_encoder = create_text_encoder(args.text_encoder)
         self.scheduler = RectifiedFlow(args.scheduler)
         self.text_cfg_ratio = args.text_cfg_ratio
 
     def forward(self, batch: dict[str:any]) -> dict[str:any]:
-        if "text_embedding" not in batch:
-            batch["text_embedding"] = self.text_encoder(batch)
-        conditional_signal = batch["text_embedding"]
-        if random.random() <= self.text_cfg_ratio:
-            conditional_signal = (
-                torch.ones_like(conditional_signal)
-                * self.diffusion_transformer.negative_token.repeat(
-                    conditional_signal.size(0), conditional_signal.size(1), 1
-                )
-                + torch.zeros_like(conditional_signal) * conditional_signal
-            )
         if hasattr(self, "compressor"):
-            batch["latent_code"] = self.compressor.encode(batch["image"])
+            if isinstance(batch["image"], list):
+                batch["latent_code"] = [self.compressor.encode(img[None])[0] for img in batch["image"]]
+            else:
+                batch["latent_code"] = self.compressor.encode(batch["image"])
+        
+        if "text_embedding" not in batch:
+            batch["text_embedding"], batch["attention_mask"] = self.text_encoder(batch)
+        conditional_signal, conditional_mask = batch["text_embedding"], batch["attention_mask"]
+
+        if random.random() <= self.text_cfg_ratio:
+            conditional_signal = self.diffusion_transformer.negative_token.repeat(
+                conditional_signal.size(0), conditional_signal.size(1), 1
+            )
+            conditional_mask = torch.ones_like(conditional_mask, dtype=conditional_signal.dtype)
+
         latent_code = batch["latent_code"]
         noised_x, t, target = self.scheduler.sample_noised_input(latent_code)
         output = self.diffusion_transformer(
-            x=noised_x, time_steps=t, condition=conditional_signal
+            x=noised_x, time_steps=t, condition=conditional_signal, condition_mask=conditional_mask
         )
+
         batch["prediction"] = output
         batch["target"] = target
-        target = target.to(output.dtype)
-        loss = F.mse_loss(output, target)
+        if isinstance(target, list) and isinstance(output, list):
+            loss_list = [F.mse_loss(o, t.to(o.dtype)) for o, t in zip(output, target)]
+            loss = torch.mean(torch.stack(loss_list))
+        else:
+            target = target.to(output.dtype)
+            loss = F.mse_loss(output, target)
         return batch, loss
 
     def set_train(self):
@@ -85,6 +93,9 @@ class Castor(nn.Module):
             self.diffusion_transformer.init_weights(
                 pre_trained_path=args.diffusion_model.pre_trained_path
             )
+    
+    def get_checkpointing_wrap_module_list(self) -> List[nn.Module]:
+        return list(self.diffusion_transformer.layers)
 
 
 # Optional policy for activation checkpointing. With None, we stick to the default (defined distributed.py: default_no_recompute_ops)
@@ -133,7 +144,7 @@ def build_2B_Castor():
         enable_tiling=False,
         enable_slicing=False,
     )
-    text_encoder = CLIPArgs()
+    text_encoder = TextEncoderArgs()
     scheduler = SchedulerArgs(
         num_train_timesteps=1000,
         base_image_seq_len=256,

@@ -173,14 +173,34 @@ class RectifiedFlow(torch.nn.Module):
         Samples a noisy input given a clean latent x and returns noisy input, timesteps and target.
         """
 
-        bsz = x.size(0)
-        noise = torch.randn_like(x)
-        u = self.compute_density_for_timestep_sampling(
-            batch_size=bsz,
-        )
-        indices = (u * self.scheduler.config.num_train_timesteps).long()
-        timesteps = self.scheduler.timesteps[indices].to(device=x.device)
-        sigmas = self.get_sigmas(timesteps, n_dim=x.ndim, dtype=x.dtype)
-        noisy_model_input = (1.0 - sigmas) * x + sigmas * noise
-        target = noise - x
-        return noisy_model_input, timesteps, target
+        use_dynamic_res = isinstance(x, list)
+        if use_dynamic_res:
+            bsz = len(x)
+            u = self.compute_density_for_timestep_sampling(
+                batch_size=bsz,
+            )
+            indices = (u * self.scheduler.config.num_train_timesteps).long()
+            timesteps = self.scheduler.timesteps[indices].to(device=x[0].device)
+            sigmas = self.get_sigmas(timesteps, n_dim=x[0].ndim + 1, dtype=x[0].dtype)
+            noise_model_input_list = []
+            target_list = []
+            for i in range(bsz):
+                _noise = torch.randn_like(x[i])
+                _noisy_model_input = (1.0 - sigmas[i]) * x[i] + sigmas[i] * _noise
+                _target = _noise - x[i]
+                noise_model_input_list.append(_noisy_model_input)
+                target_list.append(_target)
+
+            return noise_model_input_list, timesteps, target_list
+        else:
+            bsz = x.size(0)
+            noise = torch.randn_like(x)
+            u = self.compute_density_for_timestep_sampling(
+                batch_size=bsz,
+            )
+            indices = (u * self.scheduler.config.num_train_timesteps).long()
+            timesteps = self.scheduler.timesteps[indices].to(device=x.device)
+            sigmas = self.get_sigmas(timesteps, n_dim=x.ndim, dtype=x.dtype)
+            noisy_model_input = (1.0 - sigmas) * x + sigmas * noise
+            target = noise - x
+            return noisy_model_input, timesteps, target

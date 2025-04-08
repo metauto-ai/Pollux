@@ -13,6 +13,8 @@ from torch.nn.attention.flex_attention import (
     _mask_mod_signature,
     create_block_mask,
 )
+from flash_attn import flash_attn_varlen_func
+from flash_attn.bert_padding import index_first_axis, pad_input, unpad_input  # noqa
 import warnings
 
 from . import probe
@@ -47,6 +49,8 @@ class BaseTransformerArgs:
     init_std_factor: str = "disabled"
 
     max_seqlen: int = 1024
+
+    qk_norm: bool = True
 
 
 def cross_entropy(pred, target, **kwargs):
@@ -350,6 +354,7 @@ class Attention(nn.Module):
         n_heads: int,
         n_kv_heads: int,
         rope_theta: float,
+        qk_norm: bool = True,
     ):
         super().__init__()
 
@@ -383,9 +388,18 @@ class Attention(nn.Module):
             bias=False,
         )
 
+        if qk_norm:
+            self.q_norm = RMSNorm(head_dim)
+            self.k_norm = RMSNorm(head_dim)
+        else:
+            self.q_norm = nn.Identity()
+            self.k_norm = nn.Identity()
+        
+
     def forward(
         self,
         x: torch.Tensor,
+        x_mask: torch.Tensor,
         freq_cis: torch.Tensor,
         tok_idx: Optional[torch.Tensor] = None,
         mask: Optional[Union[BlockMask, AttentionBias, str]] = None,
@@ -402,6 +416,9 @@ class Attention(nn.Module):
         xq = xq.view(bsz, seq_len, self.n_heads, self.head_dim)
         xk = xk.view(bsz, seq_len, self.n_kv_heads, self.head_dim)
         xv = xv.view(bsz, seq_len, self.n_kv_heads, self.head_dim)
+
+        xq = self.q_norm(xq)
+        xk = self.k_norm(xk)
 
         xq, xk = apply_rotary_emb(xq, xk, 1, freq_cis[0:seq_len])
 
@@ -465,6 +482,215 @@ class Attention(nn.Module):
             a=-3 * init_std,
             b=3 * init_std,
         )
+        
+        if isinstance(self.q_norm, RMSNorm):
+            self.q_norm.reset_parameters()
+        if isinstance(self.k_norm, RMSNorm):
+            self.k_norm.reset_parameters()
+
+
+class FlashAttention(nn.Module):
+    """Multi-head attention module."""
+
+    def __init__(
+        self,
+        dim: int,
+        n_heads: int,
+        n_kv_heads: Optional[int],
+        qk_norm: bool,
+    ):
+        """
+        Initialize the Attention module.
+
+        Args:
+            dim (int): Number of input dimensions.
+            n_heads (int): Number of heads.
+            n_kv_heads (Optional[int]): Number of kv heads, if using GQA.
+
+        """
+        super().__init__()
+        self.n_kv_heads = n_heads if n_kv_heads is None else n_kv_heads
+        self.n_local_heads = n_heads
+        self.n_local_kv_heads = self.n_kv_heads
+        self.n_rep = self.n_local_heads // self.n_local_kv_heads
+        self.head_dim = dim // n_heads
+
+        self.wq = nn.Linear(
+            dim,
+            n_heads * self.head_dim,
+            bias=False,
+        )
+        self.wk = nn.Linear(
+            dim,
+            n_kv_heads * self.head_dim,
+            bias=False,
+        )
+        self.wv = nn.Linear(
+            dim,
+            n_kv_heads * self.head_dim,
+            bias=False,
+        )
+        nn.init.xavier_uniform_(self.wq.weight)
+        nn.init.xavier_uniform_(self.wk.weight)
+        nn.init.xavier_uniform_(self.wv.weight)
+
+        self.wo = nn.Linear(
+            n_heads * self.head_dim,
+            dim,
+            bias=False,
+        )
+        nn.init.xavier_uniform_(self.wo.weight)
+
+        if qk_norm:
+            self.q_norm = RMSNorm(self.head_dim)
+            self.k_norm = RMSNorm(self.head_dim)
+        else:
+            self.q_norm = self.k_norm = nn.Identity()
+
+    def reset_parameters(self, *args, **kwargs):
+        nn.init.xavier_uniform_(self.wq.weight)
+        nn.init.xavier_uniform_(self.wk.weight)
+        nn.init.xavier_uniform_(self.wv.weight)
+        nn.init.xavier_uniform_(self.wo.weight)
+
+    # copied from huggingface modeling_llama.py
+    def _upad_input(self, query_layer, key_layer, value_layer, attention_mask, query_length):
+        def _get_unpad_data(attention_mask):
+            seqlens_in_batch = attention_mask.sum(dim=-1, dtype=torch.int32)
+            indices = torch.nonzero(attention_mask.flatten(), as_tuple=False).flatten()
+            max_seqlen_in_batch = seqlens_in_batch.max().item()
+            cu_seqlens = F.pad(torch.cumsum(seqlens_in_batch, dim=0, dtype=torch.int32), (1, 0))
+            return (
+                indices,
+                cu_seqlens,
+                max_seqlen_in_batch,
+            )
+
+        indices_k, cu_seqlens_k, max_seqlen_in_batch_k = _get_unpad_data(attention_mask)
+        batch_size, kv_seq_len, num_key_value_heads, head_dim = key_layer.shape
+
+        key_layer = index_first_axis(
+            key_layer.reshape(batch_size * kv_seq_len, num_key_value_heads, head_dim),
+            indices_k,
+        )
+        value_layer = index_first_axis(
+            value_layer.reshape(batch_size * kv_seq_len, num_key_value_heads, head_dim),
+            indices_k,
+        )
+        if query_length == kv_seq_len:
+            query_layer = index_first_axis(
+                query_layer.reshape(batch_size * kv_seq_len, self.n_local_heads, head_dim),
+                indices_k,
+            )
+            cu_seqlens_q = cu_seqlens_k
+            max_seqlen_in_batch_q = max_seqlen_in_batch_k
+            indices_q = indices_k
+        elif query_length == 1:
+            max_seqlen_in_batch_q = 1
+            cu_seqlens_q = torch.arange(
+                batch_size + 1, dtype=torch.int32, device=query_layer.device
+            )  # There is a memcpy here, that is very bad.
+            indices_q = cu_seqlens_q[:-1]
+            query_layer = query_layer.squeeze(1)
+        else:
+            # The -q_len: slice assumes left padding.
+            attention_mask = attention_mask[:, -query_length:]
+            query_layer, indices_q, cu_seqlens_q, max_seqlen_in_batch_q = unpad_input(query_layer, attention_mask)
+
+        return (
+            query_layer,
+            key_layer,
+            value_layer,
+            indices_q,
+            (cu_seqlens_q, cu_seqlens_k),
+            (max_seqlen_in_batch_q, max_seqlen_in_batch_k),
+        )
+
+    def forward(
+        self,
+        x: torch.Tensor,
+        x_mask: torch.Tensor,
+        freqs_cis: torch.Tensor,
+        # Note: mask sure the input is same as original Attention
+        tok_idx: Optional[torch.Tensor] = None,
+        mask: Optional[Union[BlockMask, AttentionBias, str]] = None,
+        attn_impl: str = "sdpa",
+    ) -> torch.Tensor:
+        """
+
+        Args:
+            x:
+            x_mask:
+            freqs_cis:
+
+        Returns:
+
+        """
+        bsz, seqlen, _ = x.shape
+        dtype = x.dtype
+
+        xq = self.wq(x)
+        xk = self.wk(x)
+        xv = self.wv(x)
+        xq = xq.view(bsz, seqlen, self.n_local_heads, self.head_dim)
+        xk = xk.view(bsz, seqlen, self.n_local_kv_heads, self.head_dim)
+        xv = xv.view(bsz, seqlen, self.n_local_kv_heads, self.head_dim)
+        xq = self.q_norm(xq)
+        xk = self.k_norm(xk)
+        xq, xk = apply_rotary_emb(xq, xk, 1, freqs_cis[0:seqlen])
+        xq, xk = xq.to(dtype), xk.to(dtype)
+
+        softmax_scale = math.sqrt(1 / self.head_dim)
+
+        if dtype in [torch.float16, torch.bfloat16]:
+            # begin var_len flash attn
+            (
+                query_states,
+                key_states,
+                value_states,
+                indices_q,
+                cu_seq_lens,
+                max_seq_lens,
+            ) = self._upad_input(xq, xk, xv, x_mask, seqlen)
+
+            cu_seqlens_q, cu_seqlens_k = cu_seq_lens
+            max_seqlen_in_batch_q, max_seqlen_in_batch_k = max_seq_lens
+
+            attn_output_unpad = flash_attn_varlen_func(
+                query_states,
+                key_states,
+                value_states,
+                cu_seqlens_q=cu_seqlens_q,
+                cu_seqlens_k=cu_seqlens_k,
+                max_seqlen_q=max_seqlen_in_batch_q,
+                max_seqlen_k=max_seqlen_in_batch_k,
+                dropout_p=0.0,
+                causal=False,
+                softmax_scale=softmax_scale,
+            )
+            output = pad_input(attn_output_unpad, indices_q, bsz, seqlen)
+            # end var_len_flash_attn
+
+        else:
+            n_rep = self.n_local_heads // self.n_local_kv_heads
+            if n_rep >= 1:
+                xk = xk.unsqueeze(3).repeat(1, 1, 1, n_rep, 1).flatten(2, 3)
+                xv = xv.unsqueeze(3).repeat(1, 1, 1, n_rep, 1).flatten(2, 3)
+            output = (
+                F.scaled_dot_product_attention(
+                    xq.permute(0, 2, 1, 3),
+                    xk.permute(0, 2, 1, 3),
+                    xv.permute(0, 2, 1, 3),
+                    attn_mask=x_mask.bool().view(bsz, 1, 1, seqlen).expand(-1, self.n_local_heads, seqlen, -1),
+                    scale=softmax_scale,
+                )
+                .permute(0, 2, 1, 3)
+                .to(dtype)
+            )
+
+        output = output.flatten(-2)
+
+        return self.wo(output)
 
 
 class FeedForward(nn.Module):
@@ -551,6 +777,7 @@ class TransformerBlock(nn.Module):
             n_heads=self.n_heads,
             n_kv_heads=self.n_kv_heads,
             rope_theta=args.rope_theta,
+            qk_norm=args.qk_norm,
         )
         self.feed_forward = FeedForward(
             dim=args.dim,

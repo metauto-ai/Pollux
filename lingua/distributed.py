@@ -25,6 +25,8 @@ from torch.distributed._tensor import DTensor
 from torch.distributed._composable.fsdp import MixedPrecisionPolicy, fully_shard
 from torch.distributed.algorithms._checkpoint.checkpoint_wrapper import (
     checkpoint_wrapper,
+    CheckpointImpl,
+    apply_activation_checkpointing
 )
 from torch.utils.checkpoint import (
     create_selective_checkpoint_contexts,
@@ -468,12 +470,14 @@ def parallelize_model(
         raise ValueError(f"Invalid fsdp_type: {distributed_args.fsdp_type}")
 
     if distributed_args.selective_activation_checkpointing:
-        model = checkpoint_wrapper(
+        non_reentrant_wrapper = partial(
+            checkpoint_wrapper,
+            checkpoint_impl=CheckpointImpl.NO_REENTRANT,
+        )
+        apply_activation_checkpointing(
             model,
-            context_fn=partial(
-                create_selective_checkpoint_contexts,
-                get_default_policy(no_recompute_ops),
-            ),
+            checkpoint_wrapper_fn=non_reentrant_wrapper,
+            check_fn=lambda submodule: submodule in model.get_checkpointing_wrap_module_list(),
         )
 
     if distributed_args.compile:
