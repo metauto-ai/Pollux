@@ -1,11 +1,11 @@
-# torchrun --standalone --nnodes 1 --nproc-per-node 8 -m apps.Castor.train config=apps/Castor/configs/train_bucket_256_Castor_image_cache_json.yaml
+# torchrun --standalone --nnodes 1 --nproc-per-node 4 -m apps.Castor.train config=apps/Castor/configs/train_bucket_256_Castor_flux_vit_dynamic.yaml
 
 # Set up single experiment
 version: v1.0
 # From now on, start to align train, data, and model setting with train stage (just finish refactor for dara)
 train_stage: stage-1 # options: preliminary, pretraining, posttraining; aligned with data setting
 name: vit_b_32_flux_dynamic #used for local dump and wandb log
-output_dir: /mnt/pollux/checkpoints/chandan
+output_dir: /mnt/pollux/checkpoints/haozhe
 dump_dir: '' # No need now
 steps: 500000
 seed: 777
@@ -17,9 +17,9 @@ optim:
     weight_decay: 0.01
 
 distributed:
-    gpus: 0,1,2,3,4,5,6,7
+    gpus: 0,1,2,3
     fsdp_type: full_shard
-    dp_shard: 8
+    dp_shard: 4
     dp_replicate: 1
     compile: false
     model_dtype: bf16 # options: `fb8` is only supported by H100
@@ -56,7 +56,7 @@ model:
         gen_seqlen: 32
         condition_seqlen: 256
         norm_eps: 1e-5
-        condition_dim: 512
+        condition_dim: 768
         qk_norm: false
     text_cfg_ratio: 0.1
     with_vae: true

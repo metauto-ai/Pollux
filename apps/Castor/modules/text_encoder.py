@@ -4,8 +4,13 @@ from dataclasses import dataclass
 from typing import Tuple
 import logging
 import torch
-import clip
-from transformers import AutoModel, AutoTokenizer, AutoProcessor
+from transformers import (
+    AutoModel,
+    AutoTokenizer,
+    AutoProcessor,
+    CLIPTokenizer,
+    CLIPModel,
+)
 
 logger = logging.getLogger()
 
@@ -33,14 +38,18 @@ class BaseTextEncoder:
 class CLIP(BaseTextEncoder):
     def __init__(self, args: TextEncoderArgs):
         super().__init__(args)
-        self.clip_model, _ = clip.load(args.config_name, jit=False)
+
+        self.clip_model = CLIPModel.from_pretrained(
+            "openai/clip-vit-large-patch14",
+            torch_dtype=self.dtype,
+        )
         self.clip_model = self.clip_model.to(self.dtype).cuda()
         self.clip_model.eval()
         self.clip_model.requires_grad_(False)
-        self.dtype = dict(fp32=torch.float32, bf16=torch.bfloat16)[args.dtype]
+        self.tokenizer = CLIPTokenizer.from_pretrained("openai/clip-vit-large-patch14")
 
     def dim(self) -> int:
-        return self.clip_model.text_projection.shape[1]
+        return self.clip_model.config.hidden_size
 
     def __call__(self, batch: dict[str:any]) -> Tuple[torch.Tensor, torch.Tensor]:
         assert "caption" in batch
@@ -50,18 +59,14 @@ class CLIP(BaseTextEncoder):
             if not isinstance(x, str):
                 logger.warning(f"Expected string but got {type(x)}: {x}")
                 batch["caption"][idx] = ""
-        text_tokens = clip.tokenize(batch["caption"], truncate=True).cuda()
-        
-        # Create attention mask always 1 for CLIP
-        attention_mask = torch.ones_like(text_tokens, dtype=self.dtype).to(text_tokens.device)
-
-        x = self.clip_model.token_embedding(text_tokens)
-        x = x + self.clip_model.positional_embedding
-        x = x.permute(1, 0, 2)
-        x = self.clip_model.transformer(x)
-        x = x.permute(1, 0, 2)
-
-        return x.to(self.dtype), attention_mask
+        with torch.no_grad():
+            inputs = self.tokenizer(
+                batch["caption"], return_tensors="pt", padding=True, truncation=True
+            ).to(self.clip_model.device)
+            outputs = self.clip_model.text_model(**inputs)
+            last_hidden_state = outputs.last_hidden_state
+            attention_mask = inputs.attention_mask
+        return last_hidden_state, attention_mask
 
 
 class Qwen2_5_VL(BaseTextEncoder):
@@ -90,7 +95,7 @@ class Qwen2_5_VL(BaseTextEncoder):
                 "content": [
                     {"type": "text", "text": caption},
                 ],
-            }
+            },
         ]
         return self.processor.apply_chat_template(
             messages,
@@ -103,7 +108,10 @@ class Qwen2_5_VL(BaseTextEncoder):
         if isinstance(batch["caption"][0], tuple):
             batch["caption"] = [x[0] for x in batch["caption"]]
         with torch.no_grad():
-            messages = [self._convert_caption_to_messages(caption) for caption in batch["caption"]]
+            messages = [
+                self._convert_caption_to_messages(caption)
+                for caption in batch["caption"]
+            ]
             inputs = self.processor(
                 text=messages,
                 padding=True,
@@ -117,7 +125,7 @@ class Qwen2_5_VL(BaseTextEncoder):
             attention_mask = inputs.attention_mask
 
         return last_hidden_state, attention_mask
-    
+
 
 def create_text_encoder(args: TextEncoderArgs) -> BaseTextEncoder:
     if args.config_name == "ViT-B/32":
