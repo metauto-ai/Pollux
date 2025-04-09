@@ -151,6 +151,7 @@ class Gemma2_2B_it(BaseTextEncoder):
         self.tokenizer = GemmaTokenizerFast.from_pretrained(
             args.model_path, subfolder="tokenizer"
         )
+        self.tokenizer.padding_side = "right"
         self.text_encoder = Gemma2Model.from_pretrained(
             args.model_path, subfolder="text_encoder", torch_dtype=self.dtype
         ).cuda()
