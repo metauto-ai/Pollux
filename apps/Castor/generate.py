@@ -115,11 +115,12 @@ class LatentGenerator(nn.Module):
             latent_model_input = torch.cat([latent] * 2)
             timestep = t.expand(latent_model_input.shape[0])
             noise_pred = self.model.diffusion_transformer(
-                x=latent_model_input,
+                x=[latent for latent in latent_model_input],
                 time_steps=timestep,
                 condition=context,
                 condition_mask=context_mask,
             )
+            noise_pred = torch.stack(noise_pred)
             noise_pred_text, noise_pred_uncond = noise_pred.chunk(2)
             noise_pred = noise_pred_uncond + self.guidance_scale * (
                 noise_pred_text - noise_pred_uncond

@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from enum import Enum
 import math
+from types import SimpleNamespace
 from typing import Optional, Union, Tuple
 
 import torch
@@ -13,6 +14,7 @@ from torch.nn.attention.flex_attention import (
     _mask_mod_signature,
     create_block_mask,
 )
+from liger_kernel.transformers import LigerSwiGLUMLP, LigerRMSNorm
 from flash_attn import flash_attn_varlen_func
 from flash_attn.bert_padding import index_first_axis, pad_input, unpad_input  # noqa
 import warnings
@@ -139,35 +141,6 @@ def precompute_2d_freqs_cls(
     return freqs_cis
 
 
-def reshape_for_broadcast(freqs_cis: torch.Tensor, x: torch.Tensor, seq_dim: int):
-    """
-    Reshape frequency tensor for broadcasting it with another tensor.
-
-    This function reshapes the frequency tensor to have the same shape as the target tensor 'x'
-    for the purpose of broadcasting the frequency tensor during element-wise operations.
-
-    Args:
-        freqs_cis (torch.Tensor): Frequency tensor to be reshaped.
-        x (torch.Tensor): Target tensor for broadcasting compatibility.
-        seq_dim (int): Sequence dimension index.
-
-    Returns:
-        torch.Tensor: Reshaped frequency tensor.
-    """
-    ndim = x.ndim
-    assert 0 <= seq_dim < ndim
-    assert freqs_cis.shape == (
-        x.shape[seq_dim],
-        x.shape[-3],
-        2,
-        2,
-    ), f"freqs_cis vs x: {(freqs_cis.shape, x.shape)}"
-    shape = [
-        d if i == seq_dim or i == ndim - 3 else 1 for i, d in enumerate(x.shape[:-2])
-    ] + [2, 2]
-    return freqs_cis.view(*shape)
-
-
 def apply_rotary_emb(
     xq: torch.Tensor,
     xk: torch.Tensor,
@@ -176,9 +149,8 @@ def apply_rotary_emb(
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     xq_ = xq.reshape(*xq.shape[:-1], -1, 1, 2)  # B S H D -> B S H D/2 1 2
     xk_ = xk.reshape(*xk.shape[:-1], -1, 1, 2)  # B S H D -> B S H D/2 1 2
-    freqs_cis = reshape_for_broadcast(
-        freqs_cis, xq_, seq_dim
-    ).float()  # S D/2 2 2 -> 1 S 1 D/2 2 2
+    # B S D/2 2 2 -> B S 1 D/2 2 2
+    freqs_cis = freqs_cis.unsqueeze(seq_dim)
     xq_out = (xq_ * freqs_cis).sum(5).flatten(3)
     xk_out = (xk_ * freqs_cis).sum(5).flatten(3)
     return xq_out.type_as(xq), xk_out.type_as(xk)
@@ -332,18 +304,15 @@ class RMSNorm(nn.Module):
     def __init__(self, dim: int, eps: float = 1e-6):
         super().__init__()
         self.eps = eps
-        self.weight = nn.Parameter(torch.ones(dim))
-
-    def _norm(self, x: torch.Tensor):
-        return x * torch.rsqrt((x * x).mean(-1, keepdim=True) + self.eps)
+        #  casting gemma: where everything is cast to fp32, then computed, then cast back to the original dtype.
+        #  casting llama: where only the inverse RMS is computed on fp32.
+        self.rms_norm = LigerRMSNorm(dim, init_fn="ones", eps=self.eps, casting_mode="llama")
 
     def forward(self, x: torch.Tensor):
-        x = probe.log_stats(x, "resid")
-        output = self._norm(x.float())
-        return (output * self.weight.float()).type_as(x)
+        return self.rms_norm(x)
 
     def reset_parameters(self):
-        torch.nn.init.ones_(self.weight)  # type: ignore
+        torch.nn.init.ones_(self.rms_norm.weight)
 
 
 class Attention(nn.Module):
@@ -400,7 +369,7 @@ class Attention(nn.Module):
         self,
         x: torch.Tensor,
         x_mask: torch.Tensor,
-        freq_cis: torch.Tensor,
+        freqs_cis: torch.Tensor,
         tok_idx: Optional[torch.Tensor] = None,
         mask: Optional[Union[BlockMask, AttentionBias, str]] = None,
         attn_impl: str = "sdpa",
@@ -420,7 +389,7 @@ class Attention(nn.Module):
         xq = self.q_norm(xq)
         xk = self.k_norm(xk)
 
-        xq, xk = apply_rotary_emb(xq, xk, 1, freq_cis[0:seq_len])
+        xq, xk = apply_rotary_emb(xq, xk, 2, freqs_cis[:, 0:seq_len])
 
         # This condition helps us be easily compatible
         # with inference by adding a pluggable KVCache
@@ -637,7 +606,7 @@ class FlashAttention(nn.Module):
         xv = xv.view(bsz, seqlen, self.n_local_kv_heads, self.head_dim)
         xq = self.q_norm(xq)
         xk = self.k_norm(xk)
-        xq, xk = apply_rotary_emb(xq, xk, 1, freqs_cis[0:seqlen])
+        xq, xk = apply_rotary_emb(xq, xk, 2, freqs_cis[:, 0:seqlen])
         xq, xk = xq.to(dtype), xk.to(dtype)
 
         softmax_scale = math.sqrt(1 / self.head_dim)
@@ -693,6 +662,70 @@ class FlashAttention(nn.Module):
         return self.wo(output)
 
 
+# class FeedForward(nn.Module):
+#     def __init__(
+#         self,
+#         dim: int,
+#         hidden_dim: int,
+#         multiple_of: int,
+#         ffn_dim_multiplier: Optional[float],
+#         mp_size: int = 1,
+#     ):
+#         super().__init__()
+
+#         hidden_dim = int(2 * hidden_dim / 3)
+#         if ffn_dim_multiplier is not None:
+#             hidden_dim = int(ffn_dim_multiplier * hidden_dim)
+#         hidden_dim = multiple_of * ((hidden_dim + multiple_of - 1) // multiple_of)
+#         assert hidden_dim % mp_size == 0
+
+#         self.dim = dim
+#         self.hidden_dim = hidden_dim
+
+#         self.w1 = nn.Linear(
+#             dim,
+#             hidden_dim,
+#             bias=False,
+#         )
+#         self.w3 = nn.Linear(
+#             dim,
+#             hidden_dim,
+#             bias=False,
+#         )
+#         self.w2 = nn.Linear(
+#             hidden_dim,
+#             dim,
+#             bias=False,
+#         )
+
+#     def forward(self, x: torch.Tensor) -> torch.Tensor:
+#         # B S D
+#         x1 = self.w1(x.view_as(x))
+#         x3 = self.w3(x.view_as(x))
+#         output = self.w2(F.silu(x1) * x3)
+#         return output
+
+#     def reset_parameters(self, init_std=None, factor=1.0):
+#         in_init_std = init_std or (self.dim ** (-0.5))
+#         out_init_std = init_std or (self.hidden_dim ** (-0.5))
+#         out_init_std = out_init_std / factor
+#         for w in [self.w1, self.w3]:
+#             nn.init.trunc_normal_(
+#                 w.weight,
+#                 mean=0.0,
+#                 std=in_init_std,
+#                 a=-3 * in_init_std,
+#                 b=3 * in_init_std,
+#             )
+#         nn.init.trunc_normal_(
+#             self.w2.weight,
+#             mean=0.0,
+#             std=out_init_std,
+#             a=-3 * out_init_std,
+#             b=3 * out_init_std,
+#         )
+
+
 class FeedForward(nn.Module):
     def __init__(
         self,
@@ -713,34 +746,22 @@ class FeedForward(nn.Module):
         self.dim = dim
         self.hidden_dim = hidden_dim
 
-        self.w1 = nn.Linear(
-            dim,
-            hidden_dim,
-            bias=False,
+        config = SimpleNamespace(
+            hidden_size=dim,
+            intermediate_size=hidden_dim,
+            hidden_act="silu",
         )
-        self.w3 = nn.Linear(
-            dim,
-            hidden_dim,
-            bias=False,
-        )
-        self.w2 = nn.Linear(
-            hidden_dim,
-            dim,
-            bias=False,
-        )
+        self.swiglu = LigerSwiGLUMLP(config)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # B S D
-        x1 = self.w1(x.view_as(x))
-        x3 = self.w3(x.view_as(x))
-        output = self.w2(F.silu(x1) * x3)
-        return output
+        return self.swiglu(x)
 
     def reset_parameters(self, init_std=None, factor=1.0):
         in_init_std = init_std or (self.dim ** (-0.5))
         out_init_std = init_std or (self.hidden_dim ** (-0.5))
         out_init_std = out_init_std / factor
-        for w in [self.w1, self.w3]:
+        for w in [self.swiglu.gate_proj, self.swiglu.up_proj]:
             nn.init.trunc_normal_(
                 w.weight,
                 mean=0.0,
@@ -749,7 +770,7 @@ class FeedForward(nn.Module):
                 b=3 * in_init_std,
             )
         nn.init.trunc_normal_(
-            self.w2.weight,
+            self.swiglu.down_proj.weight,
             mean=0.0,
             std=out_init_std,
             a=-3 * out_init_std,
@@ -791,7 +812,7 @@ class TransformerBlock(nn.Module):
     def forward(
         self,
         x: torch.Tensor,
-        freq_cis: torch.Tensor,
+        freqs_cis: torch.Tensor,
         tok_idx: Optional[torch.Tensor] = None,
         mask: Optional[Union[BlockMask, AttentionBias, str]] = None,
         attn_impl: str = "sdpa",
@@ -799,7 +820,7 @@ class TransformerBlock(nn.Module):
 
         h = x + self.attention(
             self.attention_norm(x),
-            freq_cis,
+            freqs_cis,
             tok_idx=tok_idx,
             mask=mask,
             attn_impl=attn_impl,

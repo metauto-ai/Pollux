@@ -1,18 +1,18 @@
 # python -m apps.Castor.generate config=apps/Castor/configs/eval.yaml
 name: "debug_evals"
 stage: eval
-ckpt_dir: "/mnt/pollux/checkpoints/chandan/qwen2_5_vl_flux_dynamic/checkpoints/0000005000/"
-dump_dir: "/mnt/pollux/checkpoints/chandan/qwen2_5_vl_flux_dynamic/MJHQ/0000015000"
+ckpt_dir: "/mnt/pollux/checkpoints/chandan/qwen2_5_vl_hunyuan_dynamic/checkpoints/0000007500"
+dump_dir: "/mnt/pollux/checkpoints/chandan/qwen2_5_vl_hunyuan_dynamic/MJHQ/0000007500"
 generator:
   guidance_scale: 6.5
   dtype: bf16
-  resolution: 256
+  resolution: 512
   show_progress: False
   inference_steps: 50
   vae_scale_factor: 8.0
   tvae:
-    vae_type: flux
-    pretrained_model_name_or_path: '/mnt/pollux/checkpoints/FLUX.1-dev/vae'
+    vae_type: hunyuan
+    pretrained_model_name_or_path: '/mnt/pollux/checkpoints/HunyuanVideo/vae'
     enable_tiling: false
     enable_slicing: false
 data:

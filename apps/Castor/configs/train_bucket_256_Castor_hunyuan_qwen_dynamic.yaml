@@ -1,0 +1,117 @@
+# torchrun --standalone --nnodes 1 --nproc-per-node 8 -m apps.Castor.train config=apps/Castor/configs/train_bucket_256_Castor_image_cache_json.yaml
+
+# Set up single experiment
+version: v1.0
+# From now on, start to align train, data, and model setting with train stage (just finish refactor for dara)
+train_stage: stage-1 # options: preliminary, pretraining, posttraining; aligned with data setting
+name: qwen2_5_vl_hunyuan_dynamic #used for local dump and wandb log
+output_dir: /mnt/pollux/checkpoints/chandan
+dump_dir: '' # No need now
+steps: 500000
+seed: 777
+optim:
+    lr: 1e-4
+    warmup: 4000
+    lr_min_ratio: 1.5e-5
+    clip: 1.0
+    weight_decay: 0.01
+
+distributed:
+    gpus: 0,1,2,3,4,5,6,7
+    fsdp_type: full_shard
+    dp_shard: 8
+    dp_replicate: 1
+    compile: false
+    model_dtype: bf16 # options: `fb8` is only supported by H100
+    matmul_allow_tf32: false
+    selective_activation_checkpointing: true
+    tp_size: 1
+    compile_cache_size_limit: 64
+
+model:
+    scheduler:
+        num_train_timesteps: 1000
+        base_image_seq_len: 256
+        base_shift: 0.5
+        max_image_seq_len: 4096
+        max_shift: 1.15
+        shift: 1.0 # need consider 3.0 or 1.0
+        weighting_scheme: 'logit_normal'
+        logit_mean: 0.0
+        logit_std: 1.0
+        mode_scale: 1.29
+        use_dynamic_shifting: true
+    diffusion_model:
+        dim: 2048
+        ffn_dim_multiplier: 1.5
+        multiple_of: 256
+        n_heads: 32
+        n_kv_heads: 8
+        n_layers: 24
+        time_step_dim: 2048
+        patch_size: 2
+        in_channels: 16
+        out_channels: 16
+        tmb_size: 256
+        gen_seqlen: 32
+        condition_seqlen: 256
+        norm_eps: 1e-5
+        condition_dim: 2048
+        qk_norm: false
+    text_cfg_ratio: 0.1
+    with_vae: true
+    vae_args:
+        vae_type: "hunyuan"
+        pretrained_model_name_or_path: '/mnt/pollux/checkpoints/HunyuanVideo/vae'
+        enable_tiling: false
+        enable_slicing: false
+    text_encoder:
+        config_name: "Qwen/Qwen2.5-VL-3B-Instruct"
+        dtype: "bf16"
+        text_seqlen: 256
+
+data:  
+  - stage: stage-1
+    id: 1
+    data_name: bucket-256-2
+    task: text_to_image
+    source: mongodb
+    image_size: 256
+    condition_image_size: 256
+    max_ratio: 2.0
+    partition_key: 'partition_key'
+    retries: 3
+    extract_field:
+        "media_path": "image"
+    use: true
+    root_dir: "/mnt/pollux/mongo_db_cache_train"
+    dataloader:
+        prefetch_factor: 2
+        batch_size: 48
+        num_workers: 8
+        seed: 1024
+        shuffle: True
+        pin_memory: True
+        drop_last: False
+
+profiling:
+    run: false
+
+checkpoint:
+    dump:
+        every: 2500
+        keep: 0 # Don't remove the ckpt
+    eval:
+        every: 5000
+        keep: 0 # Don't remove the ckpt
+
+logging:
+    freq: 100
+    wandb:
+        project: Pollux
+        entity: metauto
+        name: ''
+
+env:
+    ENABLE_INTRA_NODE_COMM: '0'  # '0' for local machine (otherwise errors happen); '1' for slurmn (need test)
+    NCCL_DEBUG: 'ERROR'
