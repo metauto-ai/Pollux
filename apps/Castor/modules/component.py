@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from enum import Enum
 import math
+from types import SimpleNamespace
 from typing import Optional, Union, Tuple
 
 import torch
@@ -13,6 +14,7 @@ from torch.nn.attention.flex_attention import (
     _mask_mod_signature,
     create_block_mask,
 )
+from liger_kernel.transformers import LigerSwiGLUMLP, LigerRMSNorm
 from flash_attn import flash_attn_varlen_func
 from flash_attn.bert_padding import index_first_axis, pad_input, unpad_input  # noqa
 import warnings
@@ -302,18 +304,15 @@ class RMSNorm(nn.Module):
     def __init__(self, dim: int, eps: float = 1e-6):
         super().__init__()
         self.eps = eps
-        self.weight = nn.Parameter(torch.ones(dim))
-
-    def _norm(self, x: torch.Tensor):
-        return x * torch.rsqrt((x * x).mean(-1, keepdim=True) + self.eps)
+        #  casting gemma: where everything is cast to fp32, then computed, then cast back to the original dtype.
+        #  casting llama: where only the inverse RMS is computed on fp32.
+        self.rms_norm = LigerRMSNorm(dim, init_fn="ones", eps=self.eps, casting_mode="llama")
 
     def forward(self, x: torch.Tensor):
-        x = probe.log_stats(x, "resid")
-        output = self._norm(x.float())
-        return (output * self.weight.float()).type_as(x)
+        return self.rms_norm(x)
 
     def reset_parameters(self):
-        torch.nn.init.ones_(self.weight)  # type: ignore
+        torch.nn.init.ones_(self.rms_norm.weight)
 
 
 class Attention(nn.Module):
@@ -683,34 +682,22 @@ class FeedForward(nn.Module):
         self.dim = dim
         self.hidden_dim = hidden_dim
 
-        self.w1 = nn.Linear(
-            dim,
-            hidden_dim,
-            bias=False,
+        config = SimpleNamespace(
+            hidden_size=dim,
+            intermediate_size=hidden_dim,
+            hidden_act="silu",
         )
-        self.w3 = nn.Linear(
-            dim,
-            hidden_dim,
-            bias=False,
-        )
-        self.w2 = nn.Linear(
-            hidden_dim,
-            dim,
-            bias=False,
-        )
+        self.swiglu = LigerSwiGLUMLP(config)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # B S D
-        x1 = self.w1(x.view_as(x))
-        x3 = self.w3(x.view_as(x))
-        output = self.w2(F.silu(x1) * x3)
-        return output
+        return self.swiglu(x)
 
     def reset_parameters(self, init_std=None, factor=1.0):
         in_init_std = init_std or (self.dim ** (-0.5))
         out_init_std = init_std or (self.hidden_dim ** (-0.5))
         out_init_std = out_init_std / factor
-        for w in [self.w1, self.w3]:
+        for w in [self.swiglu.gate_proj, self.swiglu.up_proj]:
             nn.init.trunc_normal_(
                 w.weight,
                 mean=0.0,
@@ -719,7 +706,7 @@ class FeedForward(nn.Module):
                 b=3 * in_init_std,
             )
         nn.init.trunc_normal_(
-            self.w2.weight,
+            self.swiglu.down_proj.weight,
             mean=0.0,
             std=out_init_std,
             a=-3 * out_init_std,

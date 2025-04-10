@@ -67,6 +67,10 @@ class CLIP(BaseTextEncoder):
 class Qwen2_5_VL(BaseTextEncoder):
     def __init__(self, args: TextEncoderArgs):
         super().__init__(args)
+
+        from liger_kernel.transformers import apply_liger_kernel_to_qwen2_5_vl
+        apply_liger_kernel_to_qwen2_5_vl()
+
         self.model = AutoModel.from_pretrained(
             "Qwen/Qwen2.5-VL-3B-Instruct",
             torch_dtype=self.dtype,
