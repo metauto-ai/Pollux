@@ -1,10 +1,10 @@
-# torchrun --standalone --nnodes 1 --nproc-per-node 4 -m apps.Castor.train config=apps/Castor/configs/train_bucket_256_Castor_flux_vit_dynamic.yaml
+# torchrun --standalone --nnodes 1 --nproc-per-node 4 -m apps.Castor.train config=apps/Castor/configs/train_bucket_256_Castor_flux_gemma_dynamic.yaml
 
 # Set up single experiment
 version: v1.0
 # From now on, start to align train, data, and model setting with train stage (just finish refactor for dara)
 train_stage: stage-1 # options: preliminary, pretraining, posttraining; aligned with data setting
-name: vit_b_32_flux_dynamic #used for local dump and wandb log
+name: gemma_flux_dynamic #used for local dump and wandb log
 output_dir: /mnt/pollux/checkpoints/haozhe
 dump_dir: '' # No need now
 steps: 500000
@@ -56,7 +56,7 @@ model:
         gen_seqlen: 32
         condition_seqlen: 256
         norm_eps: 1e-5
-        condition_dim: 768
+        condition_dim: 2304
         qk_norm: false
     text_cfg_ratio: 0.1
     with_vae: true
@@ -66,10 +66,10 @@ model:
         enable_tiling: false
         enable_slicing: false
     text_encoder:
-        config_name: "ViT-B/32"
-        model_path: "/mnt/pollux/checkpoints/clip-vit-large-patch14"
+        config_name: "Gemma2_2B_it"
+        model_path: "/mnt/pollux/checkpoints/SANA1.5_1.6B_1024px_diffusers"
         dtype: "bf16"
-        text_seqlen: 256
+        text_seqlen: 128
 
 
 data:  

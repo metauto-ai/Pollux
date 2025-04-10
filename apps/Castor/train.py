@@ -12,7 +12,7 @@ from omegaconf import OmegaConf
 cli_args = OmegaConf.from_cli()
 file_cfg = OmegaConf.load(cli_args.config)
 os.environ["CUDA_VISIBLE_DEVICES"] = file_cfg.distributed.gpus
-
+os.environ["NCCL_DEBUG"] = "WARN"
 import wandb
 import numpy as np
 import torch
@@ -379,15 +379,23 @@ def train(args: TrainArgs):
                 gc.collect()
             if "latent_code" in batch:
                 if isinstance(batch["latent_code"], list):
-                    batch["latent_code"] = [latent_code.cuda() for latent_code in batch["latent_code"]]
-                    nwords_since_last_log += batch["latent_code"][0].numel() * len(batch["latent_code"])
+                    batch["latent_code"] = [
+                        latent_code.cuda() for latent_code in batch["latent_code"]
+                    ]
+                    nwords_since_last_log += batch["latent_code"][0].numel() * len(
+                        batch["latent_code"]
+                    )
                 else:
                     batch["latent_code"] = batch["latent_code"].cuda()
                     nwords_since_last_log += batch["latent_code"].numel()
             elif "image" in batch:
                 if isinstance(batch["image"], list):
-                    batch["image"] = [image.to(device="cuda") for image in batch["image"]]
-                    nwords_since_last_log += batch["image"][0].numel() * len(batch["image"])
+                    batch["image"] = [
+                        image.to(device="cuda") for image in batch["image"]
+                    ]
+                    nwords_since_last_log += batch["image"][0].numel() * len(
+                        batch["image"]
+                    )
                 else:
                     batch["image"] = batch["image"].to(device="cuda")
                     nwords_since_last_log += batch["image"].numel()

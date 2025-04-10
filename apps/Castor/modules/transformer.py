@@ -145,7 +145,12 @@ class BaseDiffusionTransformer(nn.Module):
                 h = layer(h, h_mask, freqs_cis, mask=None, attn_impl=attn_impl)
             else:
                 h = layer(
-                    h, h_mask, freqs_cis, modulation_signal, mask=None, attn_impl=attn_impl
+                    h,
+                    h_mask,
+                    freqs_cis,
+                    modulation_signal,
+                    mask=None,
+                    attn_impl=attn_impl,
                 )
         return h
 
@@ -222,6 +227,7 @@ class DiffusionTransformer(BaseDiffusionTransformer):
         self.time_step_dim = args.time_step_dim
         self.dim = args.dim
         self.norm = RMSNorm(args.dim, eps=args.norm_eps)
+        self.cond_norm = RMSNorm(args.dim, eps=args.norm_eps)
         self.negative_token = nn.Parameter(torch.zeros(1, 1, args.condition_dim))
         self.cond_proj = nn.Linear(
             in_features=args.condition_dim,
@@ -230,10 +236,10 @@ class DiffusionTransformer(BaseDiffusionTransformer):
         )
 
     def patchify_and_embed_image(
-        self, 
+        self,
         x: Union[torch.Tensor, List[torch.Tensor]],
         condition: torch.Tensor,
-        condition_mask: torch.Tensor
+        condition_mask: torch.Tensor,
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, Tuple[int, int], torch.Tensor]:
         self.rope_embeddings_image.freqs_cis = self.rope_embeddings_image.freqs_cis.to(
             x[0].device
@@ -254,10 +260,13 @@ class DiffusionTransformer(BaseDiffusionTransformer):
                 C, H, W = x[i].size()
                 assert H % (pH) == 0, f"H should be divisible by {pH}, but now H = {H}."
                 assert W % (pW) == 0, f"W should be divisible by {pW}, but now W = {W}."
-                _x = _x.view(C, H // pH, pH, W // pW, pW).permute(1, 3, 0, 2, 4).flatten(2)
+                _x = (
+                    _x.view(C, H // pH, pH, W // pW, pW)
+                    .permute(1, 3, 0, 2, 4)
+                    .flatten(2)
+                )
                 _x = self.img_embed(_x)
                 _x = _x.flatten(0, 1)  # [H/16*W/16, D]
-
                 x_new[i, :cond_l[i]] = condition[i, :cond_l[i]]     # TODO: assumes condition is right padded!
                 x_new[i, cond_l[i]:cond_l[i] + (H // pH) * (W // pW)] = _x
                 x_mask[i, :cond_l[i] + (H // pH) * (W // pW)] = True
@@ -265,22 +274,27 @@ class DiffusionTransformer(BaseDiffusionTransformer):
                 # rope embeddings
                 freqs_cis[i, :cond_l[i]] = self.rope_embeddings_conditions.freqs_cis[:cond_l[i]].to(x[0].device)
                 freqs_cis[i, cond_l[i]:cond_l[i] + (H // pH) * (W // pW)] = self.rope_embeddings_image.freqs_cis[: H // pH, : W // pW].flatten(0, 1).to(x[0].device)
-
             return x_new, x_mask, cond_l, (H_list, W_list), freqs_cis
         else:
             B, C, H, W = x.size()
             cond_l = condition.size(1)
-            x = x.view(B, C, H // pH, pH, W // pW, pW).permute(0, 2, 4, 1, 3, 5).flatten(3)
+            x = (
+                x.view(B, C, H // pH, pH, W // pW, pW)
+                .permute(0, 2, 4, 1, 3, 5)
+                .flatten(3)
+            )
             x = self.img_embed(x)
             x = x.flatten(1, 2)
             x_mask = torch.ones(B, (H // pH) * (W // pW), dtype=torch.bool).to(x.device)
             x_mask = torch.cat([condition_mask, x_mask], dim=1)
-            freqs_cis_img = self.rope_embeddings_image.freqs_cis[: H // pH, : W // pW].flatten(
-                0, 1
-            )
-            
+            freqs_cis_img = self.rope_embeddings_image.freqs_cis[
+                : H // pH, : W // pW
+            ].flatten(0, 1)
+
             x = torch.cat([condition, x], dim=1)
-            freqs_cis_cond = self.rope_embeddings_conditions.freqs_cis[:cond_l].to(x.device)
+            freqs_cis_cond = self.rope_embeddings_conditions.freqs_cis[:cond_l].to(
+                x.device
+            )
             freqs_cis = torch.cat([freqs_cis_cond, freqs_cis_img], dim=0)
             return (
                 x,
@@ -298,13 +312,18 @@ class DiffusionTransformer(BaseDiffusionTransformer):
         condition_mask: torch.Tensor,
         attn_impl: str = "sdpa",
     ):
-        condition = self.cond_proj(condition)
 
+        condition = self.cond_proj(condition)
+        condition = self.cond_norm(condition)
         modulation_signal = self.tmb_embed(time_steps)
 
-        x, x_mask, cond_l, img_size, freqs_cis = self.patchify_and_embed_image(x, condition, condition_mask)
+        x, x_mask, cond_l, img_size, freqs_cis = self.patchify_and_embed_image(
+            x, condition, condition_mask
+        )
 
-        h = super().forward(x, x_mask, freqs_cis, modulation_signal, attn_impl=attn_impl)
+        h = super().forward(
+            x, x_mask, freqs_cis, modulation_signal, attn_impl=attn_impl
+        )
 
         out = self.img_output(self.norm(h))
 
@@ -321,9 +340,11 @@ class DiffusionTransformer(BaseDiffusionTransformer):
         if use_dynamic_res:
             out_x_list = []
             for i, (_H, _W) in enumerate(zip(H, W)):
-                _x = x[i, cond_l[i]:cond_l[i] + (_H // pH) * (_W // pW)]
+                _x = x[i, cond_l[i] : cond_l[i] + (_H // pH) * (_W // pW)]
                 _x = _x.view(_H // pH, _W // pW, pH, pW, -1)
-                _x = _x.permute(4, 0, 2, 1, 3).flatten(3, 4).flatten(1, 2)  # [16,H/8,W/8]
+                _x = (
+                    _x.permute(4, 0, 2, 1, 3).flatten(3, 4).flatten(1, 2)
+                )  # [16,H/8,W/8]
                 out_x_list.append(_x)
             return out_x_list
         else:
@@ -332,10 +353,12 @@ class DiffusionTransformer(BaseDiffusionTransformer):
                 max_cond_l = max(cond_l)
             else:
                 max_cond_l = cond_l
-                
+
             B = x.size(0)
             L = (H // pH) * (W // pW)
-            x = x[:, max_cond_l:max_cond_l + L].view(B, H // pH, W // pW, pH, pW, self.out_channels)
+            x = x[:, max_cond_l : max_cond_l + L].view(
+                B, H // pH, W // pW, pH, pW, self.out_channels
+            )
             x = x.permute(0, 5, 1, 3, 2, 4).flatten(4, 5).flatten(2, 3)
             return x
 
@@ -346,6 +369,7 @@ class DiffusionTransformer(BaseDiffusionTransformer):
         self.rope_embeddings_conditions.reset_parameters()
         init_std = init_std or (self.dim ** (-0.5))
         self.norm.reset_parameters()
+        self.cond_norm.reset_parameters()
         self.tmb_embed.reset_parameters()
         self.img_embed.reset_parameters()
         nn.init.trunc_normal_(
