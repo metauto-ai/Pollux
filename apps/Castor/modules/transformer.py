@@ -251,10 +251,21 @@ class DiffusionTransformer(BaseDiffusionTransformer):
             bsz = len(x)
             H_list = [x[i].size(1) for i in range(bsz)]
             W_list = [x[i].size(2) for i in range(bsz)]
-            max_seq_len = max([cond_l[i] + (H_list[i] // pH) * (W_list[i] // pW) for i in range(bsz)])
-            x_new = torch.zeros(bsz, max_seq_len, self.dim, dtype=x[0].dtype).to(x[0].device)
+            max_seq_len = max(
+                [cond_l[i] + (H_list[i] // pH) * (W_list[i] // pW) for i in range(bsz)]
+            )
+            x_new = torch.zeros(bsz, max_seq_len, self.dim, dtype=x[0].dtype).to(
+                x[0].device
+            )
             x_mask = torch.zeros(bsz, max_seq_len, dtype=torch.bool).to(x[0].device)
-            freqs_cis = torch.zeros((bsz, max_seq_len,) + (self.rope_embeddings_conditions.freqs_cis.shape[-3:]), dtype=x[0].dtype).to(x[0].device)
+            freqs_cis = torch.zeros(
+                (
+                    bsz,
+                    max_seq_len,
+                )
+                + (self.rope_embeddings_conditions.freqs_cis.shape[-3:]),
+                dtype=x[0].dtype,
+            ).to(x[0].device)
             for i in range(bsz):
                 _x = x[i]
                 C, H, W = x[i].size()
@@ -267,13 +278,21 @@ class DiffusionTransformer(BaseDiffusionTransformer):
                 )
                 _x = self.img_embed(_x)
                 _x = _x.flatten(0, 1)  # [H/16*W/16, D]
-                x_new[i, :cond_l[i]] = condition[i, :cond_l[i]]     # TODO: assumes condition is right padded!
-                x_new[i, cond_l[i]:cond_l[i] + (H // pH) * (W // pW)] = _x
-                x_mask[i, :cond_l[i] + (H // pH) * (W // pW)] = True
+                x_new[i, : cond_l[i]] = condition[
+                    i, : cond_l[i]
+                ]  # TODO: assumes condition is right padded!
+                x_new[i, cond_l[i] : cond_l[i] + (H // pH) * (W // pW)] = _x
+                x_mask[i, : cond_l[i] + (H // pH) * (W // pW)] = True
 
                 # rope embeddings
-                freqs_cis[i, :cond_l[i]] = self.rope_embeddings_conditions.freqs_cis[:cond_l[i]].to(x[0].device)
-                freqs_cis[i, cond_l[i]:cond_l[i] + (H // pH) * (W // pW)] = self.rope_embeddings_image.freqs_cis[: H // pH, : W // pW].flatten(0, 1).to(x[0].device)
+                freqs_cis[i, : cond_l[i]] = self.rope_embeddings_conditions.freqs_cis[
+                    : cond_l[i]
+                ].to(x[0].device)
+                freqs_cis[i, cond_l[i] : cond_l[i] + (H // pH) * (W // pW)] = (
+                    self.rope_embeddings_image.freqs_cis[: H // pH, : W // pW]
+                    .flatten(0, 1)
+                    .to(x[0].device)
+                )
             return x_new, x_mask, cond_l, (H_list, W_list), freqs_cis
         else:
             B, C, H, W = x.size()
@@ -290,12 +309,12 @@ class DiffusionTransformer(BaseDiffusionTransformer):
             freqs_cis_img = self.rope_embeddings_image.freqs_cis[
                 : H // pH, : W // pW
             ].flatten(0, 1)
-
             x = torch.cat([condition, x], dim=1)
             freqs_cis_cond = self.rope_embeddings_conditions.freqs_cis[:cond_l].to(
                 x.device
             )
             freqs_cis = torch.cat([freqs_cis_cond, freqs_cis_img], dim=0)
+            freqs_cis = freqs_cis.unsqueeze(0).repeat(B, *[1] * freqs_cis.dim())
             return (
                 x,
                 x_mask,

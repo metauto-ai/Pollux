@@ -1,5 +1,5 @@
 """
-CUDA_VISIBLE_DEVICES=0,1,2,3 torchrun --nnodes 1 --nproc-per-node 4 -m apps.MMTransformer.eval config=apps/MMTransformer/configs/eval.yaml
+CUDA_VISIBLE_DEVICES=0,1,2,3 torchrun --nnodes 1 --nproc-per-node 4 -m apps.Castor.eval config=apps/Castor/configs/eval.yaml
 """
 
 from collections import defaultdict
@@ -23,13 +23,13 @@ from lingua.distributed import (
     setup_torch_distributed,
 )
 from apps.main.data import AutoDataLoader, DataArgs
-from apps.MMTransformer.generate import (
+from apps.Castor.generate import (
     LatentGenerator,
     GeneratorArgs,
     load_consolidated_model,
 )
-from apps.main.modules.vae import build_vae
-from apps.MMTransformer.model import Latent_Pollux, ModelArgs
+from apps.Castor.modules.vae import BaseLatentVideoVAE, create_vae, VideoVAEArgs
+from apps.Castor.model import Castor, ModelArgs
 
 EVAL_FOLDER_NAME = "{:010d}"
 
@@ -90,12 +90,12 @@ def launch_eval(cfg: EvalArgs):
     logger.info("Loading model")
     model, _ = load_consolidated_model(
         consolidated_path=cfg.ckpt_dir,
-        model_cls=Latent_Pollux,
+        model_cls=Castor,
         model_args_cls=ModelArgs,
     )
     logger.info("Model loaded")
     model.eval()
-    tvae = build_vae(cfg.generator.tvae)
+    tvae = create_vae(cfg.generator.tvae)
     generator = LatentGenerator(cfg.generator, model, tvae).cuda()
     active_data = [d for d in cfg.data if d.stage == cfg.stage and d.use]
     data_loader_factory = AutoDataLoader(
