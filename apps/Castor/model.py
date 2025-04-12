@@ -1,18 +1,18 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 
-from dataclasses import dataclass, field
-from typing import Tuple, Optional, List
 import logging
 import random
-import torch
-from torch import nn
-import torch.nn.functional as F
-from .modules.transformer import TransformerArgs
-from .modules.transformer import DiffusionTransformer
+from dataclasses import dataclass, field
+from typing import List, Optional, Tuple
 
-from .modules.vae import create_vae, VideoVAEArgs
-from .modules.text_encoder import TextEncoderArgs, create_text_encoder
+import torch
+import torch.nn.functional as F
+from torch import nn
+
 from .modules.schedulers import RectifiedFlow, SchedulerArgs
+from .modules.text_encoder import TextEncoderArgs, create_text_encoder
+from .modules.transformer import DiffusionTransformer, TransformerArgs
+from .modules.vae import VideoVAEArgs, create_vae
 
 logger = logging.getLogger()
 
@@ -44,24 +44,34 @@ class Castor(nn.Module):
     def forward(self, batch: dict[str:any]) -> dict[str:any]:
         if hasattr(self, "compressor"):
             if isinstance(batch["image"], list):
-                batch["latent_code"] = [self.compressor.encode(img[None])[0] for img in batch["image"]]
+                batch["latent_code"] = [
+                    self.compressor.encode(img[None])[0] for img in batch["image"]
+                ]
             else:
                 batch["latent_code"] = self.compressor.encode(batch["image"])
-        
+
         if "text_embedding" not in batch:
             batch["text_embedding"], batch["attention_mask"] = self.text_encoder(batch)
-        conditional_signal, conditional_mask = batch["text_embedding"], batch["attention_mask"]
+        conditional_signal, conditional_mask = (
+            batch["text_embedding"],
+            batch["attention_mask"],
+        )
 
         if random.random() <= self.text_cfg_ratio:
             conditional_signal = self.diffusion_transformer.negative_token.repeat(
                 conditional_signal.size(0), conditional_signal.size(1), 1
             )
-            conditional_mask = torch.ones_like(conditional_mask, dtype=conditional_signal.dtype)
+            conditional_mask = torch.ones_like(
+                conditional_mask, dtype=conditional_signal.dtype
+            )
 
         latent_code = batch["latent_code"]
         noised_x, t, target = self.scheduler.sample_noised_input(latent_code)
         output = self.diffusion_transformer(
-            x=noised_x, time_steps=t, condition=conditional_signal, condition_mask=conditional_mask
+            x=noised_x,
+            time_steps=t,
+            condition=conditional_signal,
+            condition_mask=conditional_mask,
         )
 
         batch["prediction"] = output
@@ -93,7 +103,7 @@ class Castor(nn.Module):
             self.diffusion_transformer.init_weights(
                 pre_trained_path=args.diffusion_model.pre_trained_path
             )
-    
+
     def get_checkpointing_wrap_module_list(self) -> List[nn.Module]:
         return list(self.diffusion_transformer.layers)
 

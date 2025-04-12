@@ -44,11 +44,6 @@ pip install timm
 pip install torchmetrics
 ```
 
-* If you need to run YOLOv10
-```bash
-pip install ultralytics
-```
-
 * If you need mongoexport
 ```bash
 wget -qO - https://www.mongodb.org/static/pgp/server-6.0.asc | sudo apt-key add -

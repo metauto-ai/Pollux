@@ -1,21 +1,19 @@
+import math
+import warnings
 from dataclasses import dataclass
 from enum import Enum
-import math
-from typing import Optional, Union, Tuple
+from typing import Optional, Tuple, Union
 
 import torch
+from flash_attn import flash_attn_varlen_func
+from flash_attn.bert_padding import (index_first_axis, pad_input,  # noqa
+                                     unpad_input)
 from torch import nn
 from torch.nn import functional as F
-from xformers.ops import fmha, AttentionBias
-from torch.nn.attention.flex_attention import (
-    BlockMask,
-    flex_attention,
-    _mask_mod_signature,
-    create_block_mask,
-)
-from flash_attn import flash_attn_varlen_func
-from flash_attn.bert_padding import index_first_axis, pad_input, unpad_input  # noqa
-import warnings
+from torch.nn.attention.flex_attention import (BlockMask, _mask_mod_signature,
+                                               create_block_mask,
+                                               flex_attention)
+from xformers.ops import AttentionBias, fmha
 
 from . import probe
 
@@ -364,7 +362,6 @@ class Attention(nn.Module):
         else:
             self.q_norm = nn.Identity()
             self.k_norm = nn.Identity()
-        
 
     def forward(
         self,
@@ -452,7 +449,7 @@ class Attention(nn.Module):
             a=-3 * init_std,
             b=3 * init_std,
         )
-        
+
         if isinstance(self.q_norm, RMSNorm):
             self.q_norm.reset_parameters()
         if isinstance(self.k_norm, RMSNorm):
@@ -524,12 +521,16 @@ class FlashAttention(nn.Module):
         nn.init.xavier_uniform_(self.wo.weight)
 
     # copied from huggingface modeling_llama.py
-    def _upad_input(self, query_layer, key_layer, value_layer, attention_mask, query_length):
+    def _upad_input(
+        self, query_layer, key_layer, value_layer, attention_mask, query_length
+    ):
         def _get_unpad_data(attention_mask):
             seqlens_in_batch = attention_mask.sum(dim=-1, dtype=torch.int32)
             indices = torch.nonzero(attention_mask.flatten(), as_tuple=False).flatten()
             max_seqlen_in_batch = seqlens_in_batch.max().item()
-            cu_seqlens = F.pad(torch.cumsum(seqlens_in_batch, dim=0, dtype=torch.int32), (1, 0))
+            cu_seqlens = F.pad(
+                torch.cumsum(seqlens_in_batch, dim=0, dtype=torch.int32), (1, 0)
+            )
             return (
                 indices,
                 cu_seqlens,
@@ -549,7 +550,9 @@ class FlashAttention(nn.Module):
         )
         if query_length == kv_seq_len:
             query_layer = index_first_axis(
-                query_layer.reshape(batch_size * kv_seq_len, self.n_local_heads, head_dim),
+                query_layer.reshape(
+                    batch_size * kv_seq_len, self.n_local_heads, head_dim
+                ),
                 indices_k,
             )
             cu_seqlens_q = cu_seqlens_k
@@ -565,7 +568,9 @@ class FlashAttention(nn.Module):
         else:
             # The -q_len: slice assumes left padding.
             attention_mask = attention_mask[:, -query_length:]
-            query_layer, indices_q, cu_seqlens_q, max_seqlen_in_batch_q = unpad_input(query_layer, attention_mask)
+            query_layer, indices_q, cu_seqlens_q, max_seqlen_in_batch_q = unpad_input(
+                query_layer, attention_mask
+            )
 
         return (
             query_layer,
@@ -651,7 +656,9 @@ class FlashAttention(nn.Module):
                     xq.permute(0, 2, 1, 3),
                     xk.permute(0, 2, 1, 3),
                     xv.permute(0, 2, 1, 3),
-                    attn_mask=x_mask.bool().view(bsz, 1, 1, seqlen).expand(-1, self.n_local_heads, seqlen, -1),
+                    attn_mask=x_mask.bool()
+                    .view(bsz, 1, 1, seqlen)
+                    .expand(-1, self.n_local_heads, seqlen, -1),
                     scale=softmax_scale,
                 )
                 .permute(0, 2, 1, 3)

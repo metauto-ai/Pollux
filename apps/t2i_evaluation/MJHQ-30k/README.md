@@ -50,11 +50,23 @@ Evaluation
 python -m pytorch_fid <GENERATION_RESULT_FOLDER> <STATS_SAVE_FOLDER>/mjhq_30k_imgs.npz
 ```
 
+For example,
+
+```bash
+python -m pytorch_fid /mnt/pollux/checkpoints/haozhe/qwen2_5_vl_flux_dynamic_max_ratio_1.0/MJHQ/0000040000/samples /mnt/pollux/mjhq_30k/mjhq_30k_imgs.npz
+```
+
 ### Calculate CLIP score
 
 
 ```
 python mjhq_clip.py --data_path '<GENERATION_RESULT_FOLDER>' ;
+```
+
+For example,
+
+```bash
+python mjhq_clip.py --data_path '/mnt/pollux/checkpoints/haozhe/qwen2_5_vl_flux_dynamic_max_ratio_1.0/MJHQ/0000040000/samples'
 ```
 
 
