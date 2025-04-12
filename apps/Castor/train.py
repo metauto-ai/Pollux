@@ -13,63 +13,43 @@ cli_args = OmegaConf.from_cli()
 file_cfg = OmegaConf.load(cli_args.config)
 os.environ["CUDA_VISIBLE_DEVICES"] = file_cfg.distributed.gpus
 os.environ["NCCL_DEBUG"] = "WARN"
-import wandb
-import numpy as np
-import torch
-import torch.distributed
-import xformers.profiler
 
-from copy import deepcopy
-from torch.optim import lr_scheduler
-from torch.distributed.checkpoint.stateful import Stateful
-from torch.distributed._tensor import DTensor
 from contextlib import ExitStack
+from copy import deepcopy
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from timeit import default_timer as timer
 from typing import Any, Dict, List, Optional
 
-
-from lingua.args import dump_config, flatten_dict, dataclass_from_dict
-from lingua.checkpoint import CheckpointArgs, CheckpointManager, load_from_checkpoint
-from lingua.distributed import (
-    DistributedArgs,
-    EnvironmentArgs,
-    init_signal_handler,
-    dist_mean_dict,
-    get_device_mesh,
-    get_is_master,
-    get_world_size,
-    get_local_rank,
-    parallelize_model,
-    setup_env,
-    setup_torch_distributed,
-    requeue_slurm_job,
-    check_model_value_range,
-)
+import numpy as np
+import torch
+import torch.distributed
+import wandb
+import xformers.profiler
+from apps.Castor.model import (Castor, ModelArgs, build_fsdp_grouping_plan,
+                               get_no_recompute_ops, tp_parallelize)
+from apps.main.data import AutoDataLoader, DataArgs
+from apps.main.modules.schedulers import SchedulerArgs
+from apps.main.utils.cal_flops import get_num_flop_per_token
+from apps.main.utils.dict_tensor_data_load import DictTensorBatchIterator
+from apps.main.utils.sampler import StatefulDistributedSampler
+from lingua.args import dataclass_from_dict, dump_config, flatten_dict
+from lingua.checkpoint import (CheckpointArgs, CheckpointManager,
+                               load_from_checkpoint)
+from lingua.distributed import (DistributedArgs, EnvironmentArgs,
+                                check_model_value_range, dist_mean_dict,
+                                get_device_mesh, get_is_master, get_local_rank,
+                                get_world_size, init_signal_handler,
+                                parallelize_model, requeue_slurm_job,
+                                setup_env, setup_torch_distributed)
 from lingua.logger import init_logger
-from lingua.metrics import (
-    GPUMemoryMonitor,
-    LoggingArgs,
-    MetricLogger,
-    get_num_params,
-)
+from lingua.metrics import (GPUMemoryMonitor, LoggingArgs, MetricLogger,
+                            get_num_params)
 from lingua.optim import OptimArgs, build_optimizer
 from lingua.profiling import ProfilerArgs, maybe_run_profiler
-
-from apps.main.data import AutoDataLoader, DataArgs
-from apps.main.utils.dict_tensor_data_load import DictTensorBatchIterator
-from apps.main.modules.schedulers import SchedulerArgs
-from apps.main.utils.sampler import StatefulDistributedSampler
-from apps.Castor.model import (
-    Castor,
-    ModelArgs,
-    build_fsdp_grouping_plan,
-    tp_parallelize,
-    get_no_recompute_ops,
-)
-
-from apps.main.utils.cal_flops import get_num_flop_per_token
+from torch.distributed._tensor import DTensor
+from torch.distributed.checkpoint.stateful import Stateful
+from torch.optim import lr_scheduler
 
 logger = logging.getLogger()
 
@@ -77,7 +57,7 @@ logger = logging.getLogger()
 @dataclass
 class TrainArgs:
 
-    name: str = "Pollux"
+    name: str = "Castor"
     version: str = "v1.0"
     train_stage: str = "preliminary"  # Align with `data` configuration
     output_dir: str = "/mnt/data/dump"

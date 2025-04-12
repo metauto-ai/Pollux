@@ -1,20 +1,14 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 
+import logging
+import re
 from dataclasses import dataclass
 from typing import Tuple
-import logging
+
 import torch
-from transformers import (
-    AutoModel,
-    AutoTokenizer,
-    AutoProcessor,
-    CLIPTokenizer,
-    CLIPModel,
-    GemmaTokenizerFast,
-    Gemma2Model,
-    UMT5EncoderModel,
-)
-import re
+from transformers import (AutoModel, AutoProcessor, AutoTokenizer, CLIPModel,
+                          CLIPTokenizer, Gemma2Model, GemmaTokenizerFast,
+                          UMT5EncoderModel)
 
 logger = logging.getLogger()
 

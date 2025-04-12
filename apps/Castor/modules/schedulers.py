@@ -1,10 +1,10 @@
-import torch
-from diffusers.schedulers import FlowMatchEulerDiscreteScheduler
+import inspect
 import math
-from typing import Tuple
 from dataclasses import dataclass
 from typing import List, Optional, Tuple, Union
-import inspect
+
+import torch
+from diffusers.schedulers import FlowMatchEulerDiscreteScheduler
 
 
 @dataclass
