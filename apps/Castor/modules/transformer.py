@@ -45,6 +45,7 @@ class TransformerArgs(BaseTransformerArgs):
     gen_seqlen: int = 1000
     pre_trained_path: Optional[str] = None
     qk_norm: bool = True
+    shared_adaLN: bool = False
 
 
 class DiffusionTransformerBlock(nn.Module):
@@ -83,10 +84,11 @@ class DiffusionTransformerBlock(nn.Module):
         )
         self.attention_norm = RMSNorm(args.dim, eps=args.norm_eps)
         self.ffn_norm = RMSNorm(args.dim, eps=args.norm_eps)
-        self.adaLN_modulation = AdaLN(
-            in_dim=args.time_step_dim,
-            out_dim=4 * args.dim,
-        )
+        if not args.shared_adaLN:
+            self.adaLN_modulation = AdaLN(
+                in_dim=args.time_step_dim,
+                out_dim=4 * args.dim,
+            )
 
     def forward(
         self,
@@ -96,10 +98,15 @@ class DiffusionTransformerBlock(nn.Module):
         modulation_signal: torch.Tensor,
         mask: Optional[Union[BlockMask, AttentionBias, str]] = None,
         attn_impl: str = "sdpa",
+        modulation_values: Optional[Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]] = None,
     ) -> torch.Tensor:
-        scale_msa, gate_msa, scale_mlp, gate_mlp = self.adaLN_modulation(
-            modulation_signal
-        ).chunk(4, dim=1)
+        if modulation_values is None:
+            scale_msa, gate_msa, scale_mlp, gate_mlp = self.adaLN_modulation(
+                modulation_signal
+            ).chunk(4, dim=1)
+        else:
+            scale_msa, gate_msa, scale_mlp, gate_mlp = modulation_values
+
         h = x + gate_msa.unsqueeze(1).tanh() * self.attention(
             modulate(self.attention_norm(x), scale_msa),
             x_mask,
@@ -116,9 +123,10 @@ class DiffusionTransformerBlock(nn.Module):
     def init_weights(self, init_std=None, factor=1.0):
         self.attention.reset_parameters(init_std, factor)
         self.attention_norm.reset_parameters()
-        self.adaLN_modulation.reset_parameters()
         self.feed_forward.reset_parameters(init_std, factor)
         self.ffn_norm.reset_parameters()
+        if self.adaLN_modulation:
+            self.adaLN_modulation.reset_parameters()
 
 
 class BaseDiffusionTransformer(nn.Module):
@@ -129,6 +137,7 @@ class BaseDiffusionTransformer(nn.Module):
         self.init_std_factor = InitStdFactor(args.init_std_factor)
         self.gen_seqlen = args.gen_seqlen
         self.layers = nn.ModuleList()
+        self.shared_adaLN = args.shared_adaLN
         for _ in range(args.n_layers):
             self.layers.append(DiffusionTransformerBlock(args))
 
@@ -138,20 +147,19 @@ class BaseDiffusionTransformer(nn.Module):
         h_mask,
         freqs_cis,
         modulation_signal: Optional[torch.Tensor] = None,
+        modulation_values: Optional[Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]] = None,
         attn_impl: str = "sdpa",
     ):
         for idx, layer in enumerate(self.layers):
-            if modulation_signal == None:
-                h = layer(h, h_mask, freqs_cis, mask=None, attn_impl=attn_impl)
-            else:
-                h = layer(
-                    h,
-                    h_mask,
-                    freqs_cis,
-                    modulation_signal,
-                    mask=None,
-                    attn_impl=attn_impl,
-                )
+            h = layer(
+                h,
+                h_mask,
+                freqs_cis,
+                modulation_signal,
+                mask=None,
+                attn_impl=attn_impl,
+                modulation_values=modulation_values,
+            )
         return h
 
     def reset_parameters(self):
@@ -234,6 +242,12 @@ class DiffusionTransformer(BaseDiffusionTransformer):
             out_features=args.dim,
             bias=False,
         )
+        if self.shared_adaLN:
+            # Single AdaLN instance shared across all transformer blocks
+            self.adaLN_modulation = AdaLN(
+                in_dim=args.time_step_dim,
+                out_dim=4 * args.dim,
+            )
 
     def patchify_and_embed_image(
         self,
@@ -340,8 +354,15 @@ class DiffusionTransformer(BaseDiffusionTransformer):
             x, condition, condition_mask
         )
 
+        if self.adaLN_modulation:
+            modulation_values = self.adaLN_modulation(
+                modulation_signal
+            ).chunk(4, dim=1)
+        else:
+            modulation_values = None
+
         h = super().forward(
-            x, x_mask, freqs_cis, modulation_signal, attn_impl=attn_impl
+            x, x_mask, freqs_cis, modulation_signal, attn_impl=attn_impl, modulation_values=modulation_values
         )
 
         out = self.img_output(self.norm(h))
