@@ -9,9 +9,9 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 
-from .modules.schedulers import RectifiedFlow, SchedulerArgs
+from .modules.schedulers import SchedulerArgs, RectifiedFlow # TODO (mingchen review comment): could unify as `create_scheduler`
 from .modules.text_encoder import TextEncoderArgs, create_text_encoder
-from .modules.transformer import DiffusionTransformer, TransformerArgs
+from .modules.transformer import TransformerArgs, DiffusionTransformer # TODO (mingchen review comment): could unify as `create_dit`
 from .modules.vae import VideoVAEArgs, create_vae
 
 logger = logging.getLogger()
@@ -19,12 +19,12 @@ logger = logging.getLogger()
 
 @dataclass
 class ModelArgs:
-    diffusion_model: TransformerArgs = field(default_factory=TransformerArgs)
-    with_vae: bool = False
-    vae_args: VideoVAEArgs = field(default_factory=VideoVAEArgs)
-    pre_trained_weight: Optional[str] = None
-    text_encoder: TextEncoderArgs = field(default_factory=TextEncoderArgs)
+    diffusion_model: TransformerArgs = field(default_factory=TransformerArgs) # TODO (mingchen review comment): actually, `diffusion_model` with `TransformerArgs` is not aligned. But we can keep it as is.
     scheduler: SchedulerArgs = field(default_factory=SchedulerArgs)
+    text_encoder: TextEncoderArgs = field(default_factory=TextEncoderArgs)
+    vae_args: VideoVAEArgs = field(default_factory=VideoVAEArgs) # TODO (mingchen review comment): need to named as `vae`
+    with_vae: bool = False
+    pre_trained_weight: Optional[str] = None # TODO (mingchen review comment): this is confused because all of dit, text_encoder, vae have pre-trained weights.
     text_cfg_ratio: float = 0.1
 
 
@@ -45,13 +45,13 @@ class Castor(nn.Module):
         if hasattr(self, "compressor"):
             if isinstance(batch["image"], list):
                 batch["latent_code"] = [
-                    self.compressor.encode(img[None])[0] for img in batch["image"]
+                    self.compressor.encode(img[None])[0] for img in batch["image"] # TODO (mingchen review comment): 这里和后面的l51有矛盾。 如果写成这样会不会更加符合一致性并且可能加速: self.compressor.encode(torch.stack([img for img in batch["image"]]))
                 ]
             else:
                 batch["latent_code"] = self.compressor.encode(batch["image"])
 
         if "text_embedding" not in batch:
-            batch["text_embedding"], batch["attention_mask"] = self.text_encoder(batch)
+            batch["text_embedding"], batch["attention_mask"] = self.text_encoder(batch) # TODO: 这样的写法会导致text_encoder.py不太通用了(我们应该把不灵活的判断东西都在更顶层model.py解决，而不是下面的module)。如: 直接送入self.text_encoder(batch['caption'])而不是整个batch，在这里处理输入更直接
         conditional_signal, conditional_mask = (
             batch["text_embedding"],
             batch["attention_mask"],
@@ -67,7 +67,7 @@ class Castor(nn.Module):
 
         latent_code = batch["latent_code"]
         noised_x, t, target = self.scheduler.sample_noised_input(latent_code)
-        output = self.diffusion_transformer(
+        output = self.diffusion_transformer(·
             x=noised_x,
             time_steps=t,
             condition=conditional_signal,
@@ -91,8 +91,10 @@ class Castor(nn.Module):
         self.diffusion_transformer.eval()
 
     def init_weights(self, args: ModelArgs):
+
+        # TODO (mingchen review comment): 怀疑现在的pre_trained_weight已经作废了?
         if args.pre_trained_weight:
-            args.diffusion_model.pre_trained_path = None
+            args.diffusion_model.pre_trained_path = None # TODO (mingchen review comment): 这里写得比较confused。如果args里有pre_trained_weight，把原pre_trained_path = None，这个好像逻辑不正确。
             self.diffusion_transformer.init_weights(args=args.diffusion_model)
             logger.info(f"Loading pre-trained weights from {args.pre_trained_weight}")
             pre_trained_state_dict = torch.load(args.pre_trained_weight)
@@ -115,6 +117,9 @@ def get_no_recompute_ops():
 
 # Optional and only used for fully shard options (fsdp) is choose. Highly recommanded for large models
 def build_fsdp_grouping_plan(model_args: ModelArgs):
+
+    # TODO (mingchen review comment): 这里需要确认，虽然可能没那么重要。我眼里DiT, TextEncoder最需要fsdp。 目前text_encoder是没考虑的。
+
     group_plan: Tuple[int, bool] = []
     if model_args.with_vae:
         for i in range(4):  # Specific for Hunyuan's VAE
