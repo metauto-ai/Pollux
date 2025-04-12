@@ -231,9 +231,9 @@ def generate_doc_mask_mod(
 
     return doc_mask_mod
 
-
-def modulate(x, scale):
-    return x * (1 + scale.unsqueeze(1))
+@torch.compile
+def modulate_and_gate(x, scale, gate):
+    return (x * (1 + scale.unsqueeze(1))) * gate.unsqueeze(1).tanh()
 
 
 def create_causal_mask(seqlen, attn_impl):
@@ -885,6 +885,7 @@ class AdaLN(nn.Module):
         )
         self.in_dim = in_dim
 
+    @torch.compile
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         output = self.w1(F.silu(x))
         return output

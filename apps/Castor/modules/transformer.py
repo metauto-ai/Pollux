@@ -24,8 +24,8 @@ from .component import (
     AdaLN,
     ImageEmbedder,
     TimestepEmbedder,
-    modulate,
     create_causal_mask,
+    modulate_and_gate,
 )
 
 
@@ -90,6 +90,7 @@ class DiffusionTransformerBlock(nn.Module):
                 out_dim=4 * args.dim,
             )
 
+
     def forward(
         self,
         x: torch.Tensor,
@@ -100,25 +101,36 @@ class DiffusionTransformerBlock(nn.Module):
         attn_impl: str = "sdpa",
         modulation_values: Optional[Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]] = None,
     ) -> torch.Tensor:
-        if modulation_values is None:
+        if modulation_values is None and self.adaLN_modulation:
             scale_msa, gate_msa, scale_mlp, gate_mlp = self.adaLN_modulation(
                 modulation_signal
             ).chunk(4, dim=1)
         else:
             scale_msa, gate_msa, scale_mlp, gate_mlp = modulation_values
 
-        h = x + gate_msa.unsqueeze(1).tanh() * self.attention(
-            modulate(self.attention_norm(x), scale_msa),
-            x_mask,
-            freqs_cis,
-            tok_idx=None,
-            mask=mask,
-            attn_impl=attn_impl,
+
+        h = x + modulate_and_gate(
+            self.attention(
+                self.attention_norm(x),
+                x_mask,
+                freqs_cis,
+                tok_idx=None,
+                mask=mask,
+                attn_impl=attn_impl,
+            ),
+            scale=scale_msa,
+            gate=gate_msa
         )
-        out = h + gate_mlp.unsqueeze(1).tanh() * self.feed_forward(
-            modulate(self.ffn_norm(h), scale_mlp)
+
+        h = h + modulate_and_gate(
+            self.feed_forward(
+                self.ffn_norm(h)
+            ),
+            scale=scale_mlp,
+            gate=gate_mlp
         )
-        return out
+
+        return h
 
     def init_weights(self, init_std=None, factor=1.0):
         self.attention.reset_parameters(init_std, factor)
