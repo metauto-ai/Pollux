@@ -1,35 +1,30 @@
 """
-CUDA_VISIBLE_DEVICES=0,1,2,3 torchrun --nnodes 1 --nproc-per-node 4 -m apps.MMTransformer.eval config=apps/MMTransformer/configs/eval.yaml
+CUDA_VISIBLE_DEVICES=0,1,2,3 torchrun --nnodes 1 --nproc-per-node 4 -m apps.Castor.eval config=apps/Castor/configs/eval.yaml
 """
 
-from collections import defaultdict
-from dataclasses import asdict, dataclass, field
-from datetime import datetime
+import csv
 import json
 import logging
 import os
+from collections import defaultdict
+from dataclasses import asdict, dataclass, field
+from datetime import datetime
 from pathlib import Path
 from typing import Any, List, Optional, Tuple, Union
-import csv
-from omegaconf import OmegaConf
-import torchvision.transforms as transforms
+
 import torch
+import torchvision.transforms as transforms
+from apps.Castor.generate import (GeneratorArgs, LatentGenerator,
+                                  load_consolidated_model)
+from apps.Castor.model import Castor, ModelArgs
+from apps.Castor.modules.vae import (BaseLatentVideoVAE, VideoVAEArgs,
+                                     create_vae)
+from apps.main.data import AutoDataLoader, DataArgs
 from lingua.args import dump_config
 from lingua.checkpoint import CONSOLIDATE_FOLDER, consolidate_checkpoints
-from lingua.distributed import (
-    DistributedArgs,
-    get_global_rank,
-    get_world_size,
-    setup_torch_distributed,
-)
-from apps.main.data import AutoDataLoader, DataArgs
-from apps.MMTransformer.generate import (
-    LatentGenerator,
-    GeneratorArgs,
-    load_consolidated_model,
-)
-from apps.main.modules.vae import build_vae
-from apps.MMTransformer.model import Latent_Pollux, ModelArgs
+from lingua.distributed import (DistributedArgs, get_global_rank,
+                                get_world_size, setup_torch_distributed)
+from omegaconf import OmegaConf
 
 EVAL_FOLDER_NAME = "{:010d}"
 
@@ -90,12 +85,12 @@ def launch_eval(cfg: EvalArgs):
     logger.info("Loading model")
     model, _ = load_consolidated_model(
         consolidated_path=cfg.ckpt_dir,
-        model_cls=Latent_Pollux,
+        model_cls=Castor,
         model_args_cls=ModelArgs,
     )
     logger.info("Model loaded")
     model.eval()
-    tvae = build_vae(cfg.generator.tvae)
+    tvae = create_vae(cfg.generator.tvae)
     generator = LatentGenerator(cfg.generator, model, tvae).cuda()
     active_data = [d for d in cfg.data if d.stage == cfg.stage and d.use]
     data_loader_factory = AutoDataLoader(

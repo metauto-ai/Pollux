@@ -76,6 +76,7 @@ class DataArgs:
     # * Image specific args
     image_size: int = 256
     condition_image_size: int = 256
+    max_ratio: float = 2.0
 
     # * Huggingface specific args
     root_dir: Optional[str] = None  # For local/huggingface datasets
@@ -93,6 +94,23 @@ class DataArgs:
     shape_field: Optional[Dict[str, str]] = field(default_factory=dict)
     # * DataLoader specific args
     dataloader: DataLoaderArgs = field(default_factory=DataLoaderArgs)
+
+
+def identity_collate(batch):
+    return batch
+
+
+def mongodb_collate(batch):
+    """
+    used for MongoDBImageDataLoad
+    """
+    keys = batch[0].keys()
+    batch_size = len(batch)
+    batch_output = {key: [] for key in keys}
+    for i in range(batch_size):
+        for key in keys:
+            batch_output[key].append(batch[i][key])
+    return batch_output
 
 
 class AutoDataLoader:
@@ -235,11 +253,13 @@ class AutoDataLoader:
             rank=self.shard_id,
             shuffle=dataloader_args.shuffle,
         )
+
         return (
             DataLoader(
                 dataset,
                 batch_size=dataloader_args.batch_size,
                 sampler=sampler,
+                collate_fn=mongodb_collate,
                 worker_init_fn=partial(worker_init, seed=dataloader_args.seed),
                 drop_last=dataloader_args.drop_last,
                 pin_memory=dataloader_args.pin_memory,

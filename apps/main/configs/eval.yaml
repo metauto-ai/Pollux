@@ -1,8 +1,8 @@
 # python -m apps.main.generate config=apps/main/configs/eval.yaml
 name: "debug_evals"
 stage: eval
-ckpt_dir: "/jfs/checkpoints/dump/Pollux_v1.0_joint_training_config_update_double_check/checkpoints/0000400000"
-dump_dir: "/jfs/checkpoints/dump/Pollux_v1.0_joint_training_config_update_double_check/MJHQ/0000400000"
+ckpt_dir: "/mnt/pollux/checkpoints/dump/Pollux_v1.0_joint_training_2B_Model_10M_12h/checkpoints/0000080000"
+dump_dir: "/mnt/pollux/checkpoints/dump/Pollux_v1.0_joint_training_2B_Model_10M_12h/MJHQ/0000080000"
 generator:
   guidance_scale: 6.5
   dtype: bf16
@@ -12,7 +12,7 @@ generator:
   vae_scale_factor: 8.0
   tvae:
     model_name: Hunyuan
-    pretrained_model_name_or_path: '/jfs/checkpoints/models--tencent--HunyuanVideo/snapshots/2a15b5574ee77888e51ae6f593b2ceed8ce813e5/vae'
+    pretrained_model_name_or_path: '/mnt/pollux/checkpoints/HunyuanVideo/vae'
     enable_tiling: false
     enable_slicing: false
 data:

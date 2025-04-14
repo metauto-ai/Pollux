@@ -1,11 +1,11 @@
-# torchrun --standalone --nnodes 1 --nproc-per-node 8 -m apps.Castor.train config=apps/Castor/configs/train_bucket_256_Castor_image_cache_json.yaml
+# torchrun --standalone --nnodes 1 --nproc-per-node 4 -m apps.Castor.train config=apps/Castor/configs/train_bucket_256_Castor_flux_vit_dynamic.yaml
 
 # Set up single experiment
 version: v1.0
 # From now on, start to align train, data, and model setting with train stage (just finish refactor for dara)
 train_stage: stage-1 # options: preliminary, pretraining, posttraining; aligned with data setting
-name: liger_transformer #used for local dump and wandb log
-output_dir: /mnt/pollux/checkpoints/aj
+name: vit_b_32_flux_dynamic #used for local dump and wandb log
+output_dir: /mnt/pollux/checkpoints/haozhe
 dump_dir: '' # No need now
 steps: 500000
 seed: 777
@@ -17,7 +17,7 @@ optim:
     weight_decay: 0.01
 
 distributed:
-    gpus: 0,1,2,3,4,5,6,7
+    gpus: 0,1,2,3
     fsdp_type: full_shard
     dp_shard: 8
     dp_replicate: 1
@@ -53,27 +53,24 @@ model:
         in_channels: 16
         out_channels: 16
         tmb_size: 256
-        gen_seqlen: 16
-        condition_seqlen: 128
+        gen_seqlen: 32
+        condition_seqlen: 256
         norm_eps: 1e-5
-        condition_dim: 512
-        liger_ffn: true
-        liger_rms_norm: true
-        liger_rotary_emb: false
+        condition_dim: 768
+        qk_norm: false
     text_cfg_ratio: 0.1
     with_vae: true
     vae_args:
-        #Flux /mnt/pollux/checkpoints/FLUX.1-dev/vae 
-        #Hunyuan /mnt/pollux/checkpoints/HunyuanVideo/vae
-        #COSMOS /mnt/pollux/checkpoints/Cosmos/Cosmos-0.1-Tokenizer-CI8x8/
-        vae_type: "hunyuan"
-        pretrained_model_name_or_path: '/mnt/pollux/checkpoints/HunyuanVideo/vae' 
+        vae_type: "flux"
+        pretrained_model_name_or_path: '/mnt/pollux/checkpoints/FLUX.1-dev/vae'
         enable_tiling: false
         enable_slicing: false
     text_encoder:
         config_name: "ViT-B/32"
+        model_path: "/mnt/pollux/checkpoints/clip-vit-large-patch14"
         dtype: "bf16"
-        text_seqlen: 77
+        text_seqlen: 256
+
 
 data:  
   - stage: stage-1
@@ -83,6 +80,7 @@ data:
     source: mongodb
     image_size: 256
     condition_image_size: 256
+    max_ratio: 2.0
     partition_key: 'partition_key'
     retries: 3
     extract_field:
@@ -103,7 +101,7 @@ profiling:
 
 checkpoint:
     dump:
-        every: 5000
+        every: 2500
         keep: 0 # Don't remove the ckpt
     eval:
         every: 5000
@@ -118,3 +116,4 @@ logging:
 
 env:
     ENABLE_INTRA_NODE_COMM: '0'  # '0' for local machine (otherwise errors happen); '1' for slurmn (need test)
+    NCCL_DEBUG: 'ERROR'

@@ -100,7 +100,8 @@ class LocalParquetDataLoad(Dataset):
                             )
                     else:
                         return_parquet[k_].append(v)
-        for k, v in return_parquet.items():
-            if isinstance(v[0], torch.Tensor):
-                return_parquet[k] = torch.stack(v, dim=0)
+        # Note: remove becasue of dynamic resoltion
+        # for k, v in return_parquet.items():
+        #     if isinstance(v[0], torch.Tensor):
+        #         return_parquet[k] = torch.stack(v, dim=0)
         return return_parquet

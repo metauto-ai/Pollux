@@ -1,23 +1,23 @@
-import torch
+import logging
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple, Union
+
+import numpy as np
+import torch
+from apps.Castor.model import Castor, ModelArgs
+from apps.Castor.modules.vae import (BaseLatentVideoVAE, VideoVAEArgs,
+                                     create_vae)
+from lingua.args import dataclass_from_dict
+from lingua.checkpoint import (CONSOLIDATE_FOLDER, CONSOLIDATE_NAME,
+                               consolidate_checkpoints)
 from omegaconf import OmegaConf
 from torch import nn
 from torch.nn import functional as F
 from torchvision.utils import save_image
-import numpy as np
-from apps.Castor.model import Castor, ModelArgs
-from typing import List, Optional, Tuple, Union, Dict, Any
-from .modules.schedulers import retrieve_timesteps, calculate_shift
-from lingua.args import dataclass_from_dict
-import logging
-from pathlib import Path
-from lingua.checkpoint import (
-    CONSOLIDATE_NAME,
-    consolidate_checkpoints,
-    CONSOLIDATE_FOLDER,
-)
-from apps.Castor.modules.vae import BaseLatentVideoVAE, create_vae, VideoVAEArgs
+
+from .modules.schedulers import calculate_shift, retrieve_timesteps
 
 logger = logging.getLogger()
 
@@ -92,16 +92,25 @@ class LatentGenerator(nn.Module):
             mu=mu,
         )
         latent = self.prepare_latent(context, device=cur_device)
-        pos_conditional_signal = self.model.text_encoder(context)
+        pos_conditional_signal, pos_conditional_mask = self.model.text_encoder(context)
         negative_conditional_signal = (
             self.model.diffusion_transformer.negative_token.repeat(
                 pos_conditional_signal.size(0), pos_conditional_signal.size(1), 1
             )
         )
+        negative_conditional_mask = torch.ones_like(
+            pos_conditional_mask, dtype=pos_conditional_mask.dtype
+        )
         context = torch.cat(
             [
                 pos_conditional_signal,
                 negative_conditional_signal,
+            ]
+        )
+        context_mask = torch.cat(
+            [
+                pos_conditional_mask,
+                negative_conditional_mask,
             ]
         )
         for i, t in enumerate(timesteps):
@@ -111,6 +120,7 @@ class LatentGenerator(nn.Module):
                 x=latent_model_input,
                 time_steps=timestep,
                 condition=context,
+                condition_mask=context_mask,
             )
             noise_pred_text, noise_pred_uncond = noise_pred.chunk(2)
             noise_pred = noise_pred_uncond + self.guidance_scale * (
@@ -222,24 +232,36 @@ def main():
     print("Model loaded successfully")
     context = {
         "caption": [
-            "A charming old building with a terracotta roof and white-washed walls stands prominently in a quaint European town. The building features several windows adorned with brown shutters, and a line of freshly laundered clothes hangs from a clothesline outside the second-floor window, adding a touch of domesticity to the scene. The sunlight casts gentle shadows, highlighting the textures of the aged walls and the rustic charm of the setting. The overall composition evokes a sense of nostalgia and simplicity, reminiscent of a bygone era, with the clear blue sky serving as a serene backdrop.",
-            "Statue of Pharaonic Queen Cleopatra inside the Egyptian temple done from Limestone, full-body, Pottery utensils and sand dunes cover walls and rocks, painting in watercolor,",
-            "On a wooden surface, a can of Positive Beverage Tropical Berry, with its vibrant blue and white label featuring a cheerful illustration of tropical fruits, sits next to a wooden rolling pin and a pile of flour. The can is surrounded by a large, golden-brown gingerbread dough with cutouts of star and gingerbread man shapes, creating a festive and cozy atmosphere. The scene is bathed in soft, natural light, highlighting the textures of the dough and the rustic wooden elements, evoking a warm and inviting holiday spirit.",
-            "A serene photograph capturing the golden reflection of the sun on a vast expanse of water. The sun is positioned at the top center, casting a brilliant, shimmering trail of light across the rippling surface. The water is textured with gentle waves, creating a rhythmic pattern that leads the eye towards the horizon. The entire scene is bathed in warm, golden hues, enhancing the tranquil and meditative atmosphere. High contrast, natural lighting, golden hour, photorealistic, expansive composition, reflective surface, peaceful, visually harmonious.",
-            "An angry duck doing heavy weightlifting at the gym.",
-            "Mona Lisa in winter",
-            "A corgi.",
-            "graffiti of a panda with snow goggles snowboarding on a street wall",
-            "A group of three teddy bears in suit in an office celebrating the birthday of their friend. There is a pizza cake on the desk",
-            "A photo of a smiling person with snow goggles on holding a snowboard",
-            "Photo of a bear catching salmon",
-            "an astronaut rides a pig through in the forest. next to a river, with clouds in the sky",
-            "Hot air balloons and flowers, collage art, photorealism, muted colors, 3D shading beautiful eldritch, mixed media, vaporous",
-            "A close-up photo of a baby sloth holding a treasure chest. A warm, golden light emanates from within the chest, casting a soft glow on the sloth's fur and the surrounding rainforest foliage.",
-            "A photo of a cat playing chess.",
-            "A cloud dragon flying over mountains, its body swirling with the wind",
-            "a clock on a desk, ghibli style",
-            "Temple in ruins, epic, forest, stairs, columns, cinematic, detailed, atmospheric, epic, concept art, matte painting, background, mist, photo-realistic, concept art, volumetric light, cinematic epic, 8k",
+            # Short, simple descriptions
+            "A red rose in full bloom against a black background.",
+            "Sunset over a calm ocean.",
+            "A sleeping cat curled up on a windowsill.",
+            "Fresh snow falling in a forest.",
+            "Hot air balloons floating in a clear blue sky.",
+            
+            # Medium length, more detailed
+            "A cozy coffee shop interior with vintage furniture, warm lighting, and the aroma of freshly ground beans wafting through the air.",
+            "An ancient temple hidden in a misty mountain valley, its weathered stone walls covered in flowering vines.",
+            "A bustling night market in Tokyo, neon signs reflecting off wet streets as people hurry past food stalls.",
+            "A steampunk-inspired laboratory filled with brass machinery, glass tubes, and mysterious bubbling liquids.",
+            "Children playing in autumn leaves, their laughter visible as steam in the crisp morning air.",
+            
+            # Technical/scientific
+            "A detailed cross-section of a quantum computer's processing unit, showing the superconducting circuits and cryogenic cooling systems.",
+            "Microscopic view of CRISPR gene editing in action, with precisely rendered molecular structures.",
+            "A topographical map of an alien planet's surface, complete with elevation data and geological formations.",
+            
+            # Artistic/abstract
+            "An impressionist painting of music made visible, with colorful swirls representing different instruments in an orchestra.",
+            "A surreal landscape where books grow like trees and their pages flutter like leaves in the wind.",
+            "Geometric patterns inspired by Islamic art transforming into modern digital glitch aesthetics.",
+            
+            # Long, elaborate narratives
+            "A photorealistic scene of a centuries-old lighthouse perched on a weathered cliff face during a violent storm at dusk, waves crashing against rocks while lightning illuminates dark clouds.",
+            "In a gravity-defying scene, a library exists where books float upward instead of falling down, and readers walk on the ceiling while elderly librarians glide through the air using umbrellas.",
+            "An avant-garde multimedia artwork depicting the evolution of human consciousness as a flowing river of abstract thoughts, combining traditional techniques with generative AI patterns.",
+            "A hyperrealistic portrait of a time-traveling anthropologist from the year 3000 studying contemporary culture, wearing advanced technological gear and showing signs of genetic engineering.",
+            "A fantastical underwater city where bioluminescent creatures provide light, and buildings are grown from living coral, with merfolk going about their daily lives among floating gardens."
         ]
     }
     # Start generation

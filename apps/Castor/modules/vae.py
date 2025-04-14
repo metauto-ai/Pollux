@@ -1,11 +1,11 @@
-from dataclasses import dataclass, field
-from typing import Optional, Literal, Type, Dict, List, Tuple, TypeVar, Generic
 import logging
-import torch
-from torch import nn
-from diffusers import AutoencoderKLHunyuanVideo, AutoencoderKL
-from cosmos_tokenizer.image_lib import ImageTokenizer
+from dataclasses import dataclass, field
+from typing import Dict, Generic, List, Literal, Optional, Tuple, Type, TypeVar
 
+import torch
+from diffusers import AutoencoderKL, AutoencoderKLHunyuanVideo
+from torch import nn
+from cosmos_tokenizer.image_lib import ImageTokenizer
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -19,6 +19,7 @@ class VideoVAEArgs:
     variant: Optional[str] = None
     enable_tiling: bool = True
     enable_slicing: bool = True
+
 
 class BaseLatentVideoVAE(nn.Module):
     def __init__(self, args: VideoVAEArgs):
@@ -56,6 +57,7 @@ class BaseLatentVideoVAE(nn.Module):
             f"Useless func call, {self.cfg.model_name} TVAE model doesn't support tiling !"
         )
         pass
+
 
 class HunyuanVideoVAE(BaseLatentVideoVAE):
     def __init__(self, args: VideoVAEArgs):
@@ -141,13 +143,17 @@ class HunyuanVideoVAE(BaseLatentVideoVAE):
 class FluxVAE(BaseLatentVideoVAE):
     def __init__(self, args: VideoVAEArgs):
         super().__init__(args)
-        self.vae = AutoencoderKL.from_pretrained(self.cfg.pretrained_model_name_or_path).requires_grad_(False)
+        self.vae = AutoencoderKL.from_pretrained(
+            args.pretrained_model_name_or_path
+        ).requires_grad_(False)
         self.scale = 0.3611
         self.shift = 0.1159
 
     @torch.no_grad()
     def encode(self, x: torch.Tensor) -> torch.Tensor:
-        x = (self.vae.encode(x.to(self.vae.dtype)).latent_dist.mode() - self.shift) * self.scale
+        x = (
+            self.vae.encode(x.to(self.vae.dtype)).latent_dist.mode() - self.shift
+        ) * self.scale
         return x
 
     @torch.no_grad()
@@ -162,7 +168,7 @@ class FluxVAE(BaseLatentVideoVAE):
     def forward(self, x=torch.Tensor):
         x = self.encode(x)
         return self.decode(x)
-    
+
 
 class COSMOSContinuousVAE(BaseLatentVideoVAE):
     def __init__(self, args: VideoVAEArgs):
