@@ -84,6 +84,7 @@ class DiffusionTransformerBlock(nn.Module):
         )
         self.attention_norm = RMSNorm(args.dim, eps=args.norm_eps)
         self.ffn_norm = RMSNorm(args.dim, eps=args.norm_eps)
+        self.shared_adaLN = args.shared_adaLN
         if not args.shared_adaLN:
             self.adaLN_modulation = AdaLN(
                 in_dim=args.time_step_dim,
@@ -137,7 +138,7 @@ class DiffusionTransformerBlock(nn.Module):
         self.attention_norm.reset_parameters()
         self.feed_forward.reset_parameters(init_std, factor)
         self.ffn_norm.reset_parameters()
-        if self.adaLN_modulation:
+        if not self.shared_adaLN:
             self.adaLN_modulation.reset_parameters()
 
 
@@ -366,7 +367,7 @@ class DiffusionTransformer(BaseDiffusionTransformer):
             x, condition, condition_mask
         )
 
-        if self.adaLN_modulation:
+        if self.shared_adaLN:
             modulation_values = self.adaLN_modulation(
                 modulation_signal
             ).chunk(4, dim=1)
