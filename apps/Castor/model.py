@@ -73,6 +73,7 @@ class Castor(nn.Module):
             condition=conditional_signal,
             condition_mask=conditional_mask,
         )
+        
         batch["prediction"] = output
         batch["target"] = target
         if isinstance(target, list) and isinstance(output, list):

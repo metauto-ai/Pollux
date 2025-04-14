@@ -58,9 +58,9 @@ model:
         norm_eps: 1e-5
         condition_dim: 2048
         qk_norm: false
-        liger_rms_norm: false
+        liger_rms_norm: true
+        liger_ffn: true
         liger_rotary_emb: false
-        liger_ffn: false
     text_cfg_ratio: 0.1
     with_vae: true
     vae_args:

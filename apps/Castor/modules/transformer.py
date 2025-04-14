@@ -317,12 +317,13 @@ class DiffusionTransformer(BaseDiffusionTransformer):
 
     def forward(
         self,
-        x: torch.Tensor,
+        x: Union[torch.Tensor, List[torch.Tensor]],
         time_steps: torch.Tensor,
         condition: torch.Tensor,
         condition_mask: torch.Tensor,
         attn_impl: str = "sdpa",
     ):
+        
         condition = self.cond_proj(condition)
         condition = self.cond_norm(condition)
         modulation_signal = self.tmb_embed(time_steps)
