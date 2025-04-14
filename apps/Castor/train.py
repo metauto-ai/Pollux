@@ -26,6 +26,7 @@ import torch
 import torch.distributed
 import wandb
 import xformers.profiler
+
 from apps.Castor.model import (Castor, ModelArgs, build_fsdp_grouping_plan,
                                get_no_recompute_ops, tp_parallelize)
 from apps.main.data import AutoDataLoader, DataArgs
@@ -33,6 +34,7 @@ from apps.main.modules.schedulers import SchedulerArgs
 from apps.main.utils.cal_flops import get_num_flop_per_token
 from apps.main.utils.dict_tensor_data_load import DictTensorBatchIterator
 from apps.main.utils.sampler import StatefulDistributedSampler
+
 from lingua.args import dataclass_from_dict, dump_config, flatten_dict
 from lingua.checkpoint import (CheckpointArgs, CheckpointManager,
                                load_from_checkpoint)
@@ -92,8 +94,8 @@ class TrainArgs:
 
 @dataclass
 class TrainState(Stateful):
-    step: int  # Nb of steps taken by the optimizer
-    acc_step: int  # Nb of accumulation steps done since last optimizer step
+    step: int  # Number of steps taken by the optimizer
+    acc_step: int  # Number of accumulation steps done since last optimizer step
     scheduler: lr_scheduler.LambdaLR
     sampler: StatefulDistributedSampler
 
@@ -119,11 +121,9 @@ class TrainState(Stateful):
 
 
 def validate_train_args(args: TrainArgs):
-    # assert args.dump_dir, "Dump dir not set" # Mingchen: no need any more
 
     # Minchen: generate the dump dir according to the config
     if not args.dump_dir:
-        # args.dump_dir = f"/mnt/data/dump/{args.name}"
         args.dump_dir = str(Path(args.output_dir) / f"{args.name}")
 
     logger.info(f"Dump dir set to {args.dump_dir}")
@@ -139,7 +139,8 @@ def validate_train_args(args: TrainArgs):
         logger.info(f"Setting checkpoint path to {args.checkpoint.path}")
         args.checkpoint.path = str(Path(args.dump_dir) / "checkpoints")
 
-    # TODO: Mingchen: here need to support multiple source later as in the original lingua codebase
+    # (Deprecated): Mingchen: here need to support multiple source later as in the original lingua codebase
+    # TODO (New comment): now we store the data in the same cloud storage bucket. But seems that here is not used?
     for data_args in args.data:
         if data_args.use:
             if data_args.source == "local" and not os.path.exists(data_args.root_dir):
@@ -255,6 +256,7 @@ def train(args: TrainArgs):
         torch.manual_seed(args.seed)
         logger.info("Building model")
 
+        #with torch.device("meta"): # TODO (Mingchen): double-check wether we need "meta" because original lingua has it
         model = Castor(args.model)
         logger.info("Model is built !")
 
@@ -271,12 +273,11 @@ def train(args: TrainArgs):
             tp_parallelize=tp_parallelize,
             no_recompute_ops=get_no_recompute_ops(),
         )
+
+
         model = model.to(device="cuda")
 
         check_model_value_range(model, range=10.0, std=1.0)
-
-        # log model size
-
         logger.info(f"Model size: {model_param_count:,} total parameters")
 
         gpu_memory_monitor = GPUMemoryMonitor("cuda")
@@ -309,8 +310,6 @@ def train(args: TrainArgs):
 
         checkpoint = CheckpointManager.instantiate_and_make_dir(args.checkpoint)
         checkpoint.load(model, optimizer, train_state, world_mesh)
-        # Either load from latest checkpoint or start from scratch
-
         gc.disable()
 
         # train loop
@@ -350,13 +349,16 @@ def train(args: TrainArgs):
                     batch, active_data[0].dataloader.batch_size
                 )
                 batch = next(parquet_iterator)
+
             if "_id" in batch:
                 failure_rate = batch["_id"].count("-1") / len(batch["_id"])
+
             if every_n_steps(train_state, args.gc_collect_freq, acc_step=0):
                 logger.info("garbage collection")
                 # we do garbage collection manually otherwise different processes
                 # run the GC at different times so they slow down the whole pipeline
                 gc.collect()
+
             if "latent_code" in batch:
                 if isinstance(batch["latent_code"], list):
                     batch["latent_code"] = [
@@ -368,6 +370,7 @@ def train(args: TrainArgs):
                 else:
                     batch["latent_code"] = batch["latent_code"].cuda()
                     nwords_since_last_log += batch["latent_code"].numel()
+
             elif "image" in batch:
                 if isinstance(batch["image"], list):
                     batch["image"] = [
@@ -379,8 +382,11 @@ def train(args: TrainArgs):
                 else:
                     batch["image"] = batch["image"].to(device="cuda")
                     nwords_since_last_log += batch["image"].numel()
+
             else:
                 raise ValueError("No image or latent code in batch")
+
+
             data_load_time = round(timer() - data_load_start, 4)
 
             # forward
@@ -397,6 +403,8 @@ def train(args: TrainArgs):
             # For logging we undo that scaling
             loss = loss.detach() * args.grad_acc_steps
 
+            # TODO (Mingchen): 这里每次都需要裁剪么，原始lingua代码里是只在step=0的时候裁剪
+            # https://github.com/facebookresearch/lingua/blob/main/apps/main/train.py
             grad_norm = torch.nn.utils.clip_grad_norm_(
                 model.parameters(), max_norm=args.optim.clip, foreach=True
             )
