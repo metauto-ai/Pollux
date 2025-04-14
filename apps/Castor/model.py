@@ -75,8 +75,12 @@ class Castor(nn.Module):
         )
         batch["prediction"] = output
         batch["target"] = target
-        target = target.to(output.dtype)
-        loss = F.mse_loss(output, target)
+        if isinstance(target, list) and isinstance(output, list):
+            loss_list = [F.mse_loss(o, t.to(o.dtype)) for o, t in zip(output, target)]
+            loss = torch.mean(torch.stack(loss_list))
+        else:
+            target = target.to(output.dtype)
+            loss = F.mse_loss(output, target)
         return batch, loss
 
     def set_train(self):
