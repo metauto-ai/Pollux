@@ -82,6 +82,11 @@ class DiffusionTransformerBlock(nn.Module):
                 in_dim=args.time_step_dim,
                 out_dim=4 * args.dim,
             )
+        else:
+            self.register_parameter(
+                'modulation', 
+                nn.Parameter(torch.randn(1, 4, args.dim) / args.dim**0.5)
+            )
 
 
     def forward(
@@ -92,15 +97,14 @@ class DiffusionTransformerBlock(nn.Module):
         modulation_signal: torch.Tensor,
         mask: Optional[Union[BlockMask, AttentionBias, str]] = None,
         attn_impl: str = "sdpa",
-        modulation_values: Optional[Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]] = None,
+        modulation_values: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
-        if modulation_values is None and self.adaLN_modulation:
+        if modulation_values is None and not self.shared_adaLN:
             scale_msa, gate_msa, scale_mlp, gate_mlp = self.adaLN_modulation(
                 modulation_signal
             ).chunk(4, dim=1)
         else:
-            scale_msa, gate_msa, scale_mlp, gate_mlp = modulation_values
-
+            scale_msa, gate_msa, scale_mlp, gate_mlp = (self.modulation + modulation_values).unbind(dim=1)
 
         h = x + modulate_and_gate(
             self.attention(
@@ -152,7 +156,7 @@ class BaseDiffusionTransformer(nn.Module):
         h_mask,
         freqs_cis,
         modulation_signal: Optional[torch.Tensor] = None,
-        modulation_values: Optional[Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]] = None,
+        modulation_values: Optional[torch.Tensor] = None,
         attn_impl: str = "sdpa",
     ):
         for idx, layer in enumerate(self.layers):
@@ -363,7 +367,7 @@ class DiffusionTransformer(BaseDiffusionTransformer):
         if self.shared_adaLN:
             modulation_values = self.adaLN_modulation(
                 modulation_signal
-            ).chunk(4, dim=1)
+            ).unflatten(1, (4, self.dim))
         else:
             modulation_values = None
 
@@ -433,3 +437,5 @@ class DiffusionTransformer(BaseDiffusionTransformer):
             b=3 * init_std,
         )
         nn.init.normal_(self.negative_token, std=0.02)
+        if self.shared_adaLN:
+            self.adaLN_modulation.reset_parameters()
