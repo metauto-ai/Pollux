@@ -12,10 +12,21 @@ from torch import nn
 from torch.nn.attention.flex_attention import BlockMask
 from xformers.ops import AttentionBias, fmha
 
-from .component import (AdaLN, Attention, BaseTransformerArgs, FeedForward,
-                        FlashAttention, ImageEmbedder, InitStdFactor, RMSNorm,
-                        RotaryEmbedding1D, RotaryEmbedding2D, TimestepEmbedder,
-                        create_causal_mask, modulate)
+from .component import (
+    AdaLN,
+    Attention,
+    BaseTransformerArgs,
+    FeedForward,
+    FlashAttention,
+    ImageEmbedder,
+    InitStdFactor,
+    RMSNorm,
+    RotaryEmbedding1D,
+    RotaryEmbedding2D,
+    TimestepEmbedder,
+    create_causal_mask,
+    modulate,
+)
 
 logger = logging.getLogger()
 
@@ -72,8 +83,12 @@ class DiffusionTransformerBlock(nn.Module):
             ffn_dim_multiplier=args.ffn_dim_multiplier,
             liger_ffn=args.liger_ffn,
         )
-        self.attention_norm = RMSNorm(args.dim, eps=args.norm_eps, liger_rms_norm=args.liger_rms_norm)
-        self.ffn_norm = RMSNorm(args.dim, eps=args.norm_eps, liger_rms_norm=args.liger_rms_norm)
+        self.attention_norm = RMSNorm(
+            args.dim, eps=args.norm_eps, liger_rms_norm=args.liger_rms_norm
+        )
+        self.ffn_norm = RMSNorm(
+            args.dim, eps=args.norm_eps, liger_rms_norm=args.liger_rms_norm
+        )
         self.adaLN_modulation = AdaLN(
             in_dim=args.time_step_dim,
             out_dim=4 * args.dim,
@@ -218,8 +233,12 @@ class DiffusionTransformer(BaseDiffusionTransformer):
         )
         self.time_step_dim = args.time_step_dim
         self.dim = args.dim
-        self.norm = RMSNorm(args.dim, eps=args.norm_eps, liger_rms_norm=args.liger_rms_norm)
-        self.cond_norm = RMSNorm(args.dim, eps=args.norm_eps, liger_rms_norm=args.liger_rms_norm)
+        self.norm = RMSNorm(
+            args.dim, eps=args.norm_eps, liger_rms_norm=args.liger_rms_norm
+        )
+        self.cond_norm = RMSNorm(
+            args.dim, eps=args.norm_eps, liger_rms_norm=args.liger_rms_norm
+        )
         self.negative_token = nn.Parameter(torch.zeros(1, 1, args.condition_dim))
         self.cond_proj = nn.Linear(
             in_features=args.condition_dim,
@@ -321,9 +340,10 @@ class DiffusionTransformer(BaseDiffusionTransformer):
         time_steps: torch.Tensor,
         condition: torch.Tensor,
         condition_mask: torch.Tensor,
+        ori_x: Optional[Union[torch.Tensor, List[torch.Tensor]]] = None,
         attn_impl: str = "sdpa",
     ):
-        
+
         condition = self.cond_proj(condition)
         condition = self.cond_norm(condition)
         modulation_signal = self.tmb_embed(time_steps)
@@ -331,14 +351,35 @@ class DiffusionTransformer(BaseDiffusionTransformer):
         x, x_mask, cond_l, img_size, freqs_cis = self.patchify_and_embed_image(
             x, condition, condition_mask
         )
-
+        if ori_x is not None:
+            ori_x, ori_x_mask, ori_cond_l, ori_img_size, ori_freqs_cis = (
+                self.patchify_and_embed_image(ori_x, condition, condition_mask)
+            )
+            k = random.randint(1, x.size(1) - max(cond_l))
+            indices = torch.randperm(x.size(1) - max(cond_l))[:k]
+            x_new = []
+            x_mask_new = []
+            freqs_cis_new = []
+            for i in range(len(x)):
+                cur_indices = indices + cond_l[i]
+                cur_ori_x = ori_x[i, cur_indices]
+                cur_ori_x_mask = ori_x_mask[i, cur_indices]
+                cur_ori_freqs_cis = ori_freqs_cis[i, cur_indices]
+                x_new.append(torch.cat([cur_ori_x, x[i]], dim=0))
+                x_mask_new.append(torch.cat([cur_ori_x_mask, x_mask[i]], dim=0))
+                freqs_cis_new.append(
+                    torch.cat([cur_ori_freqs_cis, freqs_cis[i]], dim=0)
+                )
+            x = torch.stack(x_new, dim=0)
+            x_mask = torch.stack(x_mask_new, dim=0)
+            freqs_cis = torch.stack(freqs_cis_new, dim=0)
         h = super().forward(
             x, x_mask, freqs_cis, modulation_signal, attn_impl=attn_impl
         )
 
         out = self.img_output(self.norm(h))
 
-        x = self.unpatchify_image(out, cond_l,img_size)
+        x = self.unpatchify_image(out, cond_l, img_size)
 
         return x
 

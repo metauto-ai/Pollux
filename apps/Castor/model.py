@@ -56,7 +56,8 @@ class Castor(nn.Module):
             batch["text_embedding"],
             batch["attention_mask"],
         )
-
+        if random.random() <= self.text_cfg_ratio:
+            pass
         if random.random() <= self.text_cfg_ratio:
             conditional_signal = self.diffusion_transformer.negative_token.repeat(
                 conditional_signal.size(0), conditional_signal.size(1), 1
@@ -72,8 +73,9 @@ class Castor(nn.Module):
             time_steps=t,
             condition=conditional_signal,
             condition_mask=conditional_mask,
+            ori_x=latent_code if random.random() <= self.text_cfg_ratio else None,
         )
-        
+
         batch["prediction"] = output
         batch["target"] = target
         if isinstance(target, list) and isinstance(output, list):

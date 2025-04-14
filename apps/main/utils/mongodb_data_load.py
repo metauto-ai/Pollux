@@ -123,13 +123,16 @@ class MongoDBDataLoad(Dataset):
             file_path = os.path.join(self.root_dir, f"{self.collection_name}.json")
             data = []
             with open(file_path, "r") as file:
-                for item in tqdm(ijson.items(file, "item"), desc=f"Loading data to shard {self.shard_idx}"):
+                for item in tqdm(
+                    ijson.items(file, "item"),
+                    desc=f"Loading data to shard {self.shard_idx}",
+                ):
                     partition_key = int(item[self.partition_key])
                     if partition_key % self.num_shards == self.shard_idx:
                         data.append(item)
                         # Note: used for debugging
-                        # if len(data) > 10000:
-                        #     break
+                        if len(data) > 10000:
+                            break
             self.data = pd.DataFrame(data).reset_index()
         end_time = time.time()  # Record the end time
         # Calculate the duration in seconds
@@ -212,13 +215,15 @@ class MongoDBImageDataLoad(MongoDBDataLoad):
                         return_sample["_id"] = "-1"
                         return_sample["caption"] = ""
         return return_sample
-    
+
     def collate_fn(self, batch):
         return_batch = {}
         for k in batch[0].keys():
             items = [item[k] for item in batch]
             # Check if all items are tensors and have the same shape
-            if all(isinstance(item, torch.Tensor) for item in items) and all(item.shape == items[0].shape for item in items):
+            if all(isinstance(item, torch.Tensor) for item in items) and all(
+                item.shape == items[0].shape for item in items
+            ):
                 # Stack tensors if they all have the same shape
                 return_batch[k] = torch.stack(items, dim=0)
             else:
