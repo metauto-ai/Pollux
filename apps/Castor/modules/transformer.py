@@ -218,8 +218,8 @@ class DiffusionTransformer(BaseDiffusionTransformer):
         )
         self.time_step_dim = args.time_step_dim
         self.dim = args.dim
-        self.norm = RMSNorm(args.dim, eps=args.norm_eps)
-        self.cond_norm = RMSNorm(args.dim, eps=args.norm_eps)
+        self.norm = RMSNorm(args.dim, eps=args.norm_eps, liger_rms_norm=args.liger_rms_norm)
+        self.cond_norm = RMSNorm(args.dim, eps=args.norm_eps, liger_rms_norm=args.liger_rms_norm)
         self.negative_token = nn.Parameter(torch.zeros(1, 1, args.condition_dim))
         self.cond_proj = nn.Linear(
             in_features=args.condition_dim,
@@ -320,6 +320,7 @@ class DiffusionTransformer(BaseDiffusionTransformer):
         x: torch.Tensor,
         time_steps: torch.Tensor,
         condition: torch.Tensor,
+        condition_mask: torch.Tensor,
         attn_impl: str = "sdpa",
     ):
         condition = self.cond_proj(condition)
@@ -336,12 +337,12 @@ class DiffusionTransformer(BaseDiffusionTransformer):
 
         out = self.img_output(self.norm(h))
 
-        x = self.unpatchify_image(out, img_size)
+        x = self.unpatchify_image(out, cond_l,img_size)
 
         return x
 
     def unpatchify_image(
-        self, x: torch.Tensor, img_size: Tuple[int, int]
+        self, x: torch.Tensor, cond_l: Union[List[int], int], img_size: Tuple[int, int]
     ) -> torch.Tensor:
         pH = pW = self.patch_size
         H, W = img_size

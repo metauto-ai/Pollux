@@ -59,7 +59,7 @@ class CLIP(BaseTextEncoder):
     def dim(self) -> int:
         return self.clip_model.config.hidden_size
 
-    def __call__(self, batch: dict[str:any]) -> torch.Tensor:
+    def __call__(self, batch: dict[str:any]) -> Tuple[torch.Tensor, torch.Tensor]:
         assert "caption" in batch
         if isinstance(batch["caption"][0], tuple):
             batch["caption"] = [x[0] for x in batch["caption"]]

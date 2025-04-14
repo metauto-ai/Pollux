@@ -493,6 +493,8 @@ class FlashAttention(nn.Module):
         n_heads: int,
         n_kv_heads: Optional[int],
         qk_norm: bool,
+        liger_rms_norm: bool = True,
+        liger_rotary_emb: bool = True,
     ):
         """
         Initialize the Attention module.
@@ -509,6 +511,8 @@ class FlashAttention(nn.Module):
         self.n_local_kv_heads = self.n_kv_heads
         self.n_rep = self.n_local_heads // self.n_local_kv_heads
         self.head_dim = dim // n_heads
+        self.liger_rotary_emb = liger_rotary_emb
+        self.liger_rms_norm = liger_rms_norm    
 
         self.wq = nn.Linear(
             dim,
@@ -537,8 +541,8 @@ class FlashAttention(nn.Module):
         nn.init.xavier_uniform_(self.wo.weight)
 
         if qk_norm:
-            self.q_norm = RMSNorm(self.head_dim)
-            self.k_norm = RMSNorm(self.head_dim)
+            self.q_norm = RMSNorm(self.head_dim, liger_rms_norm=liger_rms_norm)
+            self.k_norm = RMSNorm(self.head_dim, liger_rms_norm=liger_rms_norm)
         else:
             self.q_norm = self.k_norm = nn.Identity()
 
@@ -640,7 +644,7 @@ class FlashAttention(nn.Module):
         xv = xv.view(bsz, seqlen, self.n_local_kv_heads, self.head_dim)
         xq = self.q_norm(xq)
         xk = self.k_norm(xk)
-        xq, xk = apply_rotary_emb(xq, xk, 2, freqs_cis[:, 0:seqlen])
+        xq, xk = apply_rotary_emb(xq, xk, 2, freqs_cis[:, 0:seqlen], liger_rotary_emb=self.liger_rotary_emb)
         xq, xk = xq.to(dtype), xk.to(dtype)
 
         softmax_scale = math.sqrt(1 / self.head_dim)
