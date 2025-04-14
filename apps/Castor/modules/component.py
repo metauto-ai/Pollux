@@ -14,6 +14,8 @@ from torch.nn.attention.flex_attention import (BlockMask, _mask_mod_signature,
                                                create_block_mask,
                                                flex_attention)
 from xformers.ops import AttentionBias, fmha
+from liger_kernel.transformers import LigerSwiGLUMLP, LigerRMSNorm, liger_rotary_pos_emb
+from types import SimpleNamespace
 
 from . import probe
 
@@ -49,6 +51,9 @@ class BaseTransformerArgs:
     max_seqlen: int = 1024
 
     qk_norm: bool = True
+    liger_ffn: bool = True
+    liger_rms_norm: bool = True
+    liger_rotary_emb: bool = False
 
 
 def cross_entropy(pred, target, **kwargs):
@@ -142,7 +147,14 @@ def apply_rotary_emb(
     xk: torch.Tensor,
     seq_dim: int,
     freqs_cis: torch.Tensor,
+    liger_rotary_emb: bool = True,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
+    if liger_rotary_emb:
+        sin = freqs_cis[:, :, 1, 0]
+        cos = freqs_cis[:, :, 0, 0]
+        xq, xk = liger_rotary_pos_emb(xq, xk, cos, sin)
+        return xq, xk
+    
     xq_ = xq.reshape(*xq.shape[:-1], -1, 1, 2)  # B S H D -> B S H D/2 1 2
     xk_ = xk.reshape(*xk.shape[:-1], -1, 1, 2)  # B S H D -> B S H D/2 1 2
     # B S D/2 2 2 -> B S 1 D/2 2 2
@@ -297,21 +309,33 @@ class RMSNorm(nn.Module):
 
     """
 
-    def __init__(self, dim: int, eps: float = 1e-6):
+    def __init__(self, dim: int, eps: float = 1e-6, liger_rms_norm: bool = True):
         super().__init__()
         self.eps = eps
-        self.weight = nn.Parameter(torch.ones(dim))
+        self.liger_rms_norm: bool = liger_rms_norm
+        if liger_rms_norm:
+            #  casting gemma: where everything is cast to fp32, then computed, then cast back to the original dtype.
+            #  casting llama: where only the inverse RMS is computed on fp32.
+            self.rms_norm = LigerRMSNorm(dim, init_fn="ones", eps=self.eps, casting_mode="llama")
+        else:
+            self.weight = nn.Parameter(torch.ones(dim))
 
     def _norm(self, x: torch.Tensor):
         return x * torch.rsqrt((x * x).mean(-1, keepdim=True) + self.eps)
 
     def forward(self, x: torch.Tensor):
-        x = probe.log_stats(x, "resid")
-        output = self._norm(x.float())
-        return (output * self.weight.float()).type_as(x)
+        if self.liger_rms_norm:
+            return self.rms_norm(x)
+        else:
+            x = probe.log_stats(x, "resid")
+            output = self._norm(x.float())
+            return (output * self.weight.float()).type_as(x)
 
     def reset_parameters(self):
-        torch.nn.init.ones_(self.weight)  # type: ignore
+        if self.liger_rms_norm:
+            torch.nn.init.ones_(self.rms_norm.weight)
+        else:
+            torch.nn.init.ones_(self.weight)  # type: ignore
 
 
 class Attention(nn.Module):
@@ -323,6 +347,8 @@ class Attention(nn.Module):
         n_kv_heads: int,
         rope_theta: float,
         qk_norm: bool = True,
+        liger_rotary_emb: bool = True,
+        liger_rms_norm: bool = True,
     ):
         super().__init__()
 
@@ -333,6 +359,8 @@ class Attention(nn.Module):
         self.n_heads = n_heads
         self.n_kv_heads = n_kv_heads
         self.heads_per_group = self.n_heads // self.n_kv_heads
+
+        self.liger_rotary_emb = liger_rotary_emb
 
         self.wq = nn.Linear(
             dim,
@@ -357,8 +385,8 @@ class Attention(nn.Module):
         )
 
         if qk_norm:
-            self.q_norm = RMSNorm(head_dim)
-            self.k_norm = RMSNorm(head_dim)
+            self.q_norm = RMSNorm(head_dim, liger_rms_norm=liger_rms_norm)
+            self.k_norm = RMSNorm(head_dim, liger_rms_norm=liger_rms_norm)
         else:
             self.q_norm = nn.Identity()
             self.k_norm = nn.Identity()
@@ -387,7 +415,7 @@ class Attention(nn.Module):
         xq = self.q_norm(xq)
         xk = self.k_norm(xk)
 
-        xq, xk = apply_rotary_emb(xq, xk, 2, freqs_cis[:, 0:seq_len])
+        xq, xk = apply_rotary_emb(xq, xk, 2, freqs_cis[:, 0:seq_len], liger_rotary_emb=self.liger_rotary_emb)
 
         # This condition helps us be easily compatible
         # with inference by adding a pluggable KVCache
@@ -465,6 +493,8 @@ class FlashAttention(nn.Module):
         n_heads: int,
         n_kv_heads: Optional[int],
         qk_norm: bool,
+        liger_rms_norm: bool = True,
+        liger_rotary_emb: bool = True,
     ):
         """
         Initialize the Attention module.
@@ -481,6 +511,8 @@ class FlashAttention(nn.Module):
         self.n_local_kv_heads = self.n_kv_heads
         self.n_rep = self.n_local_heads // self.n_local_kv_heads
         self.head_dim = dim // n_heads
+        self.liger_rotary_emb = liger_rotary_emb
+        self.liger_rms_norm = liger_rms_norm    
 
         self.wq = nn.Linear(
             dim,
@@ -509,8 +541,8 @@ class FlashAttention(nn.Module):
         nn.init.xavier_uniform_(self.wo.weight)
 
         if qk_norm:
-            self.q_norm = RMSNorm(self.head_dim)
-            self.k_norm = RMSNorm(self.head_dim)
+            self.q_norm = RMSNorm(self.head_dim, liger_rms_norm=liger_rms_norm)
+            self.k_norm = RMSNorm(self.head_dim, liger_rms_norm=liger_rms_norm)
         else:
             self.q_norm = self.k_norm = nn.Identity()
 
@@ -612,7 +644,7 @@ class FlashAttention(nn.Module):
         xv = xv.view(bsz, seqlen, self.n_local_kv_heads, self.head_dim)
         xq = self.q_norm(xq)
         xk = self.k_norm(xk)
-        xq, xk = apply_rotary_emb(xq, xk, 2, freqs_cis[:, 0:seqlen])
+        xq, xk = apply_rotary_emb(xq, xk, 2, freqs_cis[:, 0:seqlen], liger_rotary_emb=self.liger_rotary_emb)
         xq, xk = xq.to(dtype), xk.to(dtype)
 
         softmax_scale = math.sqrt(1 / self.head_dim)
@@ -678,6 +710,7 @@ class FeedForward(nn.Module):
         multiple_of: int,
         ffn_dim_multiplier: Optional[float],
         mp_size: int = 1,
+        liger_ffn: bool = True,
     ):
         super().__init__()
 
@@ -689,25 +722,37 @@ class FeedForward(nn.Module):
 
         self.dim = dim
         self.hidden_dim = hidden_dim
+        self.liger_ffn = liger_ffn
 
-        self.w1 = nn.Linear(
-            dim,
-            hidden_dim,
-            bias=False,
-        )
-        self.w3 = nn.Linear(
-            dim,
-            hidden_dim,
-            bias=False,
-        )
-        self.w2 = nn.Linear(
-            hidden_dim,
-            dim,
-            bias=False,
-        )
+        if liger_ffn:
+            config = SimpleNamespace(
+                hidden_size=dim,
+                intermediate_size=hidden_dim,
+                hidden_act="silu",
+            )
+            self.ffn = LigerSwiGLUMLP(config)
+        else:
+            self.w1 = nn.Linear(
+                dim,
+                hidden_dim,
+                bias=False,
+            )
+            self.w3 = nn.Linear(
+                dim,
+                hidden_dim,
+                bias=False,
+            )
+            self.w2 = nn.Linear(
+                hidden_dim,
+                dim,
+                bias=False,
+            )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # B S D
+        if self.liger_ffn:
+            return self.ffn(x)
+        
         x1 = self.w1(x.view_as(x))
         x3 = self.w3(x.view_as(x))
         output = self.w2(F.silu(x1) * x3)
@@ -717,21 +762,41 @@ class FeedForward(nn.Module):
         in_init_std = init_std or (self.dim ** (-0.5))
         out_init_std = init_std or (self.hidden_dim ** (-0.5))
         out_init_std = out_init_std / factor
-        for w in [self.w1, self.w3]:
+        if self.liger_ffn:
+            # Initialize LigerSwiGLUMLP parameters
+            # gate_proj and up_proj correspond to w1 and w3
+            for w in [self.ffn.gate_proj, self.ffn.up_proj]:
+                nn.init.trunc_normal_(
+                    w.weight,
+                    mean=0.0,
+                    std=in_init_std,
+                    a=-3 * in_init_std,
+                    b=3 * in_init_std,
+                )
+            # down_proj corresponds to w2
             nn.init.trunc_normal_(
-                w.weight,
+                self.ffn.down_proj.weight,
                 mean=0.0,
-                std=in_init_std,
-                a=-3 * in_init_std,
-                b=3 * in_init_std,
+                std=out_init_std,
+                a=-3 * out_init_std,
+                b=3 * out_init_std,
             )
-        nn.init.trunc_normal_(
-            self.w2.weight,
-            mean=0.0,
-            std=out_init_std,
-            a=-3 * out_init_std,
-            b=3 * out_init_std,
-        )
+        else:
+            for w in [self.w1, self.w3]:
+                nn.init.trunc_normal_(
+                    w.weight,
+                    mean=0.0,
+                    std=in_init_std,
+                    a=-3 * in_init_std,
+                    b=3 * in_init_std,
+                )
+            nn.init.trunc_normal_(
+                self.w2.weight,
+                mean=0.0,
+                std=out_init_std,
+                a=-3 * out_init_std,
+                b=3 * out_init_std,
+            )
 
 
 class TransformerBlock(nn.Module):
@@ -761,9 +826,10 @@ class TransformerBlock(nn.Module):
             hidden_dim=4 * args.dim,
             multiple_of=args.multiple_of,
             ffn_dim_multiplier=args.ffn_dim_multiplier,
+            liger_ffn=args.liger_ffn,
         )
-        self.attention_norm = RMSNorm(args.dim, eps=args.norm_eps)
-        self.ffn_norm = RMSNorm(args.dim, eps=args.norm_eps)
+        self.attention_norm = RMSNorm(args.dim, eps=args.norm_eps, liger_rms_norm=args.liger_rms_norm)
+        self.ffn_norm = RMSNorm(args.dim, eps=args.norm_eps, liger_rms_norm=args.liger_rms_norm)
 
     def forward(
         self,

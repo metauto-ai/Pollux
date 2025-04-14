@@ -62,15 +62,18 @@ class DiffusionTransformerBlock(nn.Module):
             n_heads=self.n_heads,
             n_kv_heads=self.n_kv_heads,
             qk_norm=args.qk_norm,
+            liger_rms_norm=args.liger_rms_norm,
+            liger_rotary_emb=args.liger_rotary_emb,
         )
         self.feed_forward = FeedForward(
             dim=args.dim,
             hidden_dim=4 * args.dim,
             multiple_of=args.multiple_of,
             ffn_dim_multiplier=args.ffn_dim_multiplier,
+            liger_ffn=args.liger_ffn,
         )
-        self.attention_norm = RMSNorm(args.dim, eps=args.norm_eps)
-        self.ffn_norm = RMSNorm(args.dim, eps=args.norm_eps)
+        self.attention_norm = RMSNorm(args.dim, eps=args.norm_eps, liger_rms_norm=args.liger_rms_norm)
+        self.ffn_norm = RMSNorm(args.dim, eps=args.norm_eps, liger_rms_norm=args.liger_rms_norm)
         self.adaLN_modulation = AdaLN(
             in_dim=args.time_step_dim,
             out_dim=4 * args.dim,
@@ -186,6 +189,7 @@ class DiffusionTransformer(BaseDiffusionTransformer):
     """
 
     def __init__(self, args: TransformerArgs):
+        print("##########", args)
         super().__init__(args)
         self.patch_size = args.patch_size
         self.out_channels = args.out_channels
@@ -214,8 +218,8 @@ class DiffusionTransformer(BaseDiffusionTransformer):
         )
         self.time_step_dim = args.time_step_dim
         self.dim = args.dim
-        self.norm = RMSNorm(args.dim, eps=args.norm_eps)
-        self.cond_norm = RMSNorm(args.dim, eps=args.norm_eps)
+        self.norm = RMSNorm(args.dim, eps=args.norm_eps, liger_rms_norm=args.liger_rms_norm)
+        self.cond_norm = RMSNorm(args.dim, eps=args.norm_eps, liger_rms_norm=args.liger_rms_norm)
         self.negative_token = nn.Parameter(torch.zeros(1, 1, args.condition_dim))
         self.cond_proj = nn.Linear(
             in_features=args.condition_dim,
@@ -319,7 +323,7 @@ class DiffusionTransformer(BaseDiffusionTransformer):
         condition_mask: torch.Tensor,
         attn_impl: str = "sdpa",
     ):
-
+        
         condition = self.cond_proj(condition)
         condition = self.cond_norm(condition)
         modulation_signal = self.tmb_embed(time_steps)
@@ -334,7 +338,7 @@ class DiffusionTransformer(BaseDiffusionTransformer):
 
         out = self.img_output(self.norm(h))
 
-        x = self.unpatchify_image(out, cond_l, img_size)
+        x = self.unpatchify_image(out, cond_l,img_size)
 
         return x
 

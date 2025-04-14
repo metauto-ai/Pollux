@@ -19,7 +19,7 @@ optim:
 distributed:
     gpus: 0,1,2,3
     fsdp_type: full_shard
-    dp_shard: 4
+    dp_shard: 8
     dp_replicate: 1
     compile: false
     model_dtype: bf16 # options: `fb8` is only supported by H100
