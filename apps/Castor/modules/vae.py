@@ -5,6 +5,7 @@ from typing import Dict, Generic, List, Literal, Optional, Tuple, Type, TypeVar
 import torch
 from diffusers import AutoencoderKL, AutoencoderKLHunyuanVideo
 from torch import nn
+from cosmos_tokenizer.image_lib import ImageTokenizer
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -169,6 +170,43 @@ class FluxVAE(BaseLatentVideoVAE):
         return self.decode(x)
 
 
+class COSMOSContinuousVAE(BaseLatentVideoVAE):
+    def __init__(self, args: VideoVAEArgs):
+        super().__init__(args)
+        """
+        Initialize the encoder and decoder for Continuous VAE.
+        Checks model type and returns the initialized VAE instance.
+        """
+        self.vae = ImageTokenizer(
+            checkpoint_enc=f"{self.cfg.pretrained_model_name_or_path}/encoder.jit",
+            checkpoint_dec=f"{self.cfg.pretrained_model_name_or_path}/decoder.jit",
+        ).requires_grad_(False)
+
+    @torch.no_grad()
+    def encode(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Encodes the input frames into latent representations.
+        """
+        (latent,) = self.vae.encode(x.to(self.vae.dtype))
+        return latent
+
+    @torch.no_grad()
+    def decode(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Decodes the latent representations back into reconstructed frames.
+        """
+        x = self.vae.decode(x.to(self.vae.dtype))
+        return x
+
+    @torch.no_grad()
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Full forward pass: encode and then decode.
+        """
+        x = self.encode(x)
+        return self.decode(x)
+    
+
 def create_vae(args: VideoVAEArgs) -> BaseLatentVideoVAE:
     """
     Create a VAE based on the type specified in the args.
@@ -177,5 +215,7 @@ def create_vae(args: VideoVAEArgs) -> BaseLatentVideoVAE:
         return HunyuanVideoVAE(args)
     elif args.vae_type.lower() == "flux":
         return FluxVAE(args)
+    elif args.vae_type.lower() == "cosmos":
+        return COSMOSContinuousVAE(args)
     else:
         raise ValueError(f"Unknown VAE type: {args.vae_type}")
