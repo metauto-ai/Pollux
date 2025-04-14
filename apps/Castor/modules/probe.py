@@ -11,30 +11,27 @@
 # * Torch-compile is disabled automatically when this is enabled
 # * Only tested with bf16/f16/f32 datatypes
 
-import os
-import uuid
 import contextlib
 import functools
 import json
 import math
-from enum import Enum
+import os
+import uuid
 from collections import defaultdict
-from typing import Any, Dict, List, Optional, Tuple
+from enum import Enum
 from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.distributed.algorithms._checkpoint.checkpoint_wrapper import (
-    CheckpointImpl,
-    checkpoint_wrapper,
-)
+    CheckpointImpl, checkpoint_wrapper)
+from torch.fx.operator_schemas import normalize_function
+from torch.nn.attention import SDPBackend, sdpa_kernel
 from torch.utils._python_dispatch import TorchDispatchMode
 from torch.utils._pytree import tree_map
 from torch.utils.module_tracker import ModuleTracker
-from torch.fx.operator_schemas import normalize_function
-from torch.nn.attention import sdpa_kernel, SDPBackend
-
 from xformers.ops import fmha
 
 

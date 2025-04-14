@@ -2,34 +2,29 @@
 CUDA_VISIBLE_DEVICES=0,1,2,3 torchrun --nnodes 1 --nproc-per-node 4 -m apps.Castor.eval config=apps/Castor/configs/eval.yaml
 """
 
-from collections import defaultdict
-from dataclasses import asdict, dataclass, field
-from datetime import datetime
+import csv
 import json
 import logging
 import os
+from collections import defaultdict
+from dataclasses import asdict, dataclass, field
+from datetime import datetime
 from pathlib import Path
 from typing import Any, List, Optional, Tuple, Union
-import csv
-from omegaconf import OmegaConf
-import torchvision.transforms as transforms
+
 import torch
+import torchvision.transforms as transforms
+from apps.Castor.generate import (GeneratorArgs, LatentGenerator,
+                                  load_consolidated_model)
+from apps.Castor.model import Castor, ModelArgs
+from apps.Castor.modules.vae import (BaseLatentVideoVAE, VideoVAEArgs,
+                                     create_vae)
+from apps.main.data import AutoDataLoader, DataArgs
 from lingua.args import dump_config
 from lingua.checkpoint import CONSOLIDATE_FOLDER, consolidate_checkpoints
-from lingua.distributed import (
-    DistributedArgs,
-    get_global_rank,
-    get_world_size,
-    setup_torch_distributed,
-)
-from apps.main.data import AutoDataLoader, DataArgs
-from apps.Castor.generate import (
-    LatentGenerator,
-    GeneratorArgs,
-    load_consolidated_model,
-)
-from apps.Castor.modules.vae import BaseLatentVideoVAE, create_vae, VideoVAEArgs
-from apps.Castor.model import Castor, ModelArgs
+from lingua.distributed import (DistributedArgs, get_global_rank,
+                                get_world_size, setup_torch_distributed)
+from omegaconf import OmegaConf
 
 EVAL_FOLDER_NAME = "{:010d}"
 

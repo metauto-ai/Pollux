@@ -1,33 +1,21 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 
-import os
 import logging
+import os
+import random
 from dataclasses import dataclass, field
-from typing import List, Optional, Tuple, Union, Dict
+from typing import Dict, List, Optional, Tuple, Union
 
 import torch
+import torch.nn.functional as F
 from torch import nn
 from torch.nn.attention.flex_attention import BlockMask
-from xformers.ops import fmha, AttentionBias
-from torch.nn.attention.flex_attention import BlockMask
-import torch.nn.functional as F
-import random
-from .component import (
-    BaseTransformerArgs,
-    RMSNorm,
-    FeedForward,
-    Attention,
-    FlashAttention,
-    InitStdFactor,
-    RotaryEmbedding1D,
-    RotaryEmbedding2D,
-    AdaLN,
-    ImageEmbedder,
-    TimestepEmbedder,
-    create_causal_mask,
-    modulate_and_gate,
-)
+from xformers.ops import AttentionBias, fmha
 
+from .component import (AdaLN, Attention, BaseTransformerArgs, FeedForward,
+                        FlashAttention, ImageEmbedder, InitStdFactor, RMSNorm,
+                        RotaryEmbedding1D, RotaryEmbedding2D, TimestepEmbedder,
+                        create_causal_mask, modulate, modulate_and_gate)
 
 logger = logging.getLogger()
 

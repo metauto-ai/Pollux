@@ -4,7 +4,7 @@ import os.path as osp
 import shutil
 
 import numpy as np
-import PIL.Image
+from PIL import Image
 from tqdm import tqdm
 from transformers import AutoModel
 
@@ -38,7 +38,7 @@ class NvilaVerifier():
 
     def scoring (self, batch):
         batch_1 = batch['img_model_1']
-        batch_1 = batch['img_model_2']
+        batch_2 = batch['img_model_2']
         batch_prompt = batch['caption']
         assert len(batch_1)==len(batch_2)
         assert len(batch_1)==len(batch_prompt)
