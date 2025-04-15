@@ -92,8 +92,7 @@ class Castor(nn.Module):
 
     def init_weights(self, args: ModelArgs):
         if args.pre_trained_weight:
-            args.diffusion_model.pre_trained_path = None
-            self.diffusion_transformer.init_weights(args=args.diffusion_model)
+            self.diffusion_transformer.init_weights()
             logger.info(f"Loading pre-trained weights from {args.pre_trained_weight}")
             pre_trained_state_dict = torch.load(args.pre_trained_weight)
             if "model" in pre_trained_state_dict:
