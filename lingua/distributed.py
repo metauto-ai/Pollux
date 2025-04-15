@@ -274,7 +274,8 @@ def setup_torch_distributed(dist_args):
 
     if torch.cuda.device_count() > 1:
         torch.cuda.set_device(local_rank)
-    torch.distributed.init_process_group(init_method="env://", backend="nccl")
+    torch.distributed.init_process_group(init_method="env://",
+                                        backend="cpu:gloo,cuda:nccl")
     torch.autograd.set_detect_anomaly(dist_args.detect_anomaly)
 
 

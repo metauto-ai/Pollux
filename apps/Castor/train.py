@@ -500,9 +500,11 @@ def train(args: TrainArgs):
                 )
 
             saved = False
+            
             if every_n_steps(
                 train_state, args.checkpoint.dump.every, acc_step=0
             ) or every_n_steps(train_state, args.checkpoint.eval.every, acc_step=0):
+                time_start = time.time()
                 saved = checkpoint.save(
                     model,
                     optimizer,
@@ -510,6 +512,8 @@ def train(args: TrainArgs):
                     args,
                     device_mesh=world_mesh,
                 )
+                time_end = time.time()
+                logger.info(f"Save time: {time_end - time_start}") 
 
             # if args.eval is not None and every_n_steps(
             #     train_state, args.checkpoint.eval.every, acc_step=0
