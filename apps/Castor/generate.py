@@ -48,10 +48,10 @@ class LatentGenerator(nn.Module):
         self.model = model
         self.vae_scale_factor = cfg.vae_scale_factor
         self.resolution = int(cfg.resolution // self.vae_scale_factor)
-        self.cond_resolution = int(cfg.cond_resolution // self.vae_scale_factor)
+        self.cond_resolution = int(cfg.cond_resolution // self.vae_scale_factor) # TODO (Mingchen review comment): depracted this version?
         self.device = cfg.device
         self.guidance_scale = cfg.guidance_scale
-        self.show_progress = cfg.show_progress
+        self.show_progress = cfg.show_progress # TODO (Mingchen review comment): depracted this version?
         self.dtype = dict(fp32=torch.float32, bf16=torch.bfloat16)[cfg.dtype]
         self.in_channel = model.diffusion_transformer.in_channels
         self.sigma = cfg.sigma
@@ -61,7 +61,7 @@ class LatentGenerator(nn.Module):
 
     def prepare_latent(self, context, device):
         bsz = len(context["caption"])
-        latent_size = (bsz, self.in_channel, self.resolution, self.resolution)
+        latent_size = (bsz, self.in_channel, self.resolution, self.resolution) # TODO (Mingchen review comment): dynamic的情况下，latent也是这样么？
         latents = randn_tensor(latent_size, device=device, dtype=self.dtype)
         return latents
 
@@ -71,7 +71,7 @@ class LatentGenerator(nn.Module):
     @torch.no_grad()
     def forward(self, context: Dict[str, Any]) -> torch.Tensor:
         cur_device = next(self.model.parameters()).device
-        image_seq_len = self.return_seq_len()
+        image_seq_len = self.return_seq_len() 
         mu = calculate_shift(
             image_seq_len,
             self.scheduler.config.base_image_seq_len,
