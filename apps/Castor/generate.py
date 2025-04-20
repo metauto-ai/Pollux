@@ -234,7 +234,7 @@ def main():
         "caption": [
             # Short, simple descriptions
             "A red rose in full bloom against a black background.",
-            "Sunset over a calm ocean.",
+            "A happy young man sitting on a piece of cloud, reading a book.",
             "A sleeping cat curled up on a windowsill.",
             "Fresh snow falling in a forest.",
             "Hot air balloons floating in a clear blue sky.",
@@ -243,11 +243,11 @@ def main():
             "A cozy coffee shop interior with vintage furniture, warm lighting, and the aroma of freshly ground beans wafting through the air.",
             "An ancient temple hidden in a misty mountain valley, its weathered stone walls covered in flowering vines.",
             "A bustling night market in Tokyo, neon signs reflecting off wet streets as people hurry past food stalls.",
-            "A steampunk-inspired laboratory filled with brass machinery, glass tubes, and mysterious bubbling liquids.",
-            "Children playing in autumn leaves, their laughter visible as steam in the crisp morning air.",
+            "A sea turtle glides gracefully through crystal-clear turquoise water above a school of small fish, with sunlight reflecting off the surface.",
+            "A petri dish with a bamboo forest growing within it that has tiny red pandas running around.",
             
             # Technical/scientific
-            "A detailed cross-section of a quantum computer's processing unit, showing the superconducting circuits and cryogenic cooling systems.",
+            "A lone astronaut floats in space, gazing at a swirling black hole surrounded by vibrant landscapes, rivers and clouds below.",
             "Microscopic view of CRISPR gene editing in action, with precisely rendered molecular structures.",
             "A topographical map of an alien planet's surface, complete with elevation data and geological formations.",
             
@@ -259,8 +259,8 @@ def main():
             # Long, elaborate narratives
             "A photorealistic scene of a centuries-old lighthouse perched on a weathered cliff face during a violent storm at dusk, waves crashing against rocks while lightning illuminates dark clouds.",
             "In a gravity-defying scene, a library exists where books float upward instead of falling down, and readers walk on the ceiling while elderly librarians glide through the air using umbrellas.",
-            "An avant-garde multimedia artwork depicting the evolution of human consciousness as a flowing river of abstract thoughts, combining traditional techniques with generative AI patterns.",
-            "A hyperrealistic portrait of a time-traveling anthropologist from the year 3000 studying contemporary culture, wearing advanced technological gear and showing signs of genetic engineering.",
+            "A vast colony of king penguins densely populates a rocky shore, with numerous penguins standing closely together against a backdrop of ocean waves.",
+            "A picturesque riverside scene featuring a medieval castle atop a hill, surrounded by vibrant autumn foliage, with colorful homes lining the waterfront and several boats docked along the river.",
             "A fantastical underwater city where bioluminescent creatures provide light, and buildings are grown from living coral, with merfolk going about their daily lives among floating gardens."
         ]
     }
