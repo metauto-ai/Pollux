@@ -388,10 +388,10 @@ def train(args: TrainArgs):
             end_timer = torch.cuda.Event(enable_timing=True)
             start_timer.record()
 
-            _, loss = model(batch)
+            outputs = model(batch)
             # We scale loss with grad_acc_steps so the gradient is the same
             # regardless of grad_acc_steps
-            loss = loss / args.grad_acc_steps
+            loss = outputs.loss / args.grad_acc_steps
             # backward on scaled loss to create scaled gradients
             loss.backward()
             # For logging we undo that scaling
@@ -476,6 +476,9 @@ def train(args: TrainArgs):
 
                 to_sync = {}
                 to_sync["loss/out"] = loss.item()
+                to_sync["loss/target"] = outputs.target_loss.item()
+                if outputs.align_loss is not None:
+                    to_sync["loss/align"] = outputs.align_loss.item()
                 metrics.update(dist_mean_dict(to_sync))
 
                 if get_is_master():

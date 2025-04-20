@@ -138,6 +138,14 @@ class DiffusionTransformerBlock(nn.Module):
             self.adaLN_modulation.reset_parameters()
 
 
+@dataclass
+class BaseDiffusionTransformerOutputs:
+    hidden_states: List[torch.Tensor]
+    output: torch.Tensor
+    cond_l: Optional[List[int]] = None
+    img_size: Optional[Tuple[int, int]] = None
+
+
 class BaseDiffusionTransformer(nn.Module):
     def __init__(self, args: TransformerArgs):
         super().__init__()
@@ -159,6 +167,8 @@ class BaseDiffusionTransformer(nn.Module):
         modulation_values: Optional[torch.Tensor] = None,
         attn_impl: str = "sdpa",
     ):
+        hidden_states = []
+
         for idx, layer in enumerate(self.layers):
             h = layer(
                 h,
@@ -169,7 +179,9 @@ class BaseDiffusionTransformer(nn.Module):
                 attn_impl=attn_impl,
                 modulation_values=modulation_values,
             )
-        return h
+            hidden_states.append(h)
+        
+        return hidden_states
 
     def reset_parameters(self):
         # Either use fixed base std or sqrt model dim
@@ -371,46 +383,85 @@ class DiffusionTransformer(BaseDiffusionTransformer):
         else:
             modulation_values = None
 
-        h = super().forward(
+        hidden_states = super().forward(
             x, x_mask, freqs_cis, modulation_signal, attn_impl=attn_impl, modulation_values=modulation_values
         )
 
-        out = self.img_output(self.norm(h))
+        last_hidden_state = hidden_states[-1]
+        out = self.img_output(self.norm(last_hidden_state))
+        out = self.get_image_features(out, cond_l, img_size)
+        out = self.unpatchify_image(out, img_size)
+        
+        output = BaseDiffusionTransformerOutputs(
+            hidden_states=hidden_states, 
+            output=out, 
+            cond_l=cond_l, 
+            img_size=img_size
+        )
 
-        x = self.unpatchify_image(out, cond_l,img_size)
-
-        return x
+        return output
 
     def unpatchify_image(
-        self, x: torch.Tensor, cond_l: Union[List[int], int], img_size: Tuple[int, int]
-    ) -> torch.Tensor:
+        self, image_features: Union[torch.Tensor, List[torch.Tensor]], img_size: Tuple[int, int]
+    ) -> Union[torch.Tensor, List[torch.Tensor]]:
+        """
+        Convert patched image features back to the original latent format.
+        
+        Args:
+            image_features: Patched image features
+            img_size: Original image size (H, W) or list of sizes for dynamic resolution
+            
+        Returns:
+            Reconstructed image tensor(s) in shape [B, C, H, W] or list of [C, H, W] tensors
+        """
         pH = pW = self.patch_size
         H, W = img_size
         use_dynamic_res = isinstance(H, list) and isinstance(W, list)
+        
         if use_dynamic_res:
-            out_x_list = []
-            for i, (_H, _W) in enumerate(zip(H, W)):
-                _x = x[i, cond_l[i] : cond_l[i] + (_H // pH) * (_W // pW)]
-                _x = _x.view(_H // pH, _W // pW, pH, pW, -1)
-                _x = (
-                    _x.permute(4, 0, 2, 1, 3).flatten(3, 4).flatten(1, 2)
-                )  # [16,H/8,W/8]
-                out_x_list.append(_x)
-            return out_x_list
+            # Process each image with its corresponding resolution
+            return [
+                features.view(_H // pH, _W // pW, pH, pW, -1)
+                       .permute(4, 0, 2, 1, 3)
+                       .reshape(self.out_channels, _H, _W)
+                for features, _H, _W in zip(image_features, H, W)
+            ]
         else:
-            # Handle the case where cond_l is an integer, not a list
-            if isinstance(cond_l, list):
-                max_cond_l = max(cond_l)
-            else:
-                max_cond_l = cond_l
+            # Process batch of images with same resolution
+            B = image_features.size(0)
+            return image_features.view(B, H // pH, W // pW, pH, pW, self.out_channels) \
+                                .permute(0, 5, 1, 3, 2, 4) \
+                                .reshape(B, self.out_channels, H, W)
 
-            B = x.size(0)
-            L = (H // pH) * (W // pW)
-            x = x[:, max_cond_l : max_cond_l + L].view(
-                B, H // pH, W // pW, pH, pW, self.out_channels
-            )
-            x = x.permute(0, 5, 1, 3, 2, 4).flatten(4, 5).flatten(2, 3)
-            return x
+    def get_image_features(
+            self, x: torch.Tensor, cond_l: Union[List[int], int], img_size: Tuple[int, int]
+    ) -> Union[torch.Tensor, List[torch.Tensor]]:
+        """
+        Extract image features from the combined condition and image representation.
+        
+        Args:
+            x: Combined features tensor
+            cond_l: Condition length(s) to offset feature extraction
+            img_size: Image size(s) to determine feature length
+            
+        Returns:
+            Image features without condition
+        """
+        pH = pW = self.patch_size
+        H, W = img_size
+        use_dynamic_res = isinstance(H, list) and isinstance(W, list)
+        
+        if use_dynamic_res:
+            # Extract features for each image based on its resolution
+            return [
+                x[i, cond_l[i]:cond_l[i] + (_H // pH) * (_W // pW)]
+                for i, (_H, _W) in enumerate(zip(H, W))
+            ]
+        else:
+            # Handle condition length consistently whether it's a list or scalar
+            offset = max(cond_l) if isinstance(cond_l, list) else cond_l
+            feature_length = (H // pH) * (W // pW)
+            return x[:, offset:offset + feature_length]
 
     def reset_parameters(self, init_std=None):
         # Either use fixed base std or sqrt model dim

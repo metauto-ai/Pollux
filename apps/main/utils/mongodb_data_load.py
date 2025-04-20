@@ -128,8 +128,8 @@ class MongoDBDataLoad(Dataset):
                     if partition_key % self.num_shards == self.shard_idx:
                         data.append(item)
                         # Note: used for debugging
-                        # if len(data) > 10000:
-                        #     break
+                        if len(data) > 3000000:
+                            break
             self.data = pd.DataFrame(data).reset_index()
         end_time = time.time()  # Record the end time
         # Calculate the duration in seconds
@@ -203,6 +203,7 @@ class MongoDBImageDataLoad(MongoDBDataLoad):
 
                     break
                 except Exception as e:
+                    print(f"Error loading image in attempt {attempt + 1}: {e}")
                     if attempt == self.retries - 1:
                         # logging.warning(f"Error loading image: {e}")
                         image = self.place_holder_image
