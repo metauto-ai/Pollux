@@ -373,11 +373,15 @@ def train(args: TrainArgs):
                     batch["image"] = [
                         image.to(device="cuda") for image in batch["image"]
                     ]
+                    batch["image_cond"] = [
+                        image_cond.to(device="cuda") for image_cond in batch["image_cond"]
+                    ]
                     nwords_since_last_log += batch["image"][0].numel() * len(
                         batch["image"]
                     )
                 else:
                     batch["image"] = batch["image"].to(device="cuda")
+                    batch["image_cond"] = batch["image_cond"].to(device="cuda")
                     nwords_since_last_log += batch["image"].numel()
             else:
                 raise ValueError("No image or latent code in batch")
