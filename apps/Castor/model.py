@@ -64,10 +64,10 @@ class Castor(nn.Module):
             return self.compressor.encode(batch["image"])
 
     def get_dinov2_features(self, batch: dict[str:any]) -> torch.Tensor:
-        if isinstance(batch["image"], list):
-            return [self.dinov2.forward(img[None])[0] for img in batch["image"]]
+        if isinstance(batch["image_cond"], list):
+            return [self.dinov2.forward(img[None])[0] for img in batch["image_cond"]]
         else:
-            return self.dinov2.forward(batch["image"])
+            return self.dinov2.forward(batch["image_cond"])
 
     def forward(self, batch: dict[str:any]) -> dict[str:any]:
         if hasattr(self, "compressor"):
@@ -88,12 +88,6 @@ class Castor(nn.Module):
             conditional_mask = torch.ones_like(
                 conditional_mask, dtype=conditional_signal.dtype
             )
-
-        if hasattr(self, "dinov2"):
-            align_hidden_state = []
-            def forward_hook(net, input, output):
-                align_hidden_state.append(output)
-            self.diffusion_transformer.layers[self.align_layer - 1].feed_forward.register_forward_hook(forward_hook)
         
         latent_code = batch["latent_code"]
         noised_x, t, target = self.scheduler.sample_noised_input(latent_code)
@@ -110,11 +104,10 @@ class Castor(nn.Module):
 
         align_loss = None
         if hasattr(self, "dinov2"):
-            intermediate_hidden_state = align_hidden_state[0]
-            dinov2_pred = self.dinov2_proj(intermediate_hidden_state)
-            dinov2_pred = self.diffusion_transformer.get_image_features(dinov2_pred, output.cond_l, output.img_size)
-            align_loss = self.cosine_loss(dinov2_pred, batch["dinov2_target"])
-
+            dinov2_pred = self.dinov2_proj(output.align_hidden_state)
+            align_loss = self.consine_loss_with_features(
+                dinov2_pred, output.cond_l, output.img_size, batch["dinov2_target"])
+            
         return CastorModelOutputs(
             batch=batch,
             loss=(target_loss + 0.5 * align_loss) if align_loss is not None else target_loss,
@@ -130,12 +123,31 @@ class Castor(nn.Module):
             target = target.to(output.dtype)
             return F.mse_loss(output, target)
 
-    def cosine_loss(self, output: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
-        if isinstance(target, list) or isinstance(output, list):
-            loss_list = [1 - F.cosine_similarity(o, t.to(o.dtype)) for o, t in zip(output, target)]
-            return torch.mean(torch.stack(loss_list))
+    def consine_loss_with_features(self, x: torch.Tensor, cond_l: torch.Tensor, 
+                                   img_size: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+        pH = pW = self.diffusion_transformer.patch_size
+        H, W = img_size
+        use_dynamic_res = isinstance(H, list) and isinstance(W, list)
+        
+        def _cosine_loss(x, t):
+            return 1 - F.cosine_similarity(x, t.to(x.dtype), dim=-1).mean()
+
+        if use_dynamic_res:
+            # Extract features for each image based on its resolution
+            return torch.stack([
+                _cosine_loss(
+                    x[i, cond_l[i]:cond_l[i] + (_H // pH) * (_W // pW)], 
+                    target[i]
+                )
+                for i, (_H, _W) in enumerate(zip(H, W))
+            ]).mean()
         else:
-            return 1 - F.cosine_similarity(output, target)
+            # Handle condition length consistently whether it's a list or scalar
+            offset = max(cond_l) if isinstance(cond_l, list) else cond_l
+            feature_length = (H // pH) * (W // pW)
+            img_features = x[:, offset:offset + feature_length]
+            return _cosine_loss(img_features, target)
+
 
     def set_train(self):
         self.diffusion_transformer.train()

@@ -141,6 +141,7 @@ class DiffusionTransformerBlock(nn.Module):
 @dataclass
 class BaseDiffusionTransformerOutputs:
     output: torch.Tensor
+    align_hidden_state: Optional[torch.Tensor] = None
     cond_l: Optional[List[int]] = None
     img_size: Optional[Tuple[int, int]] = None
 
@@ -156,6 +157,7 @@ class BaseDiffusionTransformer(nn.Module):
         self.shared_adaLN = args.shared_adaLN
         for _ in range(args.n_layers):
             self.layers.append(DiffusionTransformerBlock(args))
+        self.align_layer = args.align_layer
 
     def forward(
         self,
@@ -176,7 +178,9 @@ class BaseDiffusionTransformer(nn.Module):
                 attn_impl=attn_impl,
                 modulation_values=modulation_values,
             )
-        return h
+            if idx == self.align_layer - 1:
+                align_hidden_state = h
+        return h, align_hidden_state
 
     def reset_parameters(self):
         # Either use fixed base std or sqrt model dim
@@ -378,7 +382,7 @@ class DiffusionTransformer(BaseDiffusionTransformer):
         else:
             modulation_values = None
 
-        last_hidden_state = super().forward(
+        last_hidden_state, align_hidden_state = super().forward(
             x, x_mask, freqs_cis, modulation_signal, attn_impl=attn_impl, modulation_values=modulation_values
         )
 
@@ -387,6 +391,7 @@ class DiffusionTransformer(BaseDiffusionTransformer):
         
         output = BaseDiffusionTransformerOutputs(
             output=out, 
+            align_hidden_state=align_hidden_state,
             cond_l=cond_l, 
             img_size=img_size
         )
