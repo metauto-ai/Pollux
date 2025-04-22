@@ -203,7 +203,7 @@ class MongoDBImageDataLoad(MongoDBDataLoad):
 
                     break
                 except Exception as e:
-                    print(f"Error loading image in attempt {attempt + 1}: {e}")
+                    # logging.warning(f"Error loading image in attempt {attempt + 1}: {e}")
                     if attempt == self.retries - 1:
                         # logging.warning(f"Error loading image: {e}")
                         image = self.place_holder_image

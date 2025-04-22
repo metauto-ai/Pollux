@@ -48,6 +48,7 @@ model:
         n_heads: 32
         n_kv_heads: 8
         n_layers: 24
+        align_layer: 8
         time_step_dim: *hidden_dim
         patch_size: 2
         in_channels: 16
@@ -73,9 +74,8 @@ model:
     dinov2_alignment: true
     dinov2_args:
         weight_path: "facebook/dinov2-base"
-        align_hidden_dim: *hidden_dim
+        align_hidden_dim: 1024
         align_encoder_dim: 768
-        align_layer: 8
     
     text_cfg_ratio: 0.1
     text_encoder:
