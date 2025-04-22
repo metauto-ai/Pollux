@@ -383,8 +383,7 @@ class DiffusionTransformer(BaseDiffusionTransformer):
         )
 
         out = self.img_output(self.norm(last_hidden_state))
-        out = self.get_image_features(out, cond_l, img_size)
-        out = self.unpatchify_image(out, img_size)
+        out = self.unpatchify_image(out, cond_l, img_size)
         
         output = BaseDiffusionTransformerOutputs(
             output=out, 
@@ -395,7 +394,7 @@ class DiffusionTransformer(BaseDiffusionTransformer):
         return output
 
     def unpatchify_image(
-        self, image_features: Union[torch.Tensor, List[torch.Tensor]], img_size: Tuple[int, int]
+        self, x: torch.Tensor, cond_l: Union[List[int], int], img_size: Tuple[int, int]
     ) -> Union[torch.Tensor, List[torch.Tensor]]:
         """
         Convert patched image features back to the original latent format.
@@ -412,19 +411,29 @@ class DiffusionTransformer(BaseDiffusionTransformer):
         use_dynamic_res = isinstance(H, list) and isinstance(W, list)
         
         if use_dynamic_res:
-            # Process each image with its corresponding resolution
-            return [
-                features.view(_H // pH, _W // pW, pH, pW, -1)
-                       .permute(4, 0, 2, 1, 3)
-                       .reshape(self.out_channels, _H, _W)
-                for features, _H, _W in zip(image_features, H, W)
-            ]
+            out_x_list = []
+            for i, (_H, _W) in enumerate(zip(H, W)):
+                _x = x[i, cond_l[i] : cond_l[i] + (_H // pH) * (_W // pW)]
+                _x = _x.view(_H // pH, _W // pW, pH, pW, -1)
+                _x = (
+                    _x.permute(4, 0, 2, 1, 3).flatten(3, 4).flatten(1, 2)
+                )  # [16,H/8,W/8]
+                out_x_list.append(_x)
+            return out_x_list
         else:
-            # Process batch of images with same resolution
-            B = image_features.size(0)
-            return image_features.view(B, H // pH, W // pW, pH, pW, self.out_channels) \
-                                .permute(0, 5, 1, 3, 2, 4) \
-                                .reshape(B, self.out_channels, H, W)
+            # Handle the case where cond_l is an integer, not a list
+            if isinstance(cond_l, list):
+                max_cond_l = max(cond_l)
+            else:
+                max_cond_l = cond_l
+
+            B = x.size(0)
+            L = (H // pH) * (W // pW)
+            x = x[:, max_cond_l : max_cond_l + L].view(
+                B, H // pH, W // pW, pH, pW, self.out_channels
+            )
+            x = x.permute(0, 5, 1, 3, 2, 4).flatten(4, 5).flatten(2, 3)
+            return x
 
     def get_image_features(
             self, x: torch.Tensor, cond_l: Union[List[int], int], img_size: Tuple[int, int]
