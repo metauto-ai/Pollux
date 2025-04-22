@@ -140,7 +140,6 @@ class DiffusionTransformerBlock(nn.Module):
 
 @dataclass
 class BaseDiffusionTransformerOutputs:
-    hidden_states: List[torch.Tensor]
     output: torch.Tensor
     cond_l: Optional[List[int]] = None
     img_size: Optional[Tuple[int, int]] = None
@@ -167,8 +166,6 @@ class BaseDiffusionTransformer(nn.Module):
         modulation_values: Optional[torch.Tensor] = None,
         attn_impl: str = "sdpa",
     ):
-        hidden_states = []
-
         for idx, layer in enumerate(self.layers):
             h = layer(
                 h,
@@ -179,9 +176,7 @@ class BaseDiffusionTransformer(nn.Module):
                 attn_impl=attn_impl,
                 modulation_values=modulation_values,
             )
-            hidden_states.append(h)
-        
-        return hidden_states
+        return h
 
     def reset_parameters(self):
         # Either use fixed base std or sqrt model dim
@@ -383,17 +378,15 @@ class DiffusionTransformer(BaseDiffusionTransformer):
         else:
             modulation_values = None
 
-        hidden_states = super().forward(
+        last_hidden_state = super().forward(
             x, x_mask, freqs_cis, modulation_signal, attn_impl=attn_impl, modulation_values=modulation_values
         )
 
-        last_hidden_state = hidden_states[-1]
         out = self.img_output(self.norm(last_hidden_state))
         out = self.get_image_features(out, cond_l, img_size)
         out = self.unpatchify_image(out, img_size)
         
         output = BaseDiffusionTransformerOutputs(
-            hidden_states=hidden_states, 
             output=out, 
             cond_l=cond_l, 
             img_size=img_size

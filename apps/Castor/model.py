@@ -89,6 +89,12 @@ class Castor(nn.Module):
                 conditional_mask, dtype=conditional_signal.dtype
             )
 
+        if hasattr(self, "dinov2"):
+            align_hidden_state = []
+            def forward_hook(net, input, output):
+                align_hidden_state.append(output)
+            self.diffusion_transformer.layers[self.align_layer - 1].feed_forward.register_forward_hook(forward_hook)
+        
         latent_code = batch["latent_code"]
         noised_x, t, target = self.scheduler.sample_noised_input(latent_code)
         output = self.diffusion_transformer(
@@ -104,7 +110,7 @@ class Castor(nn.Module):
 
         align_loss = None
         if hasattr(self, "dinov2"):
-            intermediate_hidden_state = output.hidden_states[self.align_layer - 1]
+            intermediate_hidden_state = align_hidden_state[0]
             dinov2_pred = self.dinov2_proj(intermediate_hidden_state)
             dinov2_pred = self.diffusion_transformer.get_image_features(dinov2_pred, output.cond_l, output.img_size)
             align_loss = self.cosine_loss(dinov2_pred, batch["dinov2_target"])
