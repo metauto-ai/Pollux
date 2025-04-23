@@ -106,7 +106,7 @@ if __name__ == '__main__':
     
 
 
-    ## CUDA_VISIBLE_DEVICES=7 python image_pair_generation_omnigen.py
+    ## CUDA_VISIBLE_DEVICES=7 python omnigen.py
 
     """
     # Environments
