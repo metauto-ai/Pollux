@@ -4,7 +4,7 @@
 version: v1.0
 # From now on, start to align train, data, and model setting with train stage (just finish refactor for dara)
 train_stage: stage-1 # options: preliminary, pretraining, posttraining; aligned with data setting
-name: qwen2_5_adaLN #used for local dump and wandb log
+name: test #used for local dump and wandb log
 output_dir: /mnt/pollux/checkpoints/haozhe
 dump_dir: '' # No need now
 steps: 500000
@@ -65,8 +65,10 @@ model:
     text_cfg_ratio: 0.1
     with_vae: true
     vae_args:
-        vae_type: "flux"
-        pretrained_model_name_or_path: '/mnt/pollux/checkpoints/FLUX.1-dev/vae'
+        # cosmos: /mnt/pollux/checkpoints/Cosmos/Cosmos-0.1-Tokenizer-CI8x8/
+        # flux: /mnt/pollux/checkpoints/FLUX.1-dev/vae
+        vae_type: "cosmos"
+        pretrained_model_name_or_path: '/mnt/pollux/checkpoints/Cosmos/Cosmos-0.1-Tokenizer-CI8x8/'
         enable_tiling: false
         enable_slicing: false
     text_encoder:

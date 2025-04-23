@@ -21,7 +21,7 @@ class VideoVAEArgs:
     enable_slicing: bool = True
 
 
-class BaseLatentVideoVAE(nn.Module):
+class BaseLatentVideoVAE():
     def __init__(self, args: VideoVAEArgs):
         super().__init__()
         self.cfg = args
@@ -187,7 +187,7 @@ class COSMOSContinuousVAE(BaseLatentVideoVAE):
         """
         Encodes the input frames into latent representations.
         """
-        (latent,) = self.vae.encode(x.to(self.vae.dtype))
+        (latent,) = self.vae.encode(x.to(self.vae._dtype))
         return latent
 
     @torch.no_grad()
@@ -195,7 +195,7 @@ class COSMOSContinuousVAE(BaseLatentVideoVAE):
         """
         Decodes the latent representations back into reconstructed frames.
         """
-        x = self.vae.decode(x.to(self.vae.dtype))
+        x = self.vae.decode(x.to(self.vae._dtype))
         return x
 
     @torch.no_grad()

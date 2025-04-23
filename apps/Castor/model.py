@@ -115,9 +115,9 @@ def get_no_recompute_ops():
 # Optional and only used for fully shard options (fsdp) is choose. Highly recommanded for large models
 def build_fsdp_grouping_plan(model_args: ModelArgs):
     group_plan: Tuple[int, bool] = []
-    if model_args.with_vae:
-        for i in range(4):  # Specific for Hunyuan's VAE
-            group_plan.append((f"compressor.vae.encoder.down_blocks.{i}", False))
+    # if model_args.with_vae:
+    #     for i in range(4):  # Specific for Hunyuan's VAE
+    #         group_plan.append((f"compressor.vae.encoder.down_blocks.{i}", False))
     for i in range(model_args.diffusion_model.n_layers):
         group_plan.append((f"diffusion_transformer.layers.{i}", False))
     group_plan.append(("diffusion_transformer.img_output", True))
