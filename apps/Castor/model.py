@@ -57,24 +57,12 @@ class Castor(nn.Module):
         self.scheduler = RectifiedFlow(args.scheduler)
         self.text_cfg_ratio = args.text_cfg_ratio
 
-    def get_latents(self, batch: dict[str:any]) -> torch.Tensor:
-        if isinstance(batch["image"], list):
-            return [self.compressor.encode(img[None])[0] for img in batch["image"]]
-        else:
-            return self.compressor.encode(batch["image"])
-
-    def get_dinov2_features(self, batch: dict[str:any]) -> torch.Tensor:
-        if isinstance(batch["image_cond"], list):
-            return [self.dinov2.forward(img[None])[0] for img in batch["image_cond"]]
-        else:
-            return self.dinov2.forward(batch["image_cond"])
-
     def forward(self, batch: dict[str:any]) -> dict[str:any]:
         if hasattr(self, "compressor"):
-            batch["latent_code"] = self.get_latents(batch)
+            batch["latent_code"] = self.compressor.get_latents(batch)
 
         if hasattr(self, "dinov2"):
-            batch["dinov2_target"] = self.get_dinov2_features(batch)
+            batch["dinov2_target"] = self.dinov2.get_features(batch)
 
         if "text_embedding" not in batch:
             batch["text_embedding"], batch["attention_mask"] = self.text_encoder(batch)

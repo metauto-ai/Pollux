@@ -331,27 +331,44 @@ class DiffusionTransformer(BaseDiffusionTransformer):
             return x_new, x_mask, cond_l, (H_list, W_list), freqs_cis
         else:
             B, C, H, W = x.size()
+            target_dtype = x.dtype
             cond_l = condition.size(1)
-            x = (
+
+            # 1. Patchify and embed image tensor
+            x_img_patch = (
                 x.view(B, C, H // pH, pH, W // pW, pW)
                 .permute(0, 2, 4, 1, 3, 5)
                 .flatten(3)
             )
-            x = self.img_embed(x)
-            x = x.flatten(1, 2)
-            x_mask = torch.ones(B, (H // pH) * (W // pW), dtype=torch.bool).to(x.device)
-            x_mask = torch.cat([condition_mask, x_mask], dim=1)
-            freqs_cis_img = self.rope_embeddings_image.freqs_cis[
-                : H // pH, : W // pW
-            ].flatten(0, 1)
-            x = torch.cat([condition, x], dim=1)
-            freqs_cis_cond = self.rope_embeddings_conditions.freqs_cis[:cond_l].to(
-                x.device
-            )
-            freqs_cis = torch.cat([freqs_cis_cond, freqs_cis_img], dim=0)
-            freqs_cis = freqs_cis.unsqueeze(0).repeat(B, *[1] * freqs_cis.dim())
+            x_img_embed = self.img_embed(x_img_patch) # Assume img_embed preserves or outputs target_dtype
+            x_img_embed = x_img_embed.flatten(1, 2) # Shape: [B, L_img, D]
+
+            # Ensure image embedding has the target dtype
+            x_img_embed = x_img_embed.to(target_dtype)
+
+            # 2. Prepare condition tensor
+            # Cast condition to the target dtype *before* concatenation
+            condition = condition.to(target_dtype) # Shape: [B, L_cond, D]
+
+            # 3. Concatenate condition and image embeddings
+            x_combined = torch.cat([condition, x_img_embed], dim=1) # Shape: [B, L_cond + L_img, D]
+
+            # 4. Create attention mask
+            x_mask_img = torch.ones(B, (H // pH) * (W // pW), dtype=torch.bool, device=x.device)
+            x_mask = torch.cat([condition_mask, x_mask_img], dim=1) # Shape: [B, L_cond + L_img]
+
+            # 5. Prepare RoPE embeddings
+            # Ensure RoPE embeddings are on the correct device and have the target dtype
+            freqs_cis_cond = self.rope_embeddings_conditions.freqs_cis[:cond_l].to(device=x.device, dtype=target_dtype)
+            freqs_cis_img = self.rope_embeddings_image.freqs_cis[: H // pH, : W // pW].flatten(0, 1).to(device=x.device, dtype=target_dtype)
+
+            # Concatenate RoPE embeddings
+            freqs_cis = torch.cat([freqs_cis_cond, freqs_cis_img], dim=0) # Shape: [L_cond + L_img, ..., D/2, 2]
+            # Expand for batch dimension
+            freqs_cis = freqs_cis.unsqueeze(0).expand(B, -1, *([-1] * (freqs_cis.dim() - 1))) # Shape: [B, L_cond + L_img, ..., D/2, 2]
+
             return (
-                x,
+                x_combined,
                 x_mask,
                 cond_l,
                 (H, W),
@@ -366,33 +383,57 @@ class DiffusionTransformer(BaseDiffusionTransformer):
         condition_mask: torch.Tensor,
         attn_impl: str = "sdpa",
     ):
-        
-        condition = self.cond_proj(condition)
-        condition = self.cond_norm(condition)
-        modulation_signal = self.tmb_embed(time_steps)
+        # Determine the primary dtype from the input x
+        if isinstance(x, list):
+            input_dtype = x[0].dtype
+        else:
+            input_dtype = x.dtype
 
-        x, x_mask, cond_l, img_size, freqs_cis = self.patchify_and_embed_image(
+        # Ensure condition starts with the correct dtype before projection/norm
+        condition = condition.to(input_dtype)
+        condition = self.cond_proj(condition)
+        # cond_norm should handle dtypes correctly via type_as(x) or internal logic
+        condition = self.cond_norm(condition)
+
+        # Ensure time embedding has the correct dtype
+        modulation_signal = self.tmb_embed(time_steps).to(input_dtype)
+
+        # patchify_and_embed_image now ensures consistent dtypes internally
+        x_patched, x_mask, cond_l, img_size, freqs_cis = self.patchify_and_embed_image(
             x, condition, condition_mask
         )
 
+        # Ensure modulation values match the patched data dtype if shared_adaLN is used
         if self.shared_adaLN:
             modulation_values = self.adaLN_modulation(
                 modulation_signal
-            ).unflatten(1, (4, self.dim))
+            ).unflatten(1, (4, self.dim)).to(x_patched.dtype) # Ensure dtype match
         else:
             modulation_values = None
 
+        # Pass consistent dtype tensors to the base forward method
         last_hidden_state, align_hidden_state = super().forward(
-            x, x_mask, freqs_cis, modulation_signal, attn_impl=attn_impl, modulation_values=modulation_values
+            x_patched, x_mask, freqs_cis, modulation_signal, attn_impl=attn_impl, modulation_values=modulation_values
         )
 
-        out = self.img_output(self.norm(last_hidden_state))
-        out = self.unpatchify_image(out, cond_l, img_size)
-        
+        # Final output projection and unpatchify
+        # Ensure norm input and output projection match dtypes
+        norm_output = self.norm(last_hidden_state.to(self.dim)) # Ensure input to norm is correct dim dtype
+        out_proj_input = norm_output.to(self.img_output.weight.dtype) # Match final layer's weight dtype
+        out = self.img_output(out_proj_input)
+        out = self.unpatchify_image(out, cond_l, img_size) # unpatchify handles list/tensor output
+
+        # Ensure output tensors in the dataclass match expected dtypes if necessary
+        # (Often handled by autocast or model's overall dtype)
+        if isinstance(out, list):
+             final_out = [o.to(input_dtype) for o in out]
+        else:
+             final_out = out.to(input_dtype)
+
         output = BaseDiffusionTransformerOutputs(
-            output=out, 
-            align_hidden_state=align_hidden_state,
-            cond_l=cond_l, 
+            output=final_out,
+            align_hidden_state=align_hidden_state.to(input_dtype) if align_hidden_state is not None else None,
+            cond_l=cond_l,
             img_size=img_size
         )
 
@@ -428,47 +469,34 @@ class DiffusionTransformer(BaseDiffusionTransformer):
         else:
             # Handle the case where cond_l is an integer, not a list
             if isinstance(cond_l, list):
-                max_cond_l = max(cond_l)
+                 # If cond_l is unexpectedly a list here, take the first element or max?
+                 # Assuming it should be consistent with the input type logic.
+                 # If input was Tensor, cond_l should be int. If list, list.
+                 # This path assumes input was Tensor, so cond_l should be int.
+                 # If it's a list, maybe log a warning or error.
+                 # For now, assume it's an int if we reach here.
+                 if len(cond_l) > 0:
+                     max_cond_l = cond_l[0] # Or max(cond_l) if that makes sense
+                     # logger.warning("cond_l was a list in unpatchify_image tensor path.")
+                 else:
+                     max_cond_l = 0 # Handle empty list case
             else:
-                max_cond_l = cond_l
+                max_cond_l = cond_l # It's already an int
 
             B = x.size(0)
             L = (H // pH) * (W // pW)
-            x = x[:, max_cond_l : max_cond_l + L].view(
+            # Ensure slicing indices are correct
+            img_features = x[:, max_cond_l : max_cond_l + L]
+
+            # Ensure the view dimensions match the extracted features
+            # B, L_img, D_out_patch = img_features.shape
+            # D_out_patch should be pH * pW * self.out_channels
+            # L_img should be (H // pH) * (W // pW)
+            img_features = img_features.view(
                 B, H // pH, W // pW, pH, pW, self.out_channels
             )
-            x = x.permute(0, 5, 1, 3, 2, 4).flatten(4, 5).flatten(2, 3)
-            return x
-
-    def get_image_features(
-            self, x: torch.Tensor, cond_l: Union[List[int], int], img_size: Tuple[int, int]
-    ) -> Union[torch.Tensor, List[torch.Tensor]]:
-        """
-        Extract image features from the combined condition and image representation.
-        
-        Args:
-            x: Combined features tensor
-            cond_l: Condition length(s) to offset feature extraction
-            img_size: Image size(s) to determine feature length
-            
-        Returns:
-            Image features without condition
-        """
-        pH = pW = self.patch_size
-        H, W = img_size
-        use_dynamic_res = isinstance(H, list) and isinstance(W, list)
-        
-        if use_dynamic_res:
-            # Extract features for each image based on its resolution
-            return [
-                x[i, cond_l[i]:cond_l[i] + (_H // pH) * (_W // pW)]
-                for i, (_H, _W) in enumerate(zip(H, W))
-            ]
-        else:
-            # Handle condition length consistently whether it's a list or scalar
-            offset = max(cond_l) if isinstance(cond_l, list) else cond_l
-            feature_length = (H // pH) * (W // pW)
-            return x[:, offset:offset + feature_length]
+            img_features = img_features.permute(0, 5, 1, 3, 2, 4).flatten(4, 5).flatten(2, 3)
+            return img_features
 
     def reset_parameters(self, init_std=None):
         # Either use fixed base std or sqrt model dim

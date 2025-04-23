@@ -259,7 +259,7 @@ class AutoDataLoader:
                 dataset,
                 batch_size=dataloader_args.batch_size,
                 sampler=sampler,
-                collate_fn=mongodb_collate,
+                collate_fn=dataset.collate_fn,
                 worker_init_fn=partial(worker_init, seed=dataloader_args.seed),
                 drop_last=dataloader_args.drop_last,
                 pin_memory=dataloader_args.pin_memory,

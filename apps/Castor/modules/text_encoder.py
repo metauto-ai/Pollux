@@ -130,7 +130,7 @@ class Qwen2_5_VL(BaseTextEncoder):
                 return_tensors="pt",
                 max_length=self.text_seqlen,
                 truncation=True,
-            ).to(self.model.device)
+            ).to(device=self.model.device, dtype=self.dtype)
 
             outputs = self.model(**inputs)
             last_hidden_state = outputs.last_hidden_state
