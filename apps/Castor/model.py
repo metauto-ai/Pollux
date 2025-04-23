@@ -52,7 +52,7 @@ class Castor(nn.Module):
         if args.dinov2_alignment:
             self.dinov2 = DINOv2(args.dinov2_args)
             self.dinov2_proj = DINOv2_Proj(args.diffusion_model.dim, args.dinov2_args)
-            self.align_layer = args.dinov2_args.align_layer
+
         self.text_encoder = create_text_encoder(args.text_encoder)
         self.scheduler = RectifiedFlow(args.scheduler)
         self.text_cfg_ratio = args.text_cfg_ratio

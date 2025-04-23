@@ -383,22 +383,11 @@ class DiffusionTransformer(BaseDiffusionTransformer):
         condition_mask: torch.Tensor,
         attn_impl: str = "sdpa",
     ):
-        # Determine the primary dtype from the input x
-        if isinstance(x, list):
-            input_dtype = x[0].dtype
-        else:
-            input_dtype = x.dtype
-
-        # Ensure condition starts with the correct dtype before projection/norm
-        condition = condition.to(input_dtype)
         condition = self.cond_proj(condition)
-        # cond_norm should handle dtypes correctly via type_as(x) or internal logic
         condition = self.cond_norm(condition)
 
-        # Ensure time embedding has the correct dtype
-        modulation_signal = self.tmb_embed(time_steps).to(input_dtype)
+        modulation_signal = self.tmb_embed(time_steps)
 
-        # patchify_and_embed_image now ensures consistent dtypes internally
         x_patched, x_mask, cond_l, img_size, freqs_cis = self.patchify_and_embed_image(
             x, condition, condition_mask
         )
@@ -407,32 +396,20 @@ class DiffusionTransformer(BaseDiffusionTransformer):
         if self.shared_adaLN:
             modulation_values = self.adaLN_modulation(
                 modulation_signal
-            ).unflatten(1, (4, self.dim)).to(x_patched.dtype) # Ensure dtype match
+            ).unflatten(1, (4, self.dim))
         else:
             modulation_values = None
 
-        # Pass consistent dtype tensors to the base forward method
         last_hidden_state, align_hidden_state = super().forward(
             x_patched, x_mask, freqs_cis, modulation_signal, attn_impl=attn_impl, modulation_values=modulation_values
         )
 
-        # Final output projection and unpatchify
-        # Ensure norm input and output projection match dtypes
-        norm_output = self.norm(last_hidden_state.to(self.dim)) # Ensure input to norm is correct dim dtype
-        out_proj_input = norm_output.to(self.img_output.weight.dtype) # Match final layer's weight dtype
-        out = self.img_output(out_proj_input)
+        out = self.img_output(self.norm(last_hidden_state))
         out = self.unpatchify_image(out, cond_l, img_size) # unpatchify handles list/tensor output
 
-        # Ensure output tensors in the dataclass match expected dtypes if necessary
-        # (Often handled by autocast or model's overall dtype)
-        if isinstance(out, list):
-             final_out = [o.to(input_dtype) for o in out]
-        else:
-             final_out = out.to(input_dtype)
-
         output = BaseDiffusionTransformerOutputs(
-            output=final_out,
-            align_hidden_state=align_hidden_state.to(input_dtype) if align_hidden_state is not None else None,
+            output=out,
+            align_hidden_state=align_hidden_state if align_hidden_state is not None else None,
             cond_l=cond_l,
             img_size=img_size
         )
