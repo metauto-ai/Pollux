@@ -8,6 +8,7 @@ import sys
 import time
 
 from omegaconf import OmegaConf
+from tqdm import tqdm
 
 cli_args = OmegaConf.from_cli()
 file_cfg = OmegaConf.load(cli_args.config)
@@ -328,6 +329,8 @@ def train(args: TrainArgs):
         time_last_log = timer()
         gc.collect()
 
+        pb = tqdm(range(args.steps))
+
         while train_state.step < args.steps:
             # We constrain train_state.acc_step to be in range 0 to args.grad_acc_steps - 1
             train_state.acc_step += 1
@@ -550,6 +553,8 @@ def train(args: TrainArgs):
                     )
                 requeue_slurm_job()
                 sys.exit(0)
+            
+            pb.update(1)
 
     if not saved:
         checkpoint.save(
