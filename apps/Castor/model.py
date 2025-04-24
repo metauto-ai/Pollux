@@ -9,7 +9,7 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 
-from apps.Castor.modules.dino_v2 import DINOv2, DINOv2_Proj, DINOv2Args
+from apps.Castor.modules.siglip2 import VisionEncoder, VisionEncoder_Proj, VisionEncoderArgs
 
 from .modules.schedulers import RectifiedFlow, SchedulerArgs
 from .modules.text_encoder import TextEncoderArgs, create_text_encoder
@@ -24,8 +24,8 @@ class ModelArgs:
     diffusion_model: TransformerArgs = field(default_factory=TransformerArgs)
     with_vae: bool = False
     vae_args: VideoVAEArgs = field(default_factory=VideoVAEArgs)
-    dinov2_alignment: bool = False
-    dinov2_args: DINOv2Args = field(default_factory=DINOv2Args)
+    vision_encoder_alignment: bool = False
+    vision_encoder_args: VisionEncoderArgs = field(default_factory=VisionEncoderArgs)
     pre_trained_weight: Optional[str] = None
     text_encoder: TextEncoderArgs = field(default_factory=TextEncoderArgs)
     scheduler: SchedulerArgs = field(default_factory=SchedulerArgs)
@@ -49,9 +49,9 @@ class Castor(nn.Module):
         self.diffusion_transformer = DiffusionTransformer(args.diffusion_model)
         if args.with_vae:
             self.compressor = create_vae(args.vae_args)
-        if args.dinov2_alignment:
-            self.dinov2 = DINOv2(args.dinov2_args)
-            self.dinov2_proj = DINOv2_Proj(args.diffusion_model.dim, args.dinov2_args)
+        if args.vision_encoder_alignment:
+            self.vision_encoder = VisionEncoder(args.vision_encoder_args)
+            self.vision_encoder_proj = VisionEncoder_Proj(args.diffusion_model.dim, args.vision_encoder_args)
 
         self.text_encoder = create_text_encoder(args.text_encoder)
         self.scheduler = RectifiedFlow(args.scheduler)
@@ -61,8 +61,8 @@ class Castor(nn.Module):
         if hasattr(self, "compressor"):
             batch["latent_code"] = self.compressor.get_latents(batch)
 
-        if hasattr(self, "dinov2"):
-            batch["dinov2_target"] = self.dinov2.get_features(batch)
+        if hasattr(self, "vision_encoder"):
+            batch["vision_encoder_target"] = self.vision_encoder.get_features(batch)
 
         if "text_embedding" not in batch:
             batch["text_embedding"], batch["attention_mask"] = self.text_encoder(batch)
@@ -91,10 +91,10 @@ class Castor(nn.Module):
         target_loss = self.mse_loss(output.output, batch["target"])
 
         align_loss = None
-        if hasattr(self, "dinov2"):
-            dinov2_pred = self.dinov2_proj(output.align_hidden_state)
+        if hasattr(self, "vision_encoder"):
+            vision_encoder_pred = self.vision_encoder_proj(output.align_hidden_state)
             align_loss = self.consine_loss_with_features(
-                dinov2_pred, output.cond_l, output.img_size, batch["dinov2_target"])
+                vision_encoder_pred, output.cond_l, output.img_size, batch["vision_encoder_target"])
             
         return CastorModelOutputs(
             batch=batch,
@@ -168,9 +168,9 @@ def get_no_recompute_ops():
 # Optional and only used for fully shard options (fsdp) is choose. Highly recommanded for large models
 def build_fsdp_grouping_plan(model_args: ModelArgs):
     group_plan: Tuple[int, bool] = []
-    if model_args.with_vae:
-        for i in range(4):  # Specific for Hunyuan's VAE
-            group_plan.append((f"compressor.vae.encoder.down_blocks.{i}", False))
+    # if model_args.with_vae:
+    #     for i in range(4):  # Specific for Hunyuan's VAE
+    #         group_plan.append((f"compressor.vae.encoder.down_blocks.{i}", False))
     for i in range(model_args.diffusion_model.n_layers):
         group_plan.append((f"diffusion_transformer.layers.{i}", False))
     group_plan.append(("diffusion_transformer.img_output", True))
