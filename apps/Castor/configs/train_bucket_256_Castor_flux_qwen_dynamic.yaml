@@ -74,6 +74,8 @@ model:
         dtype: "bf16"
         text_seqlen: 256
         model_path: "/mnt/pollux/checkpoints/Qwen2.5-VL-3B-Instruct"
+        # qwen has 36 layers, we can use the first 3/4 layers
+        layers_to_use: 30
 data:  
   - stage: stage-1
     id: 1

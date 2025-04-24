@@ -19,7 +19,7 @@ class TextEncoderArgs:
     dtype: str = "bf16"
     text_seqlen: int = 77
     model_path: str = ""
-
+    layers_to_use: int = None
 
 class BaseTextEncoder:
     def __init__(self, args: TextEncoderArgs):
@@ -84,6 +84,8 @@ class Qwen2_5_VL(BaseTextEncoder):
             "Qwen/Qwen2.5-VL-3B-Instruct" if args.model_path == "" else args.model_path,
             torch_dtype=self.dtype,
         ).cuda()
+        if args.layers_to_use is not None:
+            self.model.layers = self.model.layers[:args.layers_to_use]
         self.model.eval()
         self.model.requires_grad_(False)
         self.tokenizer = AutoTokenizer.from_pretrained(
