@@ -6,11 +6,19 @@ from dataclasses import dataclass
 from typing import Tuple
 
 import torch
-from transformers import (AutoModel, AutoProcessor, AutoTokenizer, CLIPModel,
-                          CLIPTokenizer, Gemma2Model, GemmaTokenizerFast,
-                          UMT5EncoderModel)
+from transformers import (
+    AutoModel,
+    AutoProcessor,
+    AutoTokenizer,
+    CLIPModel,
+    CLIPTokenizer,
+    Gemma2Model,
+    GemmaTokenizerFast,
+    UMT5EncoderModel,
+)
 
 logger = logging.getLogger()
+from typing import Optional
 
 
 @dataclass
@@ -19,7 +27,8 @@ class TextEncoderArgs:
     dtype: str = "bf16"
     text_seqlen: int = 77
     model_path: str = ""
-    layers_to_use: int = None
+    layers_to_use: Optional[int] = None
+
 
 class BaseTextEncoder:
     def __init__(self, args: TextEncoderArgs):
@@ -85,7 +94,7 @@ class Qwen2_5_VL(BaseTextEncoder):
             torch_dtype=self.dtype,
         ).cuda()
         if args.layers_to_use is not None:
-            self.model.layers = self.model.layers[:args.layers_to_use]
+            self.model.layers = self.model.layers[: args.layers_to_use]
         self.model.eval()
         self.model.requires_grad_(False)
         self.tokenizer = AutoTokenizer.from_pretrained(
