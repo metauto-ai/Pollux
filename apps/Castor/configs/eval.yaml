@@ -1,8 +1,8 @@
 # python -m apps.Castor.generate config=apps/Castor/configs/eval.yaml
 name: "debug_evals"
 stage: eval
-ckpt_dir: "/mnt/pollux/checkpoints/chandan/fixed_dinov2_noalign/checkpoints/0000005000"
-dump_dir: "/mnt/pollux/checkpoints/haozhe/qwen2_5_vl_flux_dynamic_max_ratio_1.0/MJHQ/0000040000"
+ckpt_dir: "/mnt/pollux/checkpoints/chandan/siglip2_flux_qwen_fixed_bs128/checkpoints/0000150000/"
+dump_dir: "/mnt/pollux/checkpoints/chandan/siglip2_flux_qwen_fixed_bs128/MJHQ/0000150000"
 generator:
   guidance_scale: 6.5
   dtype: bf16
