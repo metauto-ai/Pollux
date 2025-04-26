@@ -25,7 +25,7 @@ from lingua.checkpoint import CONSOLIDATE_FOLDER, consolidate_checkpoints
 from lingua.distributed import (DistributedArgs, get_global_rank,
                                 get_world_size, setup_torch_distributed)
 from omegaconf import OmegaConf
-
+from tqdm import tqdm
 EVAL_FOLDER_NAME = "{:010d}"
 
 logger = logging.getLogger()
@@ -65,7 +65,6 @@ def save_images(
             writer = csv.writer(file)
             writer.writerow([batch["caption"][i], image_path])
 
-    logger.warning(f"Saved {len(tensors)} images to {output_dir}")
 
 
 def launch_eval(cfg: EvalArgs):
@@ -102,7 +101,8 @@ def launch_eval(cfg: EvalArgs):
     data_loader, sampler = data_loader_factory.create_dataloader()
     logger.info("Data loader is built !")
     logger.info(f"Data loader size: {len(data_loader)}")
-    for idx, batch in enumerate(data_loader):
+    pbar = tqdm(enumerate(data_loader), total=len(data_loader))
+    for idx, batch in pbar:
         batch["generated_samples"] = generator(batch)
         save_images(
             batch,
@@ -110,6 +110,7 @@ def launch_eval(cfg: EvalArgs):
             prefix=f"image_rank{global_rank}_batch{idx}",
             csv_name=f"meta_rank{global_rank}.csv",
         )
+        pbar.set_description(f"Processed {idx} / {len(data_loader)}")
     del generator
 
 
