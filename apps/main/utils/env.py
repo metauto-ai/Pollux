@@ -25,7 +25,7 @@ class Config:
 
         # Encode credentials for MongoDB URI
         encoded_user = quote_plus(self.MONGODB_USER)
-        encoded_password = quote_plus(self.MONGODB_PASSWORD)
+        encoded_password = self.MONGODB_PASSWORD
         self.MONGODB_URI = (
             f"mongodb+srv://{encoded_user}:{encoded_password}@{self.MONGODB_HOST}"
         )
