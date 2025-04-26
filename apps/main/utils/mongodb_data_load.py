@@ -389,3 +389,16 @@ class MongoDBCaptionDataLoad(MongoDBDataLoad):
                 caption = ""
             return_sample[v] = caption
         return return_sample
+
+    def collate_fn(self, batch):
+        return_batch = {}
+        for k in batch[0].keys():
+            items = [item[k] for item in batch]
+            # Check if all items are tensors and have the same shape
+            if all(isinstance(item, torch.Tensor) for item in items) and all(item.shape == items[0].shape for item in items):
+                # Stack tensors if they all have the same shape
+                return_batch[k] = torch.stack(items, dim=0)
+            else:
+                # Keep as list if not tensors or different shapes
+                return_batch[k] = items
+        return return_batch
