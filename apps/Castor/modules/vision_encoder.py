@@ -1,17 +1,13 @@
 from dataclasses import dataclass
 import torch.nn as nn
 import torch
-from transformers import Siglip2VisionModel
+from transformers import AutoModel, Siglip2VisionModel
 from typing import Dict, List, Tuple, Union
-
-
-encoder_dict = {
-    "siglip2": "google/siglip2-so400m-patch16-naflex",
-}
 
 
 @dataclass
 class VisionEncoderArgs:
+    encoder_name: str = 'siglip2'
     weight_path: str = 'google/siglip2-so400m-patch16-naflex'
     projection_hidden_dim: int = 1024
     dtype: str = "bfloat16"
@@ -62,6 +58,34 @@ class BaseVisionEncoder:
             raise TypeError(f"Unsupported type for batch['image']: {type(images)}")
 
 
+class DINOv2VisionEncoder(BaseVisionEncoder):
+    def __init__(self, args: VisionEncoderArgs):
+        super().__init__(args)
+        self.model = AutoModel.from_pretrained(
+            args.weight_path if args.weight_path else "facebook/dinov2-base", 
+            use_flash_attention_2=True,
+            torch_dtype=self.dtype
+        ).requires_grad_(False).cuda()
+
+    @property
+    def dim(self):
+        return self.model.config.hidden_size
+
+    @torch.no_grad()
+    def forward(self, image: torch.Tensor):
+        '''
+        Expects image resized by factor of 224/256 to get same number of patches as siglip2 and vaes
+        '''
+        image = image.to(self.model.device, dtype=self.model.dtype)
+        inputs = {
+            "pixel_values": image,
+        }
+
+        outputs = self.model(**inputs)
+        # ignore the cls token
+        return outputs.last_hidden_state[:, 1:, :]
+    
+
 class Siglip2VisionEncoder(BaseVisionEncoder):
     def __init__(self, args: VisionEncoderArgs):
         super().__init__(args)
@@ -90,6 +114,12 @@ class Siglip2VisionEncoder(BaseVisionEncoder):
 
         outputs = self.model(**inputs)
         return outputs.last_hidden_state
+
+
+encoder_dict = {
+    "siglip2": Siglip2VisionEncoder,
+    "dinov2-base": DINOv2VisionEncoder,
+}
 
 
 def create_vision_encoder(args: VisionEncoderArgs):
