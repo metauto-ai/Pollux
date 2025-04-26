@@ -9,12 +9,11 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 
-from apps.Castor.modules.siglip2 import VisionEncoder, VisionEncoder_Proj, VisionEncoderArgs
-
 from .modules.schedulers import RectifiedFlow, SchedulerArgs
 from .modules.text_encoder import TextEncoderArgs, create_text_encoder
 from .modules.transformer import DiffusionTransformer, TransformerArgs
 from .modules.vae import VideoVAEArgs, create_vae
+from .modules.vision_encoder import VisionEncoderArgs, create_vision_encoder
 
 logger = logging.getLogger()
 
@@ -40,6 +39,25 @@ class CastorModelOutputs:
     align_loss: Optional[torch.Tensor] = None
 
 
+class AlignmentProjection(nn.Module):
+    def __init__(self, input_dim: int, hidden_dim: int, encoder_dim: int):
+        super(AlignmentProjection, self).__init__()
+        
+        self.proj = nn.Sequential(
+            nn.Sequential(
+                nn.Linear(input_dim, hidden_dim),
+                nn.SiLU(),
+                nn.Linear(hidden_dim, hidden_dim),
+                nn.SiLU(),
+                nn.Linear(hidden_dim, encoder_dim),
+            )
+        )
+        
+    def forward(self, x):
+        x = self.proj(x)
+        return x
+
+
 class Castor(nn.Module):
     VERSION: str = "v1.0"
     DESCRIPTION: str = "Latent ImageGen"
@@ -50,8 +68,9 @@ class Castor(nn.Module):
         if args.with_vae:
             self.compressor = create_vae(args.vae_args)
         if args.vision_encoder_alignment:
-            self.vision_encoder = VisionEncoder(args.vision_encoder_args)
-            self.vision_encoder_proj = VisionEncoder_Proj(args.diffusion_model.dim, args.vision_encoder_args)
+            self.vision_encoder = create_vision_encoder(args.vision_encoder_args)
+            self.vision_encoder_proj = AlignmentProjection(
+                args.diffusion_model.dim, args.vision_encoder_args.projection_hidden_dim, self.vision_encoder.dim)
 
         self.text_encoder = create_text_encoder(args.text_encoder)
         self.scheduler = RectifiedFlow(args.scheduler)
@@ -59,10 +78,10 @@ class Castor(nn.Module):
 
     def forward(self, batch: dict[str:any]) -> dict[str:any]:
         if hasattr(self, "compressor"):
-            batch["latent_code"] = self.compressor.get_latents(batch)
+            batch["latent_code"] = self.compressor.extract_latents(batch)
 
         if hasattr(self, "vision_encoder"):
-            batch["vision_encoder_target"] = self.vision_encoder.get_features(batch)
+            batch["vision_encoder_target"] = self.vision_encoder.extract_image_representations(batch)
 
         if "text_embedding" not in batch:
             batch["text_embedding"], batch["attention_mask"] = self.text_encoder(batch)
@@ -135,7 +154,6 @@ class Castor(nn.Module):
             feature_length = (H // pH) * (W // pW)
             img_features = x[:, offset:offset + feature_length]
             return _cosine_loss(img_features, target)
-
 
     def set_train(self):
         self.diffusion_transformer.train()

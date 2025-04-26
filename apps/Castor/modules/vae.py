@@ -58,7 +58,7 @@ class BaseLatentVideoVAE:
         )
         pass
 
-    def get_latents(self, batch: dict[str:any]) -> Union[torch.Tensor, List[torch.Tensor]]:
+    def extract_latents(self, batch: dict[str:any]) -> Union[torch.Tensor, List[torch.Tensor]]:
         images = batch["image"]
         if isinstance(images, torch.Tensor):
             # Handle the case where input is already a batched tensor
