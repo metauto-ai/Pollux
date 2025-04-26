@@ -35,6 +35,7 @@ logging.getLogger("pymongo").setLevel(logging.WARNING)
 boto3.set_stream_logger("boto3", level=logging.WARNING)
 boto3.set_stream_logger("botocore", level=logging.WARNING)
 logging.getLogger("s3fs").setLevel(logging.WARNING)
+logging.getLogger("urllib3").setLevel(logging.ERROR)
 Image.MAX_IMAGE_PIXELS = None
 from apps.main.utils.env import env
 
