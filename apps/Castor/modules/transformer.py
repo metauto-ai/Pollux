@@ -308,7 +308,7 @@ class DiffusionTransformer(BaseDiffusionTransformer):
                 assert W % (pW) == 0, f"W should be divisible by {pW}, but now W = {W}."
                 _x = (
                     _x.view(C, H // pH, pH, W // pW, pW)
-                    .permute(1, 3, 0, 2, 4)
+                    .permute(1, 3, 2, 4, 0)
                     .flatten(2)
                 )
                 _x = self.img_embed(_x)
@@ -337,7 +337,7 @@ class DiffusionTransformer(BaseDiffusionTransformer):
             # 1. Patchify and embed image tensor
             x_img_patch = (
                 x.view(B, C, H // pH, pH, W // pW, pW)
-                .permute(0, 2, 4, 1, 3, 5)
+                .permute(0, 2, 4, 3, 5, 1)
                 .flatten(3)
             )
             x_img_embed = self.img_embed(x_img_patch) # Assume img_embed preserves or outputs target_dtype
