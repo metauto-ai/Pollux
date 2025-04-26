@@ -74,6 +74,7 @@ model:
     
     vision_encoder_alignment: true
     vision_encoder_args:
+        encoder_name: "siglip2"
         weight_path: "google/siglip2-base-patch16-naflex"
         align_hidden_dim: *hidden_dim
         align_encoder_dim: 768
