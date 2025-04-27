@@ -8,6 +8,7 @@ from typing import List, Optional, Tuple
 import torch
 import torch.nn.functional as F
 from torch import nn
+from pytorch_wavelets import DWTForward
 
 from .modules.schedulers import RectifiedFlow, SchedulerArgs
 from .modules.text_encoder import TextEncoderArgs, create_text_encoder
@@ -24,6 +25,7 @@ class ModelArgs:
     with_vae: bool = False
     vae_args: VideoVAEArgs = field(default_factory=VideoVAEArgs)
     vision_encoder_alignment: bool = False
+    vision_encoder_alignment_factor: float = 0.5
     vision_encoder_args: VisionEncoderArgs = field(default_factory=VisionEncoderArgs)
     pre_trained_weight: Optional[str] = None
     text_encoder: TextEncoderArgs = field(default_factory=TextEncoderArgs)
@@ -64,6 +66,7 @@ class Castor(nn.Module):
 
     def __init__(self, args: ModelArgs):
         super().__init__()
+        self.args = args
         self.diffusion_transformer = DiffusionTransformer(args.diffusion_model)
         if args.with_vae:
             self.compressor = create_vae(args.vae_args)
@@ -74,6 +77,7 @@ class Castor(nn.Module):
 
         self.text_encoder = create_text_encoder(args.text_encoder)
         self.scheduler = RectifiedFlow(args.scheduler)
+        self.dwt = DWTForward(J=1, mode='zero', wave='haar')
         self.text_cfg_ratio = args.text_cfg_ratio
 
     def forward(self, batch: dict[str:any]) -> dict[str:any]:
@@ -107,20 +111,31 @@ class Castor(nn.Module):
 
         batch["prediction"] = output.output
         batch["target"] = target
-        target_loss = self.mse_loss(output.output, batch["target"])
+
+        latent_code_pred = self.scheduler.scheduler.step(output.output, t, noised_x, return_dict=False)
+        target_loss = self.mse_loss(latent_code_pred, latent_code)
+
+        # latent_code = self.discrete_wavelet_transform(latent_code)
+        # latent_code_pred = self.discrete_wavelet_transform(latent_code_pred)
+        # target_loss = self.mse_loss(latent_code_pred, latent_code)
 
         align_loss = None
         if hasattr(self, "vision_encoder"):
             vision_encoder_pred = self.vision_encoder_proj(output.align_hidden_state)
             align_loss = self.consine_loss_with_features(
                 vision_encoder_pred, output.cond_l, output.img_size, batch["vision_encoder_target"])
-            
+        
         return CastorModelOutputs(
             batch=batch,
-            loss=(target_loss + 0.5 * align_loss) if align_loss is not None else target_loss,
+            loss=(target_loss + self.args.vision_encoder_alignment_factor * align_loss) if align_loss is not None else target_loss,
             target_loss=target_loss,
             align_loss=align_loss
         )
+
+    def discrete_wavelet_transform(self, x: torch.Tensor) -> torch.Tensor:
+        model_input_xll, model_input_xh = self.dwt(x)
+        model_input_xlh, model_input_xhl, model_input_xhh = torch.unbind(model_input_xh[0], dim=2)
+        return torch.cat([model_input_xll, model_input_xlh, model_input_xhl, model_input_xhh], dim=1)  # stack along channel
 
     def mse_loss(self, output: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
         if isinstance(target, list) or isinstance(output, list):
