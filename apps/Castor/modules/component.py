@@ -16,8 +16,9 @@ from torch.nn.attention.flex_attention import (BlockMask, _mask_mod_signature,
 from xformers.ops import AttentionBias, fmha
 from liger_kernel.transformers import LigerSwiGLUMLP, LigerRMSNorm, liger_rotary_pos_emb
 from types import SimpleNamespace
-
 from . import probe
+
+import transformer_engine.pytorch as te
 
 flex_attention_comp = torch.compile(flex_attention)
 
@@ -54,6 +55,8 @@ class BaseTransformerArgs:
     liger_ffn: bool = True
     liger_rms_norm: bool = True
     liger_rotary_emb: bool = False
+
+    use_fp8_ffn: bool = True
 
 
 def cross_entropy(pred, target, **kwargs):
@@ -365,17 +368,17 @@ class Attention(nn.Module):
         self.wq = nn.Linear(
             dim,
             n_heads * head_dim,
-            bias=False,
+            bias=True,
         )
         self.wk = nn.Linear(
             dim,
             n_kv_heads * head_dim,
-            bias=False,
+            bias=True,
         )
         self.wv = nn.Linear(
             dim,
             n_kv_heads * head_dim,
-            bias=False,
+            bias=True,
         )
 
         self.wo = nn.Linear(
@@ -517,17 +520,17 @@ class FlashAttention(nn.Module):
         self.wq = nn.Linear(
             dim,
             n_heads * self.head_dim,
-            bias=False,
+            bias=True,
         )
         self.wk = nn.Linear(
             dim,
             n_kv_heads * self.head_dim,
-            bias=False,
+            bias=True,
         )
         self.wv = nn.Linear(
             dim,
             n_kv_heads * self.head_dim,
-            bias=False,
+            bias=True,
         )
         nn.init.xavier_uniform_(self.wq.weight)
         nn.init.xavier_uniform_(self.wk.weight)
@@ -711,6 +714,7 @@ class FeedForward(nn.Module):
         ffn_dim_multiplier: Optional[float],
         mp_size: int = 1,
         liger_ffn: bool = True,
+        fp8: bool = True
     ):
         super().__init__()
 
@@ -723,6 +727,10 @@ class FeedForward(nn.Module):
         self.dim = dim
         self.hidden_dim = hidden_dim
         self.liger_ffn = liger_ffn
+        self.fp8 = fp8
+
+        assert liger_ffn!=fp8, "both fp8 and liger cannot be turned on at the same time"
+
 
         if liger_ffn:
             config = SimpleNamespace(
@@ -731,6 +739,14 @@ class FeedForward(nn.Module):
                 hidden_act="silu",
             )
             self.ffn = LigerSwiGLUMLP(config)
+        elif fp8:
+            self.ffn = te.LayerNormMLP(
+                hidden_size=dim,
+                ffn_hidden_size=hidden_dim,
+                activation='swiglu',
+                bias=False,
+            )
+
         else:
             self.w1 = nn.Linear(
                 dim,

@@ -71,6 +71,8 @@ from apps.main.model import (
 
 from apps.main.utils.cal_flops import get_num_flop_per_token
 
+from transformer_engine.common.recipe import Format, DelayedScaling
+import transformer_engine.pytorch as te
 logger = logging.getLogger()
 
 
@@ -93,6 +95,9 @@ class TrainArgs:
 
     # Nb optimizer steps to take
     steps: int = 1000
+
+    # Add flag to enable/disable FP8
+    use_fp8: bool = False # Default to False, enable via config
 
     data: List[DataArgs] = field(default_factory=list)
     optim: OptimArgs = field(default_factory=OptimArgs)
@@ -331,6 +336,15 @@ def train(args: TrainArgs):
         checkpoint.load(model, optimizer, train_state, world_mesh)
         # Either load from latest checkpoint or start from scratch
 
+        # Define FP8 recipe if FP8 is enabled
+        fp8_recipe = None
+        if args.use_fp8:
+            logger.info("FP8 is enabled. Defining FP8 recipe.")
+            # Example recipe, adjust as needed
+            fp8_format = Format.HYBRID # Or Format.E4M3
+            fp8_recipe = DelayedScaling(fp8_format=fp8_format, amax_history_len=16, amax_compute_algo="max")
+            # You might want to make recipe parameters configurable via TrainArgs
+
         gc.disable()
 
         # train loop
@@ -396,7 +410,10 @@ def train(args: TrainArgs):
             end_timer = torch.cuda.Event(enable_timing=True)
             start_timer.record()
 
-            _, loss = model(batch)
+            # Use te.fp8_autocast if FP8 is enabled
+            with te.fp8_autocast(enabled=args.use_fp8, fp8_recipe=fp8_recipe, fp8_group=fsdp_pg):
+                _, loss = model(batch)
+
             # We scale loss with grad_acc_steps so the gradient is the same
             # regardless of grad_acc_steps
             loss = loss / args.grad_acc_steps
