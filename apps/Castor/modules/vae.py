@@ -191,6 +191,7 @@ class FluxVAE(BaseLatentVideoVAE):
         self.scale = 0.3611
         self.shift = 0.1159
 
+    @torch.compile
     @torch.no_grad()
     def encode(self, x: torch.Tensor) -> torch.Tensor:
         x = x.to(device=self.vae.device, dtype=self.vae.dtype)
@@ -199,6 +200,7 @@ class FluxVAE(BaseLatentVideoVAE):
         ) * self.scale
         return x
 
+    @torch.compile
     @torch.no_grad()
     def decode(self, x: torch.Tensor) -> torch.Tensor:
         x = x.to(device=self.vae.device, dtype=self.vae.dtype)
@@ -207,7 +209,8 @@ class FluxVAE(BaseLatentVideoVAE):
         # Use the VAE's decode method and get the sample
         decoded = self.vae.decode(x).sample
         return decoded
-
+    
+    @torch.compile
     @torch.no_grad()
     def forward(self, x=torch.Tensor):
         x = self.encode(x)
