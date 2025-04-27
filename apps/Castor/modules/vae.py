@@ -1,6 +1,6 @@
 import logging
 from dataclasses import dataclass, field
-from typing import Dict, Generic, List, Literal, Optional, Tuple, Type, TypeVar
+from typing import Dict, Generic, List, Literal, Optional, Tuple, Type, TypeVar, Union
 
 import torch
 from diffusers import AutoencoderKL, AutoencoderKLHunyuanVideo
@@ -19,13 +19,13 @@ class VideoVAEArgs:
     variant: Optional[str] = None
     enable_tiling: bool = True
     enable_slicing: bool = True
+    dtype: str = "bfloat16"
 
 
-class BaseLatentVideoVAE(nn.Module):
+class BaseLatentVideoVAE:
     def __init__(self, args: VideoVAEArgs):
-        super().__init__()
         self.cfg = args
-
+        self.dtype = dict(fp32=torch.float32, bfloat16=torch.bfloat16)[args.dtype]
     @torch.no_grad()
     def encode(self, x: torch.Tensor) -> torch.Tensor:
         raise NotImplementedError
@@ -58,6 +58,42 @@ class BaseLatentVideoVAE(nn.Module):
         )
         pass
 
+    def extract_latents(self, batch: dict[str:any]) -> Union[torch.Tensor, List[torch.Tensor]]:
+        images = batch["image"]
+        if isinstance(images, torch.Tensor):
+            # Handle the case where input is already a batched tensor
+            return self.encode(images)
+        elif isinstance(images, list):
+            # Group images by resolution (H, W) while preserving original index
+            grouped_images: Dict[Tuple[int, int], List[Tuple[int, torch.Tensor]]] = {}
+            for i, img in enumerate(images):
+                # Assuming BCHW or CHW format, get H and W
+                resolution = (img.shape[-2], img.shape[-1])
+                if resolution not in grouped_images:
+                    grouped_images[resolution] = []
+                grouped_images[resolution].append((i, img))
+
+            # Encode batches for each resolution group
+            results = [None] * len(images) # Pre-allocate results list to maintain order
+            for resolution, indexed_tensors in grouped_images.items():
+                indices = [item[0] for item in indexed_tensors]
+                tensors = [item[1] for item in indexed_tensors]
+
+                # Stack tensors into a batch
+                input_batch = torch.stack(tensors, dim=0)
+
+                # Encode the batch
+                latent_batch = self.encode(input_batch)
+
+                # Place individual latents back into the results list at their original indices
+                for i, latent in enumerate(latent_batch):
+                    original_index = indices[i]
+                    results[original_index] = latent
+
+            return results
+        else:
+            raise TypeError(f"Unsupported type for batch['image']: {type(images)}")
+
 
 class HunyuanVideoVAE(BaseLatentVideoVAE):
     def __init__(self, args: VideoVAEArgs):
@@ -66,6 +102,8 @@ class HunyuanVideoVAE(BaseLatentVideoVAE):
             self.cfg.pretrained_model_name_or_path,
             revision=self.cfg.revision,
             variant=self.cfg.variant,
+            torch_dtype=self.dtype,
+            device_map="auto"
         ).requires_grad_(False)
 
         # Configure tiling and slicing
@@ -144,22 +182,28 @@ class FluxVAE(BaseLatentVideoVAE):
     def __init__(self, args: VideoVAEArgs):
         super().__init__(args)
         self.vae = AutoencoderKL.from_pretrained(
-            args.pretrained_model_name_or_path
+            args.pretrained_model_name_or_path,
+            torch_dtype=self.dtype,
         ).requires_grad_(False)
+        if torch.cuda.is_available():
+            self.vae = self.vae.to(torch.cuda.current_device())
+
         self.scale = 0.3611
         self.shift = 0.1159
 
     @torch.no_grad()
     def encode(self, x: torch.Tensor) -> torch.Tensor:
+        x = x.to(device=self.vae.device, dtype=self.vae.dtype)
         x = (
-            self.vae.encode(x.to(self.vae.dtype)).latent_dist.mode() - self.shift
+            self.vae.encode(x).latent_dist.mode() - self.shift
         ) * self.scale
         return x
 
     @torch.no_grad()
     def decode(self, x: torch.Tensor) -> torch.Tensor:
+        x = x.to(device=self.vae.device, dtype=self.vae.dtype)
         # Reverse the scaling and shifting from encode method
-        x = (x / self.scale + self.shift).to(self.vae.dtype)
+        x = (x / self.scale + self.shift) # .to(self.vae.dtype) # dtype conversion happens inside decode
         # Use the VAE's decode method and get the sample
         decoded = self.vae.decode(x).sample
         return decoded
@@ -180,6 +224,8 @@ class COSMOSContinuousVAE(BaseLatentVideoVAE):
         self.vae = ImageTokenizer(
             checkpoint_enc=f"{self.cfg.pretrained_model_name_or_path}/encoder.jit",
             checkpoint_dec=f"{self.cfg.pretrained_model_name_or_path}/decoder.jit",
+            device="cuda",
+            dtype=args.dtype
         ).requires_grad_(False)
 
     @torch.no_grad()
@@ -187,7 +233,7 @@ class COSMOSContinuousVAE(BaseLatentVideoVAE):
         """
         Encodes the input frames into latent representations.
         """
-        (latent,) = self.vae.encode(x.to(self.vae.dtype))
+        (latent,) = self.vae.encode(x.to(self.vae._dtype))
         return latent
 
     @torch.no_grad()
@@ -195,7 +241,7 @@ class COSMOSContinuousVAE(BaseLatentVideoVAE):
         """
         Decodes the latent representations back into reconstructed frames.
         """
-        x = self.vae.decode(x.to(self.vae.dtype))
+        x = self.vae.decode(x.to(self.vae._dtype))
         return x
 
     @torch.no_grad()

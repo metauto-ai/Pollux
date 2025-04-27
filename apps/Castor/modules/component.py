@@ -33,6 +33,7 @@ class InitStdFactor(Enum):
 class BaseTransformerArgs:
     dim: int = 512
     n_layers: int = 8
+    align_layer: int = 8
     head_dim: Optional[int] = None
     n_heads: Optional[int] = None
     n_kv_heads: Optional[int] = None

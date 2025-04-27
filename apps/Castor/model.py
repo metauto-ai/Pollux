@@ -13,6 +13,7 @@ from .modules.schedulers import RectifiedFlow, SchedulerArgs
 from .modules.text_encoder import TextEncoderArgs, create_text_encoder
 from .modules.transformer import DiffusionTransformer, TransformerArgs
 from .modules.vae import VideoVAEArgs, create_vae
+from .modules.vision_encoder import VisionEncoderArgs, create_vision_encoder
 
 logger = logging.getLogger()
 
@@ -22,10 +23,40 @@ class ModelArgs:
     diffusion_model: TransformerArgs = field(default_factory=TransformerArgs)
     with_vae: bool = False
     vae_args: VideoVAEArgs = field(default_factory=VideoVAEArgs)
+    vision_encoder_alignment: bool = False
+    vision_encoder_alignment_factor: float = 0.5
+    vision_encoder_args: VisionEncoderArgs = field(default_factory=VisionEncoderArgs)
     pre_trained_weight: Optional[str] = None
     text_encoder: TextEncoderArgs = field(default_factory=TextEncoderArgs)
     scheduler: SchedulerArgs = field(default_factory=SchedulerArgs)
     text_cfg_ratio: float = 0.1
+
+
+@dataclass
+class CastorModelOutputs:
+    batch: dict[str:any]
+    loss: torch.Tensor
+    target_loss: torch.Tensor
+    align_loss: Optional[torch.Tensor] = None
+
+
+class AlignmentProjection(nn.Module):
+    def __init__(self, input_dim: int, hidden_dim: int, encoder_dim: int):
+        super(AlignmentProjection, self).__init__()
+        
+        self.proj = nn.Sequential(
+            nn.Sequential(
+                nn.Linear(input_dim, hidden_dim),
+                nn.SiLU(),
+                nn.Linear(hidden_dim, hidden_dim),
+                nn.SiLU(),
+                nn.Linear(hidden_dim, encoder_dim),
+            )
+        )
+        
+    def forward(self, x):
+        x = self.proj(x)
+        return x
 
 
 class Castor(nn.Module):
@@ -34,28 +65,30 @@ class Castor(nn.Module):
 
     def __init__(self, args: ModelArgs):
         super().__init__()
+        self.args = args
         self.diffusion_transformer = DiffusionTransformer(args.diffusion_model)
         if args.with_vae:
             self.compressor = create_vae(args.vae_args)
+        if args.vision_encoder_alignment:
+            self.vision_encoder = create_vision_encoder(args.vision_encoder_args)
+            self.vision_encoder_proj = AlignmentProjection(
+                args.diffusion_model.dim, args.vision_encoder_args.projection_hidden_dim, self.vision_encoder.dim)
+
         self.text_encoder = create_text_encoder(args.text_encoder)
         self.scheduler = RectifiedFlow(args.scheduler)
         self.text_cfg_ratio = args.text_cfg_ratio
 
     def forward(self, batch: dict[str:any]) -> dict[str:any]:
         if hasattr(self, "compressor"):
-            if isinstance(batch["image"], list):
-                batch["latent_code"] = [
-                    self.compressor.encode(img[None])[0] for img in batch["image"]
-                ]
-            else:
-                batch["latent_code"] = self.compressor.encode(batch["image"])
+            batch["latent_code"] = self.compressor.extract_latents(batch)
+
+        if hasattr(self, "vision_encoder"):
+            batch["vision_encoder_target"] = self.vision_encoder.extract_image_representations(batch)
 
         if "text_embedding" not in batch:
             batch["text_embedding"], batch["attention_mask"] = self.text_encoder(batch)
-        conditional_signal, conditional_mask = (
-            batch["text_embedding"],
-            batch["attention_mask"],
-        )
+        
+        conditional_signal, conditional_mask = batch["text_embedding"], batch["attention_mask"]
 
         if random.random() <= self.text_cfg_ratio:
             conditional_signal = self.diffusion_transformer.negative_token.repeat(
@@ -64,7 +97,7 @@ class Castor(nn.Module):
             conditional_mask = torch.ones_like(
                 conditional_mask, dtype=conditional_signal.dtype
             )
-
+        
         latent_code = batch["latent_code"]
         noised_x, t, target = self.scheduler.sample_noised_input(latent_code)
         output = self.diffusion_transformer(
@@ -73,16 +106,56 @@ class Castor(nn.Module):
             condition=conditional_signal,
             condition_mask=conditional_mask,
         )
-        
-        batch["prediction"] = output
+
+        batch["prediction"] = output.output
         batch["target"] = target
-        if isinstance(target, list) and isinstance(output, list):
+        target_loss = self.mse_loss(output.output, batch["target"])
+
+        align_loss = None
+        if hasattr(self, "vision_encoder"):
+            vision_encoder_pred = self.vision_encoder_proj(output.align_hidden_state)
+            align_loss = self.consine_loss_with_features(
+                vision_encoder_pred, output.cond_l, output.img_size, batch["vision_encoder_target"])
+            
+        return CastorModelOutputs(
+            batch=batch,
+            loss=(target_loss + self.args.vision_encoder_alignment_factor * align_loss) if align_loss is not None else target_loss,
+            target_loss=target_loss,
+            align_loss=align_loss
+        )
+
+    def mse_loss(self, output: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+        if isinstance(target, list) or isinstance(output, list):
             loss_list = [F.mse_loss(o, t.to(o.dtype)) for o, t in zip(output, target)]
-            loss = torch.mean(torch.stack(loss_list))
+            return torch.mean(torch.stack(loss_list))
         else:
             target = target.to(output.dtype)
-            loss = F.mse_loss(output, target)
-        return batch, loss
+            return F.mse_loss(output, target)
+
+    def consine_loss_with_features(self, x: torch.Tensor, cond_l: torch.Tensor, 
+                                   img_size: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+        pH = pW = self.diffusion_transformer.patch_size
+        H, W = img_size
+        use_dynamic_res = isinstance(H, list) and isinstance(W, list)
+        
+        def _cosine_loss(x, t):
+            return 1 - F.cosine_similarity(x, t.to(x.dtype), dim=-1).mean()
+
+        if use_dynamic_res:
+            # Extract features for each image based on its resolution
+            return torch.stack([
+                _cosine_loss(
+                    x[i, cond_l[i]:cond_l[i] + (_H // pH) * (_W // pW)], 
+                    target[i]
+                )
+                for i, (_H, _W) in enumerate(zip(H, W))
+            ]).mean()
+        else:
+            # Handle condition length consistently whether it's a list or scalar
+            offset = max(cond_l) if isinstance(cond_l, list) else cond_l
+            feature_length = (H // pH) * (W // pW)
+            img_features = x[:, offset:offset + feature_length]
+            return _cosine_loss(img_features, target)
 
     def set_train(self):
         self.diffusion_transformer.train()
@@ -115,9 +188,9 @@ def get_no_recompute_ops():
 # Optional and only used for fully shard options (fsdp) is choose. Highly recommanded for large models
 def build_fsdp_grouping_plan(model_args: ModelArgs):
     group_plan: Tuple[int, bool] = []
-    if model_args.with_vae:
-        for i in range(4):  # Specific for Hunyuan's VAE
-            group_plan.append((f"compressor.vae.encoder.down_blocks.{i}", False))
+    # if model_args.with_vae:
+    #     for i in range(4):  # Specific for Hunyuan's VAE
+    #         group_plan.append((f"compressor.vae.encoder.down_blocks.{i}", False))
     for i in range(model_args.diffusion_model.n_layers):
         group_plan.append((f"diffusion_transformer.layers.{i}", False))
     group_plan.append(("diffusion_transformer.img_output", True))

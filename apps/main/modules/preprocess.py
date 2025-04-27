@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from torchvision import transforms
 from typing import Dict, Optional
 from torch import nn
+from timm.data import IMAGENET_DEFAULT_MEAN, IMAGENET_DEFAULT_STD
 
 from apps.main.utils.imagenet_classes import IMAGENET2012_CLASSES
 
@@ -60,12 +61,26 @@ class ImageProcessing(nn.Module):
 class PolluxImageProcessing:
     def __init__(self, args):
         super().__init__()
+        # Shared horizontal flip transform
+        self.random_flip = transforms.RandomHorizontalFlip()
+
+        # Separate ToTensor and Normalize for x
         self.normalize_transform = transforms.Compose(
             [
-                transforms.RandomHorizontalFlip(),
                 transforms.ToTensor(),
                 transforms.Normalize(
                     mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5], inplace=True
+                ),
+            ]
+        )
+        # Separate ToTensor and Normalize for cond_x
+        self.normalize_transform_cond = transforms.Compose(
+            [
+                transforms.ToTensor(),
+                transforms.Normalize(
+                    mean=list(IMAGENET_DEFAULT_MEAN), 
+                    std=list(IMAGENET_DEFAULT_STD), 
+                    inplace=True
                 ),
             ]
         )
@@ -74,13 +89,27 @@ class PolluxImageProcessing:
         self.max_ratio = args.max_ratio
 
     def transform(self, x: Image) -> torch.Tensor:
+        # 1. Apply center cropping
         x = center_crop_arr(x, self.image_size, self.max_ratio)
-        # TODO: cond_x should also be resized according to the max_ratio
+
+        # 2. Apply consistent random horizontal flip
+        x = self.random_flip(x) # Flip the PIL image
+
+        # 3. Create the conditional image *after* flipping
+        h, w = x.size
+        target_h = h * 224 // 256
+        target_w = w * 224 // 256
+
         cond_x = x.resize(
-            (self.condition_image_size, self.condition_image_size),
+            (target_w, target_h), # Pillow uses (width, height)
             resample=Image.BICUBIC,
         )
-        return self.normalize_transform(x), self.normalize_transform(cond_x)
+
+        # 4. Apply ToTensor and Normalize separately
+        x_normalized = self.normalize_transform(x)
+        cond_x_normalized = self.normalize_transform_cond(cond_x)
+
+        return x_normalized, cond_x_normalized
 
 
 def random_mask_images(img_tensor, mask_ratio, mask_patch, mask_all=False):

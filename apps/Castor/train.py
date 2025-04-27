@@ -8,6 +8,7 @@ import sys
 import time
 
 from omegaconf import OmegaConf
+from tqdm import tqdm
 
 cli_args = OmegaConf.from_cli()
 file_cfg = OmegaConf.load(cli_args.config)
@@ -328,6 +329,8 @@ def train(args: TrainArgs):
         time_last_log = timer()
         gc.collect()
 
+        pb = tqdm(range(args.steps))
+
         while train_state.step < args.steps:
             # We constrain train_state.acc_step to be in range 0 to args.grad_acc_steps - 1
             train_state.acc_step += 1
@@ -373,11 +376,15 @@ def train(args: TrainArgs):
                     batch["image"] = [
                         image.to(device="cuda") for image in batch["image"]
                     ]
+                    batch["image_cond"] = [
+                        image_cond.to(device="cuda") for image_cond in batch["image_cond"]
+                    ]
                     nwords_since_last_log += batch["image"][0].numel() * len(
                         batch["image"]
                     )
                 else:
                     batch["image"] = batch["image"].to(device="cuda")
+                    batch["image_cond"] = batch["image_cond"].to(device="cuda")
                     nwords_since_last_log += batch["image"].numel()
             else:
                 raise ValueError("No image or latent code in batch")
@@ -388,14 +395,34 @@ def train(args: TrainArgs):
             end_timer = torch.cuda.Event(enable_timing=True)
             start_timer.record()
 
-            _, loss = model(batch)
+            outputs = model(batch)
             # We scale loss with grad_acc_steps so the gradient is the same
             # regardless of grad_acc_steps
-            loss = loss / args.grad_acc_steps
+            loss = outputs.loss / args.grad_acc_steps
             # backward on scaled loss to create scaled gradients
             loss.backward()
             # For logging we undo that scaling
             loss = loss.detach() * args.grad_acc_steps
+
+            # Log vision encoder projection gradients specifically
+            vision_proj_grad_norm = None
+            if hasattr(model, 'vision_encoder_proj'):
+                if isinstance(model, torch.nn.parallel.DistributedDataParallel):
+                    vision_proj_params = model.module.vision_encoder_proj.parameters()
+                else:
+                    vision_proj_params = model.vision_encoder_proj.parameters()
+                
+                # Filter for parameters that have gradients
+                vision_proj_grads = [p.grad for p in vision_proj_params if p.grad is not None]
+                
+                if vision_proj_grads:
+                    vision_proj_grad_norm = torch.norm(
+                        torch.stack([torch.norm(g.detach()) for g in vision_proj_grads])
+                    ).item()
+                    
+                    # Print immediately for debugging
+                    if train_state.step % 10 == 0:  # Print more frequently than regular logging
+                        logger.info(f"Vision encoder proj grad norm: {vision_proj_grad_norm:.6f}")
 
             grad_norm = torch.nn.utils.clip_grad_norm_(
                 model.parameters(), max_norm=args.optim.clip, foreach=True
@@ -476,7 +503,13 @@ def train(args: TrainArgs):
 
                 to_sync = {}
                 to_sync["loss/out"] = loss.item()
+                to_sync["loss/target"] = outputs.target_loss.item()
+                if outputs.align_loss is not None:
+                    to_sync["loss/align"] = outputs.align_loss.item()
                 metrics.update(dist_mean_dict(to_sync))
+
+                if vision_proj_grad_norm is not None:
+                    metrics["optim/vision_proj_grad_norm"] = vision_proj_grad_norm
 
                 if get_is_master():
                     metric_logger.log(metrics)
@@ -543,6 +576,8 @@ def train(args: TrainArgs):
                     )
                 requeue_slurm_job()
                 sys.exit(0)
+            
+            pb.update(1)
 
     if not saved:
         checkpoint.save(
