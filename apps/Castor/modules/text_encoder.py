@@ -97,6 +97,7 @@ class Qwen2_5_VL(BaseTextEncoder):
         apply_liger_kernel_to_qwen2_5_vl(self.model)
         if args.layers_to_use is not None:
             self.model.layers = self.model.layers[: args.layers_to_use]
+        self.model = torch.compile(self.model)
         self.model.eval()
         self.model.requires_grad_(False)
         self.tokenizer = AutoTokenizer.from_pretrained(
