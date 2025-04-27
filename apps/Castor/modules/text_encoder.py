@@ -16,6 +16,7 @@ from transformers import (
     GemmaTokenizerFast,
     UMT5EncoderModel,
 )
+from liger_kernel.transformers import apply_liger_kernel_to_qwen2_5_vl
 
 logger = logging.getLogger()
 from typing import Optional
@@ -93,6 +94,7 @@ class Qwen2_5_VL(BaseTextEncoder):
             "Qwen/Qwen2.5-VL-3B-Instruct" if args.model_path == "" else args.model_path,
             torch_dtype=self.dtype,
         ).cuda()
+        apply_liger_kernel_to_qwen2_5_vl(self.model)
         if args.layers_to_use is not None:
             self.model.layers = self.model.layers[: args.layers_to_use]
         self.model.eval()
