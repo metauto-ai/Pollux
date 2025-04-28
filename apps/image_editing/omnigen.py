@@ -85,7 +85,7 @@ def main():
     for prompt, paths in tqdm(image_dict.items()):
         instructions = []
         for i in range(args.num_inst):
-            instructions.append(pipe.generate(prompt))
+            instructions.append(instruction_gen_model.generate(prompt))
         print (instructions)
 
         for path in tqdm(paths):
