@@ -130,6 +130,9 @@ class Qwen2_5_VL(BaseTextEncoder):
         )
 
     def __call__(self, batch: dict[str:any]) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        returns last_hidden_state and attention_mask, right padded
+        """
         assert "caption" in batch
         if isinstance(batch["caption"][0], tuple):
             batch["caption"] = [x[0] for x in batch["caption"]]
