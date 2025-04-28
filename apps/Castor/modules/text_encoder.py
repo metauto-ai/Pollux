@@ -241,7 +241,7 @@ class T5XXL(BaseTextEncoder):
 def create_text_encoder(args: TextEncoderArgs) -> BaseTextEncoder:
     if args.config_name == "ViT-B/32":
         return CLIP(args)
-    elif args.config_name == "Qwen/Qwen2.5-VL-3B-Instruct":
+    elif args.config_name == "Qwen/Qwen2.5-VL-3B-Instruct" or args.config_name == "Qwen/Qwen2.5-VL-7B-Instruct":
         return Qwen2_5_VL(args)
     elif args.config_name == "Gemma2_2B_it":
         return Gemma2_2B_it(args)
