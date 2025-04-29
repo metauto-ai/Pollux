@@ -15,7 +15,7 @@ from xformers.ops import AttentionBias, fmha
 from .component import (AdaLN, Attention, BaseTransformerArgs, FeedForward,
                         FlashAttention, ImageEmbedder, InitStdFactor, RMSNorm,
                         RotaryEmbedding1D, RotaryEmbedding2D, TimestepEmbedder,
-                        create_causal_mask, modulate_and_gate)
+                        create_causal_mask, modulate_and_gate, nearest_multiple_of_8)
 
 logger = logging.getLogger()
 
@@ -289,6 +289,7 @@ class DiffusionTransformer(BaseDiffusionTransformer):
             max_seq_len = max(
                 [cond_l[i] + (H_list[i] // pH) * (W_list[i] // pW) for i in range(bsz)]
             )
+            max_seq_len = nearest_multiple_of_8(max_seq_len)
             x_new = torch.zeros(bsz, max_seq_len, self.dim, dtype=x[0].dtype).to(
                 x[0].device
             )
@@ -334,6 +335,11 @@ class DiffusionTransformer(BaseDiffusionTransformer):
             target_dtype = x.dtype
             cond_l = condition.size(1)
 
+            # Calculate total sequence length and pad to multiple of 8
+            total_seq_len = cond_l + (H // pH) * (W // pW)
+            padded_seq_len = nearest_multiple_of_8(total_seq_len)
+            padding_len = padded_seq_len - total_seq_len
+
             # 1. Patchify and embed image tensor
             x_img_patch = (
                 x.view(B, C, H // pH, pH, W // pW, pW)
@@ -350,22 +356,34 @@ class DiffusionTransformer(BaseDiffusionTransformer):
             # Cast condition to the target dtype *before* concatenation
             condition = condition.to(target_dtype) # Shape: [B, L_cond, D]
 
-            # 3. Concatenate condition and image embeddings
+            # 3. Concatenate condition and image embeddings and add padding if needed
             x_combined = torch.cat([condition, x_img_embed], dim=1) # Shape: [B, L_cond + L_img, D]
+            if padding_len > 0:
+                padding = torch.zeros(B, padding_len, self.dim, dtype=target_dtype, device=x.device)
+                x_combined = torch.cat([x_combined, padding], dim=1)  # Shape: [B, padded_seq_len, D]
 
-            # 4. Create attention mask
+            # 4. Create attention mask with padding
             x_mask_img = torch.ones(B, (H // pH) * (W // pW), dtype=torch.bool, device=x.device)
             x_mask = torch.cat([condition_mask, x_mask_img], dim=1) # Shape: [B, L_cond + L_img]
+            if padding_len > 0:
+                padding_mask = torch.zeros(B, padding_len, dtype=torch.bool, device=x.device)
+                x_mask = torch.cat([x_mask, padding_mask], dim=1)  # Shape: [B, padded_seq_len]
 
             # 5. Prepare RoPE embeddings
             # Ensure RoPE embeddings are on the correct device and have the target dtype
             freqs_cis_cond = self.rope_embeddings_conditions.freqs_cis[:cond_l].to(device=x.device, dtype=target_dtype)
             freqs_cis_img = self.rope_embeddings_image.freqs_cis[: H // pH, : W // pW].flatten(0, 1).to(device=x.device, dtype=target_dtype)
 
-            # Concatenate RoPE embeddings
+            # Concatenate RoPE embeddings and add padding if needed
             freqs_cis = torch.cat([freqs_cis_cond, freqs_cis_img], dim=0) # Shape: [L_cond + L_img, ..., D/2, 2]
+            if padding_len > 0:
+                # Use zeros for padding in RoPE embeddings
+                padding_shape = (padding_len,) + freqs_cis.shape[1:]
+                padding_freqs = torch.zeros(padding_shape, dtype=target_dtype, device=x.device)
+                freqs_cis = torch.cat([freqs_cis, padding_freqs], dim=0)  # Shape: [padded_seq_len, ..., D/2, 2]
+                
             # Expand for batch dimension
-            freqs_cis = freqs_cis.unsqueeze(0).expand(B, -1, *([-1] * (freqs_cis.dim() - 1))) # Shape: [B, L_cond + L_img, ..., D/2, 2]
+            freqs_cis = freqs_cis.unsqueeze(0).expand(B, -1, *([-1] * (freqs_cis.dim() - 1))) # Shape: [B, padded_seq_len, ..., D/2, 2]
 
             return (
                 x_combined,

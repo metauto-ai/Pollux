@@ -506,6 +506,8 @@ def train(args: TrainArgs):
                 to_sync["loss/target"] = outputs.target_loss.item()
                 if outputs.align_loss is not None:
                     to_sync["loss/align"] = outputs.align_loss.item()
+                for key, value in outputs.forward_timings.items():
+                    to_sync[f"forward_timings/{key}"] = value
                 metrics.update(dist_mean_dict(to_sync))
 
                 if vision_proj_grad_norm is not None:

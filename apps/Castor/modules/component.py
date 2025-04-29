@@ -65,6 +65,10 @@ def cross_entropy(pred, target, **kwargs):
     )
 
 
+def nearest_multiple_of_8(x):
+    return ((x + 7) // 8) * 8
+
+
 def repeat_kv(x: torch.Tensor, n_rep: int, dim: int) -> torch.Tensor:
     """torch.repeat_interleave(x, dim=2, repeats=n_rep)"""
     assert dim == 2, "Only dim=2 is supported. Check the implementation for other dims."

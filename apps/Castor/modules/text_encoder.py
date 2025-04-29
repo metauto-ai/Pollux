@@ -12,6 +12,7 @@ from transformers import (
     AutoTokenizer,
     CLIPModel,
     CLIPTokenizer,
+    Qwen2_5_VLModel,
     Gemma2Model,
     GemmaTokenizerFast,
     UMT5EncoderModel,
@@ -89,19 +90,23 @@ class CLIP(BaseTextEncoder):
 class Qwen2_5_VL(BaseTextEncoder):
     def __init__(self, args: TextEncoderArgs):
         super().__init__(args)
-        self.model = AutoModel.from_pretrained(
-            "Qwen/Qwen2.5-VL-3B-Instruct" if args.model_path == "" else args.model_path,
-            torch_dtype=self.dtype,
-        ).cuda()
+        
+        # Configure model to load only the specified number of layers
+        model_config = {"torch_dtype": self.dtype}
         if args.layers_to_use is not None:
-            self.model.layers = self.model.layers[: args.layers_to_use]
+            model_config["num_hidden_layers"] = args.layers_to_use
+            
+        self.model = Qwen2_5_VLModel.from_pretrained(
+            "Qwen/Qwen2.5-VL-7B-Instruct" if args.model_path == "" else args.model_path,
+            **model_config,
+        ).cuda()
         self.model.eval()
         self.model.requires_grad_(False)
         self.tokenizer = AutoTokenizer.from_pretrained(
-            "Qwen/Qwen2.5-VL-3B-Instruct" if args.model_path == "" else args.model_path,
+            "Qwen/Qwen2.5-VL-7B-Instruct" if args.model_path == "" else args.model_path,
         )
         self.processor = AutoProcessor.from_pretrained(
-            "Qwen/Qwen2.5-VL-3B-Instruct" if args.model_path == "" else args.model_path,
+            "Qwen/Qwen2.5-VL-7B-Instruct" if args.model_path == "" else args.model_path,
         )
 
     def dim(self) -> int:
@@ -235,7 +240,7 @@ class T5XXL(BaseTextEncoder):
 def create_text_encoder(args: TextEncoderArgs) -> BaseTextEncoder:
     if args.config_name == "ViT-B/32":
         return CLIP(args)
-    elif args.config_name == "Qwen/Qwen2.5-VL-3B-Instruct":
+    elif args.config_name in ["Qwen/Qwen2.5-VL-3B-Instruct", "Qwen/Qwen2.5-VL-7B-Instruct"]:
         return Qwen2_5_VL(args)
     elif args.config_name == "Gemma2_2B_it":
         return Gemma2_2B_it(args)

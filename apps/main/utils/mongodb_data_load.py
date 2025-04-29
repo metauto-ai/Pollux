@@ -131,8 +131,8 @@ class MongoDBDataLoad(Dataset):
                     if partition_key % self.num_shards == self.shard_idx:
                         data.append(item)
                         # Note: used for debugging
-                        # if len(data) > 1400000:
-                        #     break
+                        if len(data) > 140000:
+                            break
             self.data = pd.DataFrame(data).reset_index()
         end_time = time.time()  # Record the end time
         # Calculate the duration in seconds
