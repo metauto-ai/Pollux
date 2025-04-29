@@ -20,7 +20,8 @@ from modules.autoencoder import AutoEncoder
 from modules.conditioner import Qwen25VL_7b_Embedder as Qwen2VLEmbedder
 from modules.model_edit import Step1XParams, Step1XEdit
 
-from instruction_generation import Llama_Instruction
+from instruction_generation import instruction_generation
+from random import choice, shuffle
 
 def cudagc():
     torch.cuda.empty_cache()
@@ -438,6 +439,7 @@ def read_result_csv(csv_path):
 def main():
 
     parser = argparse.ArgumentParser()
+    parser.add_argument('--task', type=str, required=True, default='add', help='Image editing task [add/remove/background]')
     parser.add_argument('--output_dir', type=str, required=True, help='Path to the output image directory')
     parser.add_argument('--csv_path', type=str, required=True, help='Path to the JSON file containing image names and prompts')
     parser.add_argument('--seed', type=int, default=42, help='Random seed for generation')
@@ -447,6 +449,7 @@ def main():
     parser.add_argument('--offload', action='store_true', help='Use offload for large models')
     parser.add_argument('--quantized', action='store_true', help='Use fp8 model weights')
     parser.add_argument('--num_inst', type=int, default=1, help='num instruction per prompt')
+    parser.add_argument('--num_image', type=int, default=1, help='num image generation per instruction')
     args = parser.parse_args()
 
     assert os.path.exists(args.csv_path), f"Input directory {args.csv_path} does not exist."
@@ -457,7 +460,7 @@ def main():
     csv_file = f"{args.output_dir}/step1x_edit_meta.csv"
 
     image_dict = read_result_csv(args.csv_path)
-    instruction_gen_model = Llama_Instruction()
+    instruction_gen_model = instruction_generation(args.task)
 
     image_edit = ImageGenerator(
         ae_path='/mnt/pollux/checkpoints/Step1X-Edit/vae.safetensors',
@@ -473,39 +476,44 @@ def main():
     for prompt, paths in image_dict.items():
         instructions = []
         for i in range(args.num_inst):
-            instructions.append(instruction_gen_model.generate(prompt))
+            if args.task in ['add', 'remove']:
+                instruct = instruction_gen_model.generate(prompt, args.task)
+            elif args.task in ['background']:
+                path_ = choice(paths)
+                instruct = instruction_gen_model.generate(path_, prompt, args.task)
+            instructions.append(instruct)
+                
 
         for path in tqdm(paths):
             for j, instruct in enumerate(instructions):
                 image_name = os.path.basename(path)[:4]
-                output_path = os.path.join(args.output_dir, f"{image_name}_edit_{str(j)}.png")
-
                 start_time = time.time()
+                for k in range(args.num_image):
+                    output_path = os.path.join(args.output_dir, f"{image_name}_{args.task}_{str(j)}_num_{str(k)}.png")
+                    image = image_edit.generate_image(
+                        instruct,
+                        negative_prompt="",
+                        ref_images=Image.open(path).convert("RGB"),
+                        num_samples=1,
+                        num_steps=args.num_steps,
+                        cfg_guidance=args.cfg_guidance,
+                        seed=args.seed,
+                        show_progress=True,
+                        size_level=args.size_level,
+                    )[0]
+                    
+                    print(f"Time taken: {time.time() - start_time:.2f} seconds")
+                    time_list.append(time.time() - start_time)
 
-                image = image_edit.generate_image(
-                    instruct,
-                    negative_prompt="",
-                    ref_images=Image.open(path).convert("RGB"),
-                    num_samples=1,
-                    num_steps=args.num_steps,
-                    cfg_guidance=args.cfg_guidance,
-                    seed=args.seed,
-                    show_progress=True,
-                    size_level=args.size_level,
-                )[0]
-                
-                print(f"Time taken: {time.time() - start_time:.2f} seconds")
-                time_list.append(time.time() - start_time)
+                    image.save(
+                        os.path.join(output_path), lossless=True
+                    )
 
-                image.save(
-                    os.path.join(output_path), lossless=True
-                )
+                    row = (f"{prompt}", f"{instruct}" ,f"{path}", f"{output_path}")
 
-                row = (f"{prompt}", f"{instruct}" ,f"{path}", f"{output_path}")
-
-                with open(csv_file, mode='a', newline='', encoding='utf-8') as file:
-                    writer = csv.writer(file)
-                    writer.writerow(row)
+                    with open(csv_file, mode='a', newline='', encoding='utf-8') as file:
+                        writer = csv.writer(file)
+                        writer.writerow(row)
 
 
     print(f'average time for {args.output_dir}: ', sum(time_list[1:]) / len(time_list[1:]))
@@ -513,6 +521,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
     """
@@ -535,47 +544,85 @@ if __name__ == "__main__":
         cp Step1X-Edit/sampling.py ./
         cp -r Step1X-Edit/modules/ ./
 
-    # Example
+    # Example 1
 
-    # Input
+        # Input
 
-    prompt = 'a cat'
-    image_path = '/mnt/pollux/wentian/image_edit/cat.png'
-    instruction = [
-                "add a colorful rainbow",
-                "add a dog and a cat",
-                "add a flying saucer",
-                "Make it wear a helmet",
-    ]
-    image_edit = ImageGenerator(
-        ae_path='/mnt/pollux/checkpoints/Step1X-Edit/vae.safetensors',
-        dit_path='/mnt/pollux/checkpoints/Step1X-Edit/step1x-edit-i1258.safetensors',
-        qwen2vl_model_path='/mnt/pollux/checkpoints/Qwen2.5-VL-7B-Instruct/',
-        max_length=640,
-        quantized=False,
-        offload=False,
-    )
+        prompt = 'a cat'
+        image_path = '/mnt/pollux/wentian/image_edit/cat.png'
+        instruction = [
+                    "add a colorful rainbow",
+                    "add a dog and a cat",
+                    "add a flying saucer",
+                    "Make it wear a helmet",
+        ]
+        image_edit = ImageGenerator(
+            ae_path='/mnt/pollux/checkpoints/Step1X-Edit/vae.safetensors',
+            dit_path='/mnt/pollux/checkpoints/Step1X-Edit/step1x-edit-i1258.safetensors',
+            qwen2vl_model_path='/mnt/pollux/checkpoints/Qwen2.5-VL-7B-Instruct/',
+            max_length=640,
+            quantized=False,
+            offload=False,
+        )
 
-    for i, instruct in enumerate(instruction):
-        save_path = f'/mnt/pollux/wentian/image_edit/cat_edit_{str(i)}.png'
-        image = image_edit.generate_image(
-            instruct,
-            negative_prompt="",
-            ref_images=Image.open(image_path).convert("RGB"),
-            num_samples=1,
-            num_steps=28,
-            cfg_guidance=6.0,
-            seed=1234,
-            show_progress=True,
-            size_level=1024,
-        )[0]
-        image.save(save_path, lossless=True)
+        for i, instruct in enumerate(instruction):
+            save_path = f'/mnt/pollux/wentian/image_edit/cat_edit_{str(i)}.png'
+            image = image_edit.generate_image(
+                instruct,
+                negative_prompt="",
+                ref_images=Image.open(image_path).convert("RGB"),
+                num_samples=1,
+                num_steps=28,
+                cfg_guidance=6.0,
+                seed=1234,
+                show_progress=True,
+                size_level=1024,
+            )[0]
+            image.save(save_path, lossless=True)
 
-    # CUDA_VISIBLE_DEVICES=0 python step1x_edit.py 
+        # CUDA_VISIBLE_DEVICES=0 python step1x_edit.py 
 
-    # Output:
-        /mnt/pollux/wentian/image_edit/cat_edit_0.png
-        /mnt/pollux/wentian/image_edit/cat_edit_1.png
-        /mnt/pollux/wentian/image_edit/cat_edit_2.png
-        /mnt/pollux/wentian/image_edit/cat_edit_3.png
+        # Output:
+            /mnt/pollux/wentian/image_edit/cat_edit_0.png
+            /mnt/pollux/wentian/image_edit/cat_edit_1.png
+            /mnt/pollux/wentian/image_edit/cat_edit_2.png
+            /mnt/pollux/wentian/image_edit/cat_edit_3.png
+
+    # Example 2
+
+        # Input
+
+            prompt = 'A cute creature sits at the beach.'
+            image_path = '/mnt/pollux/wentian/image_edit/duck.jpeg'
+            instruction = "change the beach to a snowy mountain landscape"
+            image_edit = ImageGenerator(
+                ae_path='/mnt/pollux/checkpoints/Step1X-Edit/vae.safetensors',
+                dit_path='/mnt/pollux/checkpoints/Step1X-Edit/step1x-edit-i1258.safetensors',
+                qwen2vl_model_path='/mnt/pollux/checkpoints/Qwen2.5-VL-7B-Instruct/',
+                max_length=640,
+                quantized=False,
+                offload=False,
+            )
+            for i in range(4):
+                save_path = f'/mnt/pollux/wentian/image_edit/duck_edit_{str(i)}.png'
+                image = image_edit.generate_image(
+                    instruction,
+                    negative_prompt="",
+                    ref_images=Image.open(image_path).convert("RGB"),
+                    num_samples=1,
+                    num_steps=28,
+                    cfg_guidance=1.5,
+                    seed=42,
+                    show_progress=True,
+                    size_level=1024,
+                )[0]
+                image.save(save_path, lossless=True)
+
+        # CUDA_VISIBLE_DEVICES=0 python step1x_edit.py 
+
+        # Output:
+            /mnt/pollux/wentian/image_edit/duck_edit_0.png
+            /mnt/pollux/wentian/image_edit/duck_edit_1.png
+            /mnt/pollux/wentian/image_edit/duck_edit_2.png
+            /mnt/pollux/wentian/image_edit/duck_edit_3.png
     """
