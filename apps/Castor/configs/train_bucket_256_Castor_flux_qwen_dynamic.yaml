@@ -56,7 +56,7 @@ model:
         gen_seqlen: 32
         condition_seqlen: 256
         norm_eps: 1e-5
-        condition_dim: 2048
+        condition_dim: 3584 # 2048 - 3b qwen, 3584 - 7b qwen
         qk_norm: false
         liger_rms_norm: true
         liger_ffn: true
