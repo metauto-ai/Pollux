@@ -5,7 +5,6 @@ from enum import Enum
 from typing import Optional, Tuple, Union
 
 import torch
-from flash_attn import flash_attn_varlen_func
 from flash_attn.bert_padding import (index_first_axis, pad_input,  # noqa
                                      unpad_input)
 from torch import nn
@@ -16,6 +15,12 @@ from torch.nn.attention.flex_attention import (BlockMask, _mask_mod_signature,
 from xformers.ops import AttentionBias, fmha
 from liger_kernel.transformers import LigerSwiGLUMLP, LigerRMSNorm, liger_rotary_pos_emb
 from types import SimpleNamespace
+
+try:
+    from flash_attn_interface import flash_attn_func
+except ImportError:
+    print("flash_attn_3 not found, using flash_attn_2")
+    from flash_attn import flash_attn_func
 
 from . import probe
 
@@ -652,31 +657,28 @@ class FlashAttention(nn.Module):
 
         if dtype in [torch.float16, torch.bfloat16]:
             # begin var_len flash attn
-            (
-                query_states,
-                key_states,
-                value_states,
-                indices_q,
-                cu_seq_lens,
-                max_seq_lens,
-            ) = self._upad_input(xq, xk, xv, x_mask, seqlen)
+            # (
+            #     query_states,
+            #     key_states,
+            #     value_states,
+            #     indices_q,
+            #     cu_seq_lens,
+            #     max_seq_lens,
+            # ) = self._upad_input(xq, xk, xv, x_mask, seqlen)
 
-            cu_seqlens_q, cu_seqlens_k = cu_seq_lens
-            max_seqlen_in_batch_q, max_seqlen_in_batch_k = max_seq_lens
+            # cu_seqlens_q, cu_seqlens_k = cu_seq_lens
+            # max_seqlen_in_batch_q, max_seqlen_in_batch_k = max_seq_lens
 
-            attn_output_unpad = flash_attn_varlen_func(
-                query_states,
-                key_states,
-                value_states,
-                cu_seqlens_q=cu_seqlens_q,
-                cu_seqlens_k=cu_seqlens_k,
-                max_seqlen_q=max_seqlen_in_batch_q,
-                max_seqlen_k=max_seqlen_in_batch_k,
-                dropout_p=0.0,
+            output, _ = flash_attn_func(
+                xq,
+                xk,
+                xv,
                 causal=False,
                 softmax_scale=softmax_scale,
             )
-            output = pad_input(attn_output_unpad, indices_q, bsz, seqlen)
+
+            # print("OUTPUT", attn_output_unpad)
+            # output = pad_input(attn_output_unpad, indices_q, bsz, seqlen)
             # end var_len_flash_attn
 
         else:
