@@ -38,7 +38,6 @@ class CastorModelOutputs:
     loss: torch.Tensor
     target_loss: torch.Tensor
     align_loss: Optional[torch.Tensor] = None
-    forward_timings: Optional[dict[str:float]] = None
 
 class AlignmentProjection(nn.Module):
     def __init__(self, input_dim: int, hidden_dim: int, encoder_dim: int):
@@ -79,15 +78,12 @@ class Castor(nn.Module):
         self.text_cfg_ratio = args.text_cfg_ratio
 
     def forward(self, batch: dict[str:any]) -> dict[str:any]:
-        # Latent extraction timing
         if hasattr(self, "compressor"):
             batch["latent_code"] = self.compressor.extract_latents(batch)
 
-        # Vision encoder timing
         if hasattr(self, "vision_encoder"):
             batch["vision_encoder_target"] = self.vision_encoder.extract_image_representations(batch)
 
-        # Text embedding timing
         if "text_embedding" not in batch:
             batch["text_embedding"], batch["attention_mask"] = self.text_encoder(batch)
         
@@ -105,7 +101,6 @@ class Castor(nn.Module):
         
         noised_x, t, target = self.scheduler.sample_noised_input(latent_code)
         
-        # Diffusion transformer timing
         output = self.diffusion_transformer(
             x=noised_x,
             time_steps=t,
@@ -116,7 +111,6 @@ class Castor(nn.Module):
         batch["prediction"] = output.output
         batch["target"] = target
         
-        # Loss calculation timing
         target_loss = self.mse_loss(output.output, batch["target"])
         
         align_loss = None
@@ -124,9 +118,6 @@ class Castor(nn.Module):
             vision_encoder_pred = self.vision_encoder_proj(output.align_hidden_state)
             align_loss = self.consine_loss_with_features(
                 vision_encoder_pred, output.cond_l, output.img_size, batch["vision_encoder_target"])
-        
-        # Synchronize once at the end and calculate all timings
-        torch.cuda.synchronize()
         
         return CastorModelOutputs(
             batch=batch,
