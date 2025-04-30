@@ -39,6 +39,7 @@ class CastorModelOutputs:
     target_loss: torch.Tensor
     align_loss: Optional[torch.Tensor] = None
 
+
 class AlignmentProjection(nn.Module):
     def __init__(self, input_dim: int, hidden_dim: int, encoder_dim: int):
         super(AlignmentProjection, self).__init__()
@@ -98,32 +99,29 @@ class Castor(nn.Module):
             )
         
         latent_code = batch["latent_code"]
-        
         noised_x, t, target = self.scheduler.sample_noised_input(latent_code)
-        
         output = self.diffusion_transformer(
             x=noised_x,
             time_steps=t,
             condition=conditional_signal,
             condition_mask=conditional_mask,
         )
-        
+
         batch["prediction"] = output.output
         batch["target"] = target
-        
         target_loss = self.mse_loss(output.output, batch["target"])
-        
+
         align_loss = None
         if hasattr(self, "vision_encoder"):
             vision_encoder_pred = self.vision_encoder_proj(output.align_hidden_state)
             align_loss = self.consine_loss_with_features(
                 vision_encoder_pred, output.cond_l, output.img_size, batch["vision_encoder_target"])
-        
+            
         return CastorModelOutputs(
             batch=batch,
             loss=(target_loss + self.args.vision_encoder_alignment_factor * align_loss) if align_loss is not None else target_loss,
             target_loss=target_loss,
-            align_loss=align_loss,
+            align_loss=align_loss
         )
 
     def mse_loss(self, output: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
