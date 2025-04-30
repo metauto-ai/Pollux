@@ -131,8 +131,8 @@ class MongoDBDataLoad(Dataset):
                     if partition_key % self.num_shards == self.shard_idx:
                         data.append(item)
                         # Note: used for debugging
-                        if len(data) > 140000:
-                            break
+                        # if len(data) > 1400000:
+                        #     break
             self.data = pd.DataFrame(data).reset_index()
         end_time = time.time()  # Record the end time
         # Calculate the duration in seconds
@@ -224,7 +224,7 @@ class MongoDBImageDataLoad(MongoDBDataLoad):
                 if isinstance(e, requests.Timeout):
                     logging.debug(f"Timeout downloading image: {imageUrl}")
                 elif isinstance(e, requests.HTTPError):
-                    logging.debug(f"HTTP error ({response.status_code}) for: {imageUrl}")
+                    logging.debug(f"HTTP error ({head_response.status_code}) for: {imageUrl}")
                 elif isinstance(e, requests.ConnectionError):
                     logging.debug(f"Connection error for: {imageUrl}")
                 else:
