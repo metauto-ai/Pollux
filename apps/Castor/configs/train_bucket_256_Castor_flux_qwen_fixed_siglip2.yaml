@@ -4,8 +4,8 @@
 version: v1.0
 # From now on, start to align train, data, and model setting with train stage (just finish refactor for dara)
 train_stage: stage-1 # options: preliminary, pretraining, posttraining; aligned with data setting
-name: siglip2_flux_qwen_fixed_bs128 #used for local dump and wandb log
-output_dir: /mnt/pollux/checkpoints/chandan
+name: siglip2_flux_qwen_fixed_bs128_fa3_window128 #used for local dump and wandb log
+output_dir: /mnt/pollux/checkpoints/aj
 dump_dir: '' # No need now
 steps: 500000
 seed: 777
@@ -17,10 +17,10 @@ optim:
     weight_decay: 0.01
 
 distributed:
-    gpus: "0,1,2,3"
+    gpus: "0,1,2,3,4,5,6,7"
     # gpus: "4,5,6,7"
     fsdp_type: full_shard
-    dp_shard: 4
+    dp_shard: 8
     dp_replicate: 1
     compile: false
     model_dtype: bf16 # options: `fb8` is only supported by H100
@@ -49,6 +49,8 @@ model:
         n_heads: 32
         n_kv_heads: 8
         n_layers: 24
+        attention_window: [128, 128] # [-1, -1] for full attention
+        full_attention_layers: [0,1,4,8,12,16,20,23,24]
         align_layer: 8
         time_step_dim: *hidden_dim
         patch_size: 2
@@ -75,7 +77,7 @@ model:
     vision_encoder_alignment: true
     vision_encoder_args:
         encoder_name: "siglip2"
-        weight_path: "google/siglip2-base-patch16-naflex"
+        weight_path: "/mnt/pollux/checkpoints/siglip2-base-patch16-naflex"
         projection_hidden_dim: *hidden_dim
     
     text_cfg_ratio: 0.1

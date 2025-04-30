@@ -501,6 +501,7 @@ class FlashAttention(nn.Module):
         qk_norm: bool,
         liger_rms_norm: bool = True,
         liger_rotary_emb: bool = True,
+        window_size: Tuple[int, int] = (-1, -1),
     ):
         """
         Initialize the Attention module.
@@ -519,6 +520,7 @@ class FlashAttention(nn.Module):
         self.head_dim = dim // n_heads
         self.liger_rotary_emb = liger_rotary_emb
         self.liger_rms_norm = liger_rms_norm    
+        self.window_size = window_size
 
         self.wq = nn.Linear(
             dim,
@@ -627,7 +629,7 @@ class FlashAttention(nn.Module):
         # Note: mask sure the input is same as original Attention
         tok_idx: Optional[torch.Tensor] = None,
         mask: Optional[Union[BlockMask, AttentionBias, str]] = None,
-        attn_impl: str = "sdpa",
+        attn_impl: str = "sdpa"
     ) -> torch.Tensor:
         """
 
@@ -675,6 +677,7 @@ class FlashAttention(nn.Module):
                 xv,
                 causal=False,
                 softmax_scale=softmax_scale,
+                window_size=self.window_size,
             )
 
             # print("OUTPUT", attn_output_unpad)
@@ -810,7 +813,7 @@ class TransformerBlock(nn.Module):
             args.n_heads is not None
         ), "Should specify at least head_dim or n_heads"
         self.head_dim = args.head_dim or args.dim // args.n_heads
-        self.n_heads = args.n_heads or args.dim // args.head_dim
+        self.n_heads = args.n_heads or args.dim // self.head_dim
         self.n_kv_heads = args.n_kv_heads or self.n_heads
 
         assert args.n_heads % self.n_kv_heads == 0
