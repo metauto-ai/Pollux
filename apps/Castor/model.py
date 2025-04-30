@@ -79,35 +79,17 @@ class Castor(nn.Module):
         self.text_cfg_ratio = args.text_cfg_ratio
 
     def forward(self, batch: dict[str:any]) -> dict[str:any]:
-        # Create timing events
-        events = {}
-        timings = {}
-        
-        # Create start/end events for each operation we want to time
-        ops = ["latent_extraction", "vision_encoder", "text_embedding", 
-               "noise_sampling", "diffusion_transformer", "target_loss", "alignment_loss"]
-        
-        for op in ops:
-            events[f"{op}_start"] = torch.cuda.Event(enable_timing=True)
-            events[f"{op}_end"] = torch.cuda.Event(enable_timing=True)
-        
         # Latent extraction timing
         if hasattr(self, "compressor"):
-            events["latent_extraction_start"].record()
             batch["latent_code"] = self.compressor.extract_latents(batch)
-            events["latent_extraction_end"].record()
 
         # Vision encoder timing
         if hasattr(self, "vision_encoder"):
-            events["vision_encoder_start"].record()
             batch["vision_encoder_target"] = self.vision_encoder.extract_image_representations(batch)
-            events["vision_encoder_end"].record()
 
         # Text embedding timing
         if "text_embedding" not in batch:
-            events["text_embedding_start"].record()
             batch["text_embedding"], batch["attention_mask"] = self.text_encoder(batch)
-            events["text_embedding_end"].record()
         
         conditional_signal, conditional_mask = batch["text_embedding"], batch["attention_mask"]
 
@@ -121,50 +103,36 @@ class Castor(nn.Module):
         
         latent_code = batch["latent_code"]
         
-        events["noise_sampling_start"].record()
         noised_x, t, target = self.scheduler.sample_noised_input(latent_code)
-        events["noise_sampling_end"].record()
         
         # Diffusion transformer timing
-        events["diffusion_transformer_start"].record()
         output = self.diffusion_transformer(
             x=noised_x,
             time_steps=t,
             condition=conditional_signal,
             condition_mask=conditional_mask,
         )
-        events["diffusion_transformer_end"].record()
-
+        
         batch["prediction"] = output.output
         batch["target"] = target
         
         # Loss calculation timing
-        events["target_loss_start"].record()
         target_loss = self.mse_loss(output.output, batch["target"])
-        events["target_loss_end"].record()
-
+        
         align_loss = None
         if hasattr(self, "vision_encoder"):
-            events["alignment_loss_start"].record()
             vision_encoder_pred = self.vision_encoder_proj(output.align_hidden_state)
             align_loss = self.consine_loss_with_features(
                 vision_encoder_pred, output.cond_l, output.img_size, batch["vision_encoder_target"])
-            events["alignment_loss_end"].record()
         
         # Synchronize once at the end and calculate all timings
         torch.cuda.synchronize()
-        
-        for op in ops:
-            if f"{op}_start" in events and f"{op}_end" in events:
-                # Convert to milliseconds to seconds
-                timings[op] = events[f"{op}_start"].elapsed_time(events[f"{op}_end"]) / 1000
         
         return CastorModelOutputs(
             batch=batch,
             loss=(target_loss + self.args.vision_encoder_alignment_factor * align_loss) if align_loss is not None else target_loss,
             target_loss=target_loss,
             align_loss=align_loss,
-            forward_timings=timings
         )
 
     def mse_loss(self, output: torch.Tensor, target: torch.Tensor) -> torch.Tensor:

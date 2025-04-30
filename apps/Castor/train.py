@@ -419,10 +419,6 @@ def train(args: TrainArgs):
                     vision_proj_grad_norm = torch.norm(
                         torch.stack([torch.norm(g.detach()) for g in vision_proj_grads])
                     ).item()
-                    
-                    # Print immediately for debugging
-                    if train_state.step % 10 == 0:  # Print more frequently than regular logging
-                        logger.info(f"Vision encoder proj grad norm: {vision_proj_grad_norm:.6f}")
 
             grad_norm = torch.nn.utils.clip_grad_norm_(
                 model.parameters(), max_norm=args.optim.clip, foreach=True
@@ -506,8 +502,6 @@ def train(args: TrainArgs):
                 to_sync["loss/target"] = outputs.target_loss.item()
                 if outputs.align_loss is not None:
                     to_sync["loss/align"] = outputs.align_loss.item()
-                for key, value in outputs.forward_timings.items():
-                    to_sync[f"forward_timings/{key}"] = value
                 metrics.update(dist_mean_dict(to_sync))
 
                 if vision_proj_grad_norm is not None:
