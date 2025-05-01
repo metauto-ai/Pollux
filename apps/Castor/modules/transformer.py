@@ -35,7 +35,13 @@ class TransformerArgs(BaseTransformerArgs):
     qk_norm: bool = True
     shared_adaLN: bool = False
     attention_window: Tuple[int, int] = (-1, -1)
-    full_attention_layers: List[int] = field(default_factory=list)
+    full_attention_layers: Optional[List[int]] = None
+
+    def __post_init__(self):
+        # Set the default for full_attention_layers based on instance n_layers
+        # only if it wasn't provided during initialization (i.e., it's still None)
+        if self.full_attention_layers is None:
+            self.full_attention_layers = list(range(self.n_layers))
 
 
 class DiffusionTransformerBlock(nn.Module):
