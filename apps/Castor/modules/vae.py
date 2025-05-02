@@ -36,25 +36,25 @@ class BaseLatentVideoVAE:
 
     def enable_vae_slicing(self):
         logger.warning(
-            f"Useless func call, {self.cfg.model_name} TVAE model doesn't support slicing !"
+            f"Useless func call, {self.cfg.vae_type} TVAE model doesn't support slicing !"
         )
         pass
 
     def disable_vae_slicing(self):
         logger.warning(
-            f"Useless func call, {self.cfg.model_name} TVAE model doesn't support slicing !"
+            f"Useless func call, {self.cfg.vae_type} TVAE model doesn't support slicing !"
         )
         pass
 
     def enable_vae_tiling(self):
         logger.warning(
-            f"Useless func call, {self.cfg.model_name} TVAE model doesn't support tiling !"
+            f"Useless func call, {self.cfg.vae_type} TVAE model doesn't support tiling !"
         )
         pass
 
     def disable_vae_tiling(self):
         logger.warning(
-            f"Useless func call, {self.cfg.model_name} TVAE model doesn't support tiling !"
+            f"Useless func call, {self.cfg.vae_type} TVAE model doesn't support tiling !"
         )
         pass
 

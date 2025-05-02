@@ -37,12 +37,6 @@ class TransformerArgs(BaseTransformerArgs):
     attention_window: Tuple[int, int] = (-1, -1)
     full_attention_layers: Optional[List[int]] = None
 
-    def __post_init__(self):
-        # Set the default for full_attention_layers based on instance n_layers
-        # only if it wasn't provided during initialization (i.e., it's still None)
-        if self.full_attention_layers is None:
-            self.full_attention_layers = list(range(self.n_layers))
-
 
 class DiffusionTransformerBlock(nn.Module):
     def __init__(self, args: TransformerArgs):
@@ -164,6 +158,11 @@ class BaseDiffusionTransformer(nn.Module):
         self.gen_seqlen = args.gen_seqlen
         self.layers = nn.ModuleList()
         self.shared_adaLN = args.shared_adaLN
+        
+
+        if args.full_attention_layers is None:
+            args.full_attention_layers = list(range(args.n_layers))
+            
         for i in range(args.n_layers):
             layer_args = copy.deepcopy(args)
             if i in args.full_attention_layers:
