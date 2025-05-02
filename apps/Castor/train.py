@@ -329,7 +329,7 @@ def train(args: TrainArgs):
         time_last_log = timer()
         gc.collect()
 
-        pb = tqdm(range(args.steps))
+        pb = tqdm(total=args.steps, initial=train_state.step, desc="Training Steps")
 
         while train_state.step < args.steps:
             # We constrain train_state.acc_step to be in range 0 to args.grad_acc_steps - 1
