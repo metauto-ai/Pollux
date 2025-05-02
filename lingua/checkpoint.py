@@ -125,6 +125,7 @@ class CheckpointManager:
         ), f"Path {self.path} does not exist and needs to be created before using CheckpointManager (use instantiate_and_make_dir)"
 
         self.existing_saves = self.get_existing_saves()
+        self.checkpoint_future = None
 
     def get_existing_saves(self) -> List[Path]:
         folders = [
@@ -234,18 +235,26 @@ class CheckpointManager:
         # When creating directory check if only rank0 or is there other solution
         path = Path(self.path)
         curr_save_dir = self._create_folder(path, FOLDER_NAME.format(train_state.step))
-        logger.info(f"Saving to: {str(curr_save_dir)}")
+        logger.info(f"Saving asynchronously to: {str(curr_save_dir)}")
+
+        if self.checkpoint_future is not None:
+            logger.info("Waiting for previous checkpoint save to finish...")
+            self.checkpoint_future.result()
+            logger.info("Previous checkpoint save finished.")
+            self.checkpoint_future = None
 
         if dist.is_initialized():
             dist.barrier()
 
-        logger.info("Saving...")
+        logger.info("Getting state dict for async save...")
         state_dict = self.get_state_dict(model, optimizer)
-        dcp.save(state_dict, checkpoint_id=curr_save_dir)
-        logger.info("State dict saved!")
 
-        if dist.is_initialized():
-            dist.barrier()
+        logger.info("Initiating asynchronous save...")
+        self.checkpoint_future = dcp.async_save(
+            state_dict,
+            checkpoint_id=curr_save_dir,
+        )
+        logger.info("Asynchronous save initiated.")
 
         if get_is_master():
             with open(curr_save_dir / CONFIG_NAME, "w") as f:
@@ -269,9 +278,14 @@ class CheckpointManager:
 
         self.clean_up()
 
-        if dist.is_initialized():
-            dist.barrier()
         return True
+
+    def wait_for_final_save(self):
+         if self.checkpoint_future is not None:
+            logger.info("Waiting for final checkpoint save to finish...")
+            self.checkpoint_future.result()
+            logger.info("Final checkpoint save finished.")
+            self.checkpoint_future = None
 
     @torch.no_grad()
     def load(

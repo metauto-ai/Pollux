@@ -578,20 +578,34 @@ def train(args: TrainArgs):
                         args,
                         device_mesh=world_mesh,
                     )
+                # Wait for the potentially just-started async save to finish
+                logger.info("Waiting for preemption checkpoint save to complete...")
+                checkpoint.wait_for_final_save()
+                logger.info("Preemption checkpoint save complete.")
                 requeue_slurm_job()
                 sys.exit(0)
             
             pb.update(1)
 
-    if not saved:
-        checkpoint.save(
-            model,
-            optimizer,
-            train_state,
-            args,
-            device_mesh=world_mesh,
-        )
-    gc.collect()
+        pb.close()
+
+        if not saved:
+            logger.info("Performing final save after training loop...")
+            checkpoint.save(
+                model,
+                optimizer,
+                train_state,
+                args,
+                device_mesh=world_mesh,
+            )
+
+        # Wait for the last save operation (either from last step or the final one above)
+        logger.info("Waiting for final checkpoint save to complete before exiting...")
+        checkpoint.wait_for_final_save()
+        logger.info("Final checkpoint save complete.")
+
+        gc.collect()
+        logger.info("Training finished successfully.")
 
 
 def main():

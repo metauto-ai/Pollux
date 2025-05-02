@@ -4,8 +4,8 @@
 version: v1.0
 # From now on, start to align train, data, and model setting with train stage (just finish refactor for dara)
 train_stage: stage-1 # options: preliminary, pretraining, posttraining; aligned with data setting
-name: siglip2_flux_qwen_fixed_bs128 #used for local dump and wandb log
-output_dir: /mnt/pollux/checkpoints/chandan
+name: test #used for local dump and wandb log
+output_dir: /mnt/pollux/checkpoints/aj
 dump_dir: '' # No need now
 steps: 500000
 seed: 777
@@ -113,7 +113,7 @@ profiling:
 
 checkpoint:
     dump:
-        every: 2500
+        every: 100
         keep: 0 # Don't remove the ckpt
     eval:
         every: 5000
