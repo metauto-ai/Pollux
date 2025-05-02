@@ -113,7 +113,7 @@ profiling:
 
 checkpoint:
     dump:
-        every: 100
+        every: 2500
         keep: 0 # Don't remove the ckpt
     eval:
         every: 5000
