@@ -4,8 +4,8 @@
 version: v1.0
 # From now on, start to align train, data, and model setting with train stage (just finish refactor for dara)
 train_stage: stage-1 # options: preliminary, pretraining, posttraining; aligned with data setting
-name: qwen2_5_adaLN #used for local dump and wandb log
-output_dir: /mnt/pollux/checkpoints/haozhe
+name: siglip2_flux_qwen_fixed_bs128 #used for local dump and wandb log
+output_dir: /mnt/pollux/checkpoints/chandan
 dump_dir: '' # No need now
 steps: 500000
 seed: 777
@@ -18,6 +18,7 @@ optim:
 
 distributed:
     gpus: "0,1,2,3"
+    # gpus: "4,5,6,7"
     fsdp_type: full_shard
     dp_shard: 4
     dp_replicate: 1
@@ -42,13 +43,14 @@ model:
         mode_scale: 1.29
         use_dynamic_shifting: true
     diffusion_model:
-        dim: 2048
+        dim: &hidden_dim 2048
         ffn_dim_multiplier: 1.5
         multiple_of: 256
         n_heads: 32
         n_kv_heads: 8
         n_layers: 24
-        time_step_dim: 2048
+        align_layer: 8
+        time_step_dim: *hidden_dim
         patch_size: 2
         in_channels: 16
         out_channels: 16
@@ -56,26 +58,32 @@ model:
         gen_seqlen: 32
         condition_seqlen: 256
         norm_eps: 1e-5
-        condition_dim: 2048
+        condition_dim: *hidden_dim
         qk_norm: false
         liger_rms_norm: true
         liger_ffn: true
         liger_rotary_emb: false
         shared_adaLN: true
-    text_cfg_ratio: 0.1
+    
     with_vae: true
     vae_args:
         vae_type: "flux"
         pretrained_model_name_or_path: '/mnt/pollux/checkpoints/FLUX.1-dev/vae'
         enable_tiling: false
         enable_slicing: false
+    
+    vision_encoder_alignment: true
+    vision_encoder_args:
+        encoder_name: "siglip2"
+        weight_path: "google/siglip2-base-patch16-naflex"
+        projection_hidden_dim: *hidden_dim
+    
+    text_cfg_ratio: 0.1
     text_encoder:
         config_name: "Qwen/Qwen2.5-VL-3B-Instruct"
         dtype: "bf16"
         text_seqlen: 256
         model_path: "/mnt/pollux/checkpoints/Qwen2.5-VL-3B-Instruct"
-        # qwen has 36 layers, we can use the first 3/4 layers
-        layers_to_use: 30
 data:  
   - stage: stage-1
     id: 1
@@ -84,7 +92,7 @@ data:
     source: mongodb
     image_size: 256
     condition_image_size: 256
-    max_ratio: 2.0
+    max_ratio: 1.0
     partition_key: 'partition_key'
     retries: 3
     extract_field:
@@ -93,7 +101,7 @@ data:
     root_dir: "/mnt/pollux/mongo_db_cache_train"
     dataloader:
         prefetch_factor: 2
-        batch_size: 16
+        batch_size: 32
         num_workers: 8
         seed: 1024
         shuffle: True
@@ -114,7 +122,7 @@ checkpoint:
 logging:
     freq: 100
     wandb:
-        project: Pollux
+        project: chandan_exp
         entity: metauto
         name: ''
 

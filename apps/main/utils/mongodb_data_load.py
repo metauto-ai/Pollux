@@ -28,11 +28,14 @@ import boto3
 import wandb
 from apps.main.utils.dict_tensor_data_load import DictTensorBatchIterator
 import ijson
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 logging.getLogger("pymongo").setLevel(logging.WARNING)
 boto3.set_stream_logger("boto3", level=logging.WARNING)
 boto3.set_stream_logger("botocore", level=logging.WARNING)
 logging.getLogger("s3fs").setLevel(logging.WARNING)
+logging.getLogger("urllib3").setLevel(logging.ERROR)
 Image.MAX_IMAGE_PIXELS = None
 from apps.main.utils.env import env
 
@@ -128,8 +131,8 @@ class MongoDBDataLoad(Dataset):
                     if partition_key % self.num_shards == self.shard_idx:
                         data.append(item)
                         # Note: used for debugging
-                        # if len(data) > 10000:
-                        #     break
+                        if len(data) > 1400000:
+                            break
             self.data = pd.DataFrame(data).reset_index()
         end_time = time.time()  # Record the end time
         # Calculate the duration in seconds
@@ -171,9 +174,21 @@ class MongoDBImageDataLoad(MongoDBDataLoad):
         self.extract_field = extract_field
         self.retries = args.retries
         self.place_holder_image = Image.new("RGB", (args.image_size, args.image_size))
+        
+        # Create a session with connection pooling and retry strategy
+        self.session = requests.Session()
+        retries = Retry(
+            total=self.retries,
+            backoff_factor=0.5,  # Exponential backoff
+            status_forcelist=[429, 500, 502, 503, 504],  # Retry on these status codes
+            allowed_methods=["GET"]
+        )
+        # Increase max connections per host
+        adapter = HTTPAdapter(max_retries=retries, pool_connections=200, pool_maxsize=200)
+        self.session.mount('http://', adapter)
+        self.session.mount('https://', adapter)
 
     def __getitem__(self, idx: int) -> dict[str, Any]:
-
         # sample = self.data[idx]
         # for pd data
         sample = self.data.iloc[idx]  # Use iloc for row access in DataFrame
@@ -187,32 +202,47 @@ class MongoDBImageDataLoad(MongoDBDataLoad):
             logging.warning(f"Expected string but got {type(caption)}:{caption}")
             caption = ""
         return_sample["caption"] = caption
+        
         for k, v in self.extract_field.items():
             imageUrl = sample[k]
-            for attempt in range(self.retries):
-                try:
-                    response = requests.get(imageUrl, timeout=2)
-                    image = Image.open(io.BytesIO(response.content)).convert("RGB")
-                    if random.random() > 0.9:
-                        self.place_holder_image = (
-                            image  # frequently update the placeholder image
-                        )
-                    return_sample[v], return_sample[f"{v}_cond"] = (
-                        self.image_processing.transform(image)
-                    )
+            try:
+                head_response = self.session.head(imageUrl, timeout=1)
+                if head_response.status_code != 200:
+                    raise requests.HTTPError(f"HEAD request failed with status code {head_response.status_code}")
 
-                    break
-                except Exception as e:
-                    if attempt == self.retries - 1:
-                        # logging.warning(f"Error loading image: {e}")
-                        image = self.place_holder_image
-                        return_sample[v], return_sample[f"{v}_cond"] = (
-                            self.image_processing.transform(image)
-                        )
-                        return_sample["_id"] = "-1"
-                        return_sample["caption"] = ""
+                # Use session and increase timeout
+                response = self.session.get(imageUrl, timeout=2, stream=True)
+                response.raise_for_status()  # Raise an exception for HTTP errors
+                
+                image = Image.open(io.BytesIO(response.content)).convert("RGB")
+                if random.random() > 0.9:
+                    self.place_holder_image = image  # frequently update the placeholder image
+                
+                return_sample[v], return_sample[f"{v}_cond"] = self.image_processing.transform(image)
+            except (requests.RequestException, IOError) as e:
+                # Handle all request and image processing errors
+                if isinstance(e, requests.Timeout):
+                    logging.debug(f"Timeout downloading image: {imageUrl}")
+                elif isinstance(e, requests.HTTPError):
+                    logging.debug(f"HTTP error ({head_response.status_code}) for: {imageUrl}")
+                elif isinstance(e, requests.ConnectionError):
+                    logging.debug(f"Connection error for: {imageUrl}")
+                else:
+                    logging.debug(f"Error processing image: {str(e)}")
+                
+                # Fall back to placeholder image
+                image = self.place_holder_image
+                return_sample[v], return_sample[f"{v}_cond"] = self.image_processing.transform(image)
+                return_sample["_id"] = "-1"
+                return_sample["caption"] = ""
+                
         return return_sample
     
+    def __del__(self):
+        # Clean up the session when the dataset object is destroyed
+        if hasattr(self, 'session'):
+            self.session.close()
+            
     def collate_fn(self, batch):
         return_batch = {}
         for k in batch[0].keys():
@@ -360,3 +390,16 @@ class MongoDBCaptionDataLoad(MongoDBDataLoad):
                 caption = ""
             return_sample[v] = caption
         return return_sample
+
+    def collate_fn(self, batch):
+        return_batch = {}
+        for k in batch[0].keys():
+            items = [item[k] for item in batch]
+            # Check if all items are tensors and have the same shape
+            if all(isinstance(item, torch.Tensor) for item in items) and all(item.shape == items[0].shape for item in items):
+                # Stack tensors if they all have the same shape
+                return_batch[k] = torch.stack(items, dim=0)
+            else:
+                # Keep as list if not tensors or different shapes
+                return_batch[k] = items
+        return return_batch
