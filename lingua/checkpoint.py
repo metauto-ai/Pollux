@@ -237,11 +237,10 @@ class CheckpointManager:
         curr_save_dir = self._create_folder(path, FOLDER_NAME.format(train_state.step))
         logger.info(f"Saving asynchronously to: {str(curr_save_dir)}")
 
-        if self.checkpoint_future is not None:
+        if self.checkpoint_future is not None and not self.checkpoint_future.done():
             logger.info("Waiting for previous checkpoint save to finish...")
             self.checkpoint_future.result()
             logger.info("Previous checkpoint save finished.")
-            self.checkpoint_future = None
 
         if dist.is_initialized():
             dist.barrier()
@@ -281,11 +280,10 @@ class CheckpointManager:
         return True
 
     def wait_for_final_save(self):
-         if self.checkpoint_future is not None:
+         if self.checkpoint_future is not None and not self.checkpoint_future.done():
             logger.info("Waiting for final checkpoint save to finish...")
             self.checkpoint_future.result()
             logger.info("Final checkpoint save finished.")
-            self.checkpoint_future = None
 
     @torch.no_grad()
     def load(
