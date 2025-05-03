@@ -329,7 +329,7 @@ def train(args: TrainArgs):
         time_last_log = timer()
         gc.collect()
 
-        pb = tqdm(range(args.steps))
+        pb = tqdm(total=args.steps, initial=train_state.step, desc="Training Steps")
 
         while train_state.step < args.steps:
             # We constrain train_state.acc_step to be in range 0 to args.grad_acc_steps - 1
@@ -533,6 +533,7 @@ def train(args: TrainArgs):
                 )
 
             saved = False
+            
             if every_n_steps(
                 train_state, args.checkpoint.dump.every, acc_step=0
             ) or every_n_steps(train_state, args.checkpoint.eval.every, acc_step=0):
@@ -574,20 +575,34 @@ def train(args: TrainArgs):
                         args,
                         device_mesh=world_mesh,
                     )
+                # Wait for the potentially just-started async save to finish
+                logger.info("Waiting for preemption checkpoint save to complete...")
+                checkpoint.wait_for_final_save()
+                logger.info("Preemption checkpoint save complete.")
                 requeue_slurm_job()
                 sys.exit(0)
             
             pb.update(1)
 
-    if not saved:
-        checkpoint.save(
-            model,
-            optimizer,
-            train_state,
-            args,
-            device_mesh=world_mesh,
-        )
-    gc.collect()
+        pb.close()
+
+        if not saved:
+            logger.info("Performing final save after training loop...")
+            checkpoint.save(
+                model,
+                optimizer,
+                train_state,
+                args,
+                device_mesh=world_mesh,
+            )
+
+        # Wait for the last save operation (either from last step or the final one above)
+        logger.info("Waiting for final checkpoint save to complete before exiting...")
+        checkpoint.wait_for_final_save()
+        logger.info("Final checkpoint save complete.")
+
+        gc.collect()
+        logger.info("Training finished successfully.")
 
 
 def main():
