@@ -1,20 +1,21 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 
 import logging
-import re
 from dataclasses import dataclass
 from typing import Tuple
+import math
 
 import torch
 from transformers import (
-    AutoModel,
     AutoProcessor,
     AutoTokenizer,
+    AutoConfig,
     CLIPModel,
     CLIPTokenizer,
     Gemma2Model,
     GemmaTokenizerFast,
     UMT5EncoderModel,
+    Qwen2_5_VLModel
 )
 
 logger = logging.getLogger()
@@ -27,7 +28,7 @@ class TextEncoderArgs:
     dtype: str = "bf16"
     text_seqlen: int = 77
     model_path: str = ""
-    layers_to_use: Optional[int] = None
+    relative_depth: float = 1.0
 
 
 class BaseTextEncoder:
@@ -89,19 +90,24 @@ class CLIP(BaseTextEncoder):
 class Qwen2_5_VL(BaseTextEncoder):
     def __init__(self, args: TextEncoderArgs):
         super().__init__(args)
-        self.model = AutoModel.from_pretrained(
-            "Qwen/Qwen2.5-VL-3B-Instruct" if args.model_path == "" else args.model_path,
+        model_path = "Qwen/Qwen2.5-VL-7B-Instruct" if args.model_path == "" else args.model_path
+
+        config = AutoConfig.from_pretrained(model_path)
+        original_layers = config.num_hidden_layers
+        config.num_hidden_layers = int(math.ceil(args.relative_depth * original_layers))
+        self.model = Qwen2_5_VLModel.from_pretrained(
+            model_path,
+            config=config,
             torch_dtype=self.dtype,
         ).cuda()
-        if args.layers_to_use is not None:
-            self.model.layers = self.model.layers[: args.layers_to_use]
+        self.model = torch.compile(self.model)
         self.model.eval()
         self.model.requires_grad_(False)
         self.tokenizer = AutoTokenizer.from_pretrained(
-            "Qwen/Qwen2.5-VL-3B-Instruct" if args.model_path == "" else args.model_path,
+            model_path,
         )
         self.processor = AutoProcessor.from_pretrained(
-            "Qwen/Qwen2.5-VL-3B-Instruct" if args.model_path == "" else args.model_path,
+            model_path,
         )
 
     def dim(self) -> int:
@@ -235,7 +241,7 @@ class T5XXL(BaseTextEncoder):
 def create_text_encoder(args: TextEncoderArgs) -> BaseTextEncoder:
     if args.config_name == "ViT-B/32":
         return CLIP(args)
-    elif args.config_name == "Qwen/Qwen2.5-VL-3B-Instruct":
+    elif args.config_name in ["Qwen/Qwen2.5-VL-3B-Instruct", "Qwen/Qwen2.5-VL-7B-Instruct"]:
         return Qwen2_5_VL(args)
     elif args.config_name == "Gemma2_2B_it":
         return Gemma2_2B_it(args)
