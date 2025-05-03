@@ -56,7 +56,7 @@ model:
         gen_seqlen: 32
         condition_seqlen: 256
         norm_eps: 1e-5
-        condition_dim: 2048
+        condition_dim: 3584 # 2048 - 3b qwen, 3584 - 7b qwen
         qk_norm: false
         liger_rms_norm: true
         liger_ffn: true
@@ -70,12 +70,12 @@ model:
         enable_tiling: false
         enable_slicing: false
     text_encoder:
-        config_name: "Qwen/Qwen2.5-VL-3B-Instruct"
+        config_name: "Qwen/Qwen2.5-VL-7B-Instruct"
         dtype: "bf16"
         text_seqlen: 256
-        model_path: "/mnt/pollux/checkpoints/Qwen2.5-VL-3B-Instruct"
-        # qwen has 36 layers, we can use the first 3/4 layers
-        layers_to_use: 30
+        model_path: "/mnt/pollux/checkpoints/Qwen2.5-VL-7B-Instruct"
+        # qwen3.5B has 36 and 7B has 28 layers, we can use the first 3/4 layers
+        layers_to_use: 21
 data:  
   - stage: stage-1
     id: 1
@@ -84,7 +84,7 @@ data:
     source: mongodb
     image_size: 256
     condition_image_size: 256
-    max_ratio: 2.0
+    max_ratio: 1.0
     partition_key: 'partition_key'
     retries: 3
     extract_field:

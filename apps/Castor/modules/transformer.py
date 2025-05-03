@@ -19,6 +19,8 @@ from .component import (AdaLN, Attention, BaseTransformerArgs, FeedForward,
 
 logger = logging.getLogger()
 
+def nearest_multiple_of_8(x):
+    return ((x + 7) // 8) * 8
 
 @dataclass
 class TransformerArgs(BaseTransformerArgs):
@@ -289,6 +291,7 @@ class DiffusionTransformer(BaseDiffusionTransformer):
             max_seq_len = max(
                 [cond_l[i] + (H_list[i] // pH) * (W_list[i] // pW) for i in range(bsz)]
             )
+            max_seq_len = nearest_multiple_of_8(max_seq_len)
             x_new = torch.zeros(bsz, max_seq_len, self.dim, dtype=x[0].dtype).to(
                 x[0].device
             )
@@ -331,10 +334,16 @@ class DiffusionTransformer(BaseDiffusionTransformer):
             return x_new, x_mask, cond_l, (H_list, W_list), freqs_cis
         else:
             B, C, H, W = x.size()
-            target_dtype = x.dtype
-            cond_l = condition.size(1)
+            condition = condition.to(x.dtype)
+            assert H % pH == 0, f"H ({H}) should be divisible by pH ({pH})"
+            assert W % pW == 0, f"W ({W}) should be divisible by pW ({pW})"
 
-            # 1. Patchify and embed image tensor
+
+            # 1. Get actual condition lengths from mask
+            cond_l = condition_mask.sum(dim=1, dtype=torch.int32) # Shape: [B]
+            max_cond_l = cond_l.max(dim=0)[0].item()
+
+            # 2. Patchify and embed image tensor
             x_img_patch = (
                 x.view(B, C, H // pH, pH, W // pW, pW)
                 .permute(0, 2, 4, 3, 5, 1)
@@ -342,36 +351,44 @@ class DiffusionTransformer(BaseDiffusionTransformer):
             )
             x_img_embed = self.img_embed(x_img_patch) # Assume img_embed preserves or outputs target_dtype
             x_img_embed = x_img_embed.flatten(1, 2) # Shape: [B, L_img, D]
+            L_img = x_img_embed.size(1)
 
-            # Ensure image embedding has the target dtype
-            x_img_embed = x_img_embed.to(target_dtype)
+            # 4. Initialize combined tensors
+            max_seq_len = nearest_multiple_of_8(max_cond_l + L_img)
+            x_combined = torch.zeros(B, max_seq_len, self.dim, dtype=x.dtype, device=x.device)
+            x_mask = torch.zeros(B, max_seq_len, dtype=torch.bool, device=x.device)
+            freqs_cis = torch.zeros(
+                (
+                    B,
+                    max_seq_len,
+                )
+                + (self.rope_embeddings_conditions.freqs_cis.shape[-3:]),
+                dtype=x.dtype,
+            ).to(x.device)
 
-            # 2. Prepare condition tensor
-            # Cast condition to the target dtype *before* concatenation
-            condition = condition.to(target_dtype) # Shape: [B, L_cond, D]
+            # 5. Precompute RoPE embeddings
+            freqs_cis_cond_all = self.rope_embeddings_conditions.freqs_cis[:max_cond_l].to(device=x.device, dtype=x.dtype)
+            freqs_cis_img_all = self.rope_embeddings_image.freqs_cis[: H // pH, : W // pW].flatten(0, 1).to(device=x.device, dtype=x.dtype) # Shape [L_img, ..., D/2, 2]
 
-            # 3. Concatenate condition and image embeddings
-            x_combined = torch.cat([condition, x_img_embed], dim=1) # Shape: [B, L_cond + L_img, D]
+            # 6. Populate tensors respecting actual condition lengths
+            for i in range(B):
+                # Place condition and image embeddings
+                x_combined[i, :cond_l[i]] = condition[i, :cond_l[i]]
+                x_combined[i, cond_l[i] : cond_l[i] + L_img] = x_img_embed[i]
 
-            # 4. Create attention mask
-            x_mask_img = torch.ones(B, (H // pH) * (W // pW), dtype=torch.bool, device=x.device)
-            x_mask = torch.cat([condition_mask, x_mask_img], dim=1) # Shape: [B, L_cond + L_img]
+                # Create mask
+                x_mask[i, : cond_l[i] + L_img] = True
 
-            # 5. Prepare RoPE embeddings
-            # Ensure RoPE embeddings are on the correct device and have the target dtype
-            freqs_cis_cond = self.rope_embeddings_conditions.freqs_cis[:cond_l].to(device=x.device, dtype=target_dtype)
-            freqs_cis_img = self.rope_embeddings_image.freqs_cis[: H // pH, : W // pW].flatten(0, 1).to(device=x.device, dtype=target_dtype)
+                # Create RoPE embeddings
+                freqs_cis[i, :cond_l[i]] = freqs_cis_cond_all[:cond_l[i]]
+                freqs_cis[i, cond_l[i] : cond_l[i] + L_img] = freqs_cis_img_all # Image RoPE is the same for all in batch here
 
-            # Concatenate RoPE embeddings
-            freqs_cis = torch.cat([freqs_cis_cond, freqs_cis_img], dim=0) # Shape: [L_cond + L_img, ..., D/2, 2]
-            # Expand for batch dimension
-            freqs_cis = freqs_cis.unsqueeze(0).expand(B, -1, *([-1] * (freqs_cis.dim() - 1))) # Shape: [B, L_cond + L_img, ..., D/2, 2]
-
+            # Return list of actual lengths for consistency
             return (
                 x_combined,
                 x_mask,
-                cond_l,
-                (H, W),
+                cond_l.tolist(),
+                (H, W), # Return single H, W tuple
                 freqs_cis,
             )
 
@@ -417,7 +434,7 @@ class DiffusionTransformer(BaseDiffusionTransformer):
         return output
 
     def unpatchify_image(
-        self, x: torch.Tensor, cond_l: Union[List[int], int], img_size: Tuple[int, int]
+        self, x: torch.Tensor, cond_l: List[int], img_size: Union[Tuple[int, int], Tuple[List[int], List[int]]]
     ) -> Union[torch.Tensor, List[torch.Tensor]]:
         """
         Convert patched image features back to the original latent format.
@@ -444,36 +461,30 @@ class DiffusionTransformer(BaseDiffusionTransformer):
                 out_x_list.append(_x)
             return out_x_list
         else:
-            # Handle the case where cond_l is an integer, not a list
-            if isinstance(cond_l, list):
-                 # If cond_l is unexpectedly a list here, take the first element or max?
-                 # Assuming it should be consistent with the input type logic.
-                 # If input was Tensor, cond_l should be int. If list, list.
-                 # This path assumes input was Tensor, so cond_l should be int.
-                 # If it's a list, maybe log a warning or error.
-                 # For now, assume it's an int if we reach here.
-                 if len(cond_l) > 0:
-                     max_cond_l = cond_l[0] # Or max(cond_l) if that makes sense
-                     # logger.warning("cond_l was a list in unpatchify_image tensor path.")
-                 else:
-                     max_cond_l = 0 # Handle empty list case
-            else:
-                max_cond_l = cond_l # It's already an int
-
+            # Handle non-dynamic (tensor) case
+            H, W = img_size
+            L_img = (H // pH) * (W // pW)
             B = x.size(0)
-            L = (H // pH) * (W // pW)
-            # Ensure slicing indices are correct
-            img_features = x[:, max_cond_l : max_cond_l + L]
 
-            # Ensure the view dimensions match the extracted features
-            # B, L_img, D_out_patch = img_features.shape
-            # D_out_patch should be pH * pW * self.out_channels
-            # L_img should be (H // pH) * (W // pW)
-            img_features = img_features.view(
-                B, H // pH, W // pW, pH, pW, self.out_channels
-            )
-            img_features = img_features.permute(0, 5, 1, 3, 2, 4).flatten(4, 5).flatten(2, 3)
-            return img_features
+            # Initialize output tensor
+            # Note: Need to ensure self.out_channels is correctly defined/accessed
+            out_features = torch.zeros(B, self.out_channels, H, W, dtype=x.dtype, device=x.device)
+
+            for i in range(B):
+                l_cond = cond_l[i]
+
+                # Extract the image part for this batch item
+                img_features_i = x[i, l_cond : l_cond + L_img] # Shape [L_img, D_out_patch]
+
+                # Reshape back to image format
+                # D_out_patch = pH * pW * self.out_channels must hold
+                img_features_i = img_features_i.view(
+                    H // pH, W // pW, pH, pW, self.out_channels
+                )
+                img_features_i = img_features_i.permute( 5, 1, 3, 2, 4).flatten(3, 4).flatten(2, 3) # [C_out, H, W]
+                out_features[i] = img_features_i
+
+            return out_features
 
     def reset_parameters(self, init_std=None):
         # Either use fixed base std or sqrt model dim

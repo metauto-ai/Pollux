@@ -16,6 +16,7 @@ from transformers import (
     GemmaTokenizerFast,
     UMT5EncoderModel,
 )
+from liger_kernel.transformers import apply_liger_kernel_to_qwen2_5_vl
 
 logger = logging.getLogger()
 from typing import Optional
@@ -93,8 +94,10 @@ class Qwen2_5_VL(BaseTextEncoder):
             "Qwen/Qwen2.5-VL-3B-Instruct" if args.model_path == "" else args.model_path,
             torch_dtype=self.dtype,
         ).cuda()
+        apply_liger_kernel_to_qwen2_5_vl(self.model)
         if args.layers_to_use is not None:
             self.model.layers = self.model.layers[: args.layers_to_use]
+        self.model = torch.compile(self.model)
         self.model.eval()
         self.model.requires_grad_(False)
         self.tokenizer = AutoTokenizer.from_pretrained(
@@ -127,6 +130,9 @@ class Qwen2_5_VL(BaseTextEncoder):
         )
 
     def __call__(self, batch: dict[str:any]) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        returns last_hidden_state and attention_mask, right padded
+        """
         assert "caption" in batch
         if isinstance(batch["caption"][0], tuple):
             batch["caption"] = [x[0] for x in batch["caption"]]
@@ -235,7 +241,7 @@ class T5XXL(BaseTextEncoder):
 def create_text_encoder(args: TextEncoderArgs) -> BaseTextEncoder:
     if args.config_name == "ViT-B/32":
         return CLIP(args)
-    elif args.config_name == "Qwen/Qwen2.5-VL-3B-Instruct":
+    elif args.config_name == "Qwen/Qwen2.5-VL-3B-Instruct" or args.config_name == "Qwen/Qwen2.5-VL-7B-Instruct":
         return Qwen2_5_VL(args)
     elif args.config_name == "Gemma2_2B_it":
         return Gemma2_2B_it(args)
