@@ -17,6 +17,7 @@ from transformers import (
     UMT5EncoderModel,
     Qwen2_5_VLModel
 )
+from liger_kernel.transformers import apply_liger_kernel_to_qwen2_5_vl
 
 logger = logging.getLogger()
 from typing import Optional
@@ -91,21 +92,31 @@ class Qwen2_5_VL(BaseTextEncoder):
     def __init__(self, args: TextEncoderArgs):
         super().__init__(args)
         model_path = "Qwen/Qwen2.5-VL-7B-Instruct" if args.model_path == "" else args.model_path
-
+        self.init_model(args, model_path)
+        self.init_tokenizer(model_path)
+        self.init_processor(model_path)
+    
+    def init_model(self, args: TextEncoderArgs, model_path: str):
         config = AutoConfig.from_pretrained(model_path)
         original_layers = config.num_hidden_layers
         config.num_hidden_layers = int(math.ceil(args.relative_depth * original_layers))
-        self.model = Qwen2_5_VLModel.from_pretrained(
+        model = Qwen2_5_VLModel.from_pretrained(
             model_path,
             config=config,
             torch_dtype=self.dtype,
         ).cuda()
-        self.model = torch.compile(self.model)
-        self.model.eval()
-        self.model.requires_grad_(False)
+        apply_liger_kernel_to_qwen2_5_vl(model)
+        model = torch.compile(model)
+        model.eval()
+        model.requires_grad_(False)
+        self.model = model
+    
+    def init_tokenizer(self, model_path: str):
         self.tokenizer = AutoTokenizer.from_pretrained(
             model_path,
         )
+    
+    def init_processor(self, model_path: str):
         self.processor = AutoProcessor.from_pretrained(
             model_path,
         )
