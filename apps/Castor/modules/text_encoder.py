@@ -98,8 +98,7 @@ class Qwen2_5_VL(BaseTextEncoder):
     
     def init_model(self, args: TextEncoderArgs, model_path: str):
         config = AutoConfig.from_pretrained(model_path)
-        original_layers = config.num_hidden_layers
-        config.num_hidden_layers = int(math.ceil(args.relative_depth * original_layers))
+        config.num_hidden_layers = int(math.ceil(args.relative_depth * config.num_hidden_layers))
         model = Qwen2_5_VLModel.from_pretrained(
             model_path,
             config=config,
