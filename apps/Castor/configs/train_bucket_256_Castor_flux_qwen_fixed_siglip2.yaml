@@ -66,6 +66,7 @@ model:
         liger_ffn: true
         liger_rotary_emb: false
         shared_adaLN: true
+        qkv_bias: true
     
     with_vae: true
     vae_args:

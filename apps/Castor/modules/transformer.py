@@ -37,7 +37,7 @@ class TransformerArgs(BaseTransformerArgs):
     shared_adaLN: bool = False
     attention_window: Tuple[int, int] = (-1, -1)
     full_attention_layers: Optional[List[int]] = None
-
+    qkv_bias: bool = False
 
 class DiffusionTransformerBlock(nn.Module):
     def __init__(self, args: TransformerArgs):
@@ -69,6 +69,7 @@ class DiffusionTransformerBlock(nn.Module):
             liger_rms_norm=args.liger_rms_norm,
             liger_rotary_emb=args.liger_rotary_emb,
             window_size=args.attention_window,
+            qkv_bias=args.qkv_bias,
         )
         self.feed_forward = FeedForward(
             dim=args.dim,

@@ -506,6 +506,7 @@ class FlashAttention(nn.Module):
         liger_rms_norm: bool = True,
         liger_rotary_emb: bool = True,
         window_size: Tuple[int, int] = (-1, -1),
+        qkv_bias: bool = False,
     ):
         """
         Initialize the Attention module.
@@ -529,17 +530,17 @@ class FlashAttention(nn.Module):
         self.wq = nn.Linear(
             dim,
             n_heads * self.head_dim,
-            bias=False,
+            bias=qkv_bias,
         )
         self.wk = nn.Linear(
             dim,
             n_kv_heads * self.head_dim,
-            bias=False,
+            bias=qkv_bias,
         )
         self.wv = nn.Linear(
             dim,
             n_kv_heads * self.head_dim,
-            bias=False,
+            bias=qkv_bias,
         )
         nn.init.xavier_uniform_(self.wq.weight)
         nn.init.xavier_uniform_(self.wk.weight)
