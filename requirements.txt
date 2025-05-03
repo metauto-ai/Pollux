@@ -25,3 +25,5 @@ python-dotenv
 ijson
 flash-attn
 transformers
+liger-kernel
+timm
