@@ -66,15 +66,29 @@ class Castor(nn.Module):
     def __init__(self, args: ModelArgs):
         super().__init__()
         self.args = args
-        self.diffusion_transformer = DiffusionTransformer(args.diffusion_model)
+        
+        # VAE
         if args.with_vae:
             self.compressor = create_vae(args.vae_args)
+        
+        # Vision encoder
         if args.vision_encoder_alignment:
             self.vision_encoder = create_vision_encoder(args.vision_encoder_args)
             self.vision_encoder_proj = AlignmentProjection(
                 args.diffusion_model.dim, args.vision_encoder_args.projection_hidden_dim, self.vision_encoder.dim)
-
+        
+        # Text encoder
         self.text_encoder = create_text_encoder(args.text_encoder)
+        
+        if args.diffusion_model.condition_dim != self.text_encoder.dim():
+            logger.warning(f"Condition dim {args.diffusion_model.condition_dim} does not match text encoder dim {self.text_encoder.dim()}")
+            logger.warning(f"Using {self.text_encoder.dim()} as condition dim")
+            args.diffusion_model.condition_dim = self.text_encoder.dim()
+        
+        # Diffusion transformer
+        self.diffusion_transformer = DiffusionTransformer(args.diffusion_model)
+        
+        # Scheduler
         self.scheduler = RectifiedFlow(args.scheduler)
         self.text_cfg_ratio = args.text_cfg_ratio
 

@@ -62,6 +62,10 @@ class BaseTransformerArgs:
     liger_rotary_emb: bool = False
 
 
+def nearest_multiple_of_8(x):
+    return ((x + 7) // 8) * 8
+
+
 def cross_entropy(pred, target, **kwargs):
     return F.nll_loss(
         F.log_softmax(pred.flatten(end_dim=-2).float(), -1),
