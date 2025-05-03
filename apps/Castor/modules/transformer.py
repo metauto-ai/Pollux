@@ -15,7 +15,7 @@ from xformers.ops import AttentionBias, fmha
 from .component import (AdaLN, BaseTransformerArgs, FeedForward,
                         FlashAttention, ImageEmbedder, InitStdFactor, RMSNorm,
                         RotaryEmbedding1D, RotaryEmbedding2D, TimestepEmbedder,
-                        create_causal_mask, modulate_and_gate)
+                        create_causal_mask, modulate_and_gate, nearest_multiple_of_8)
 import copy
 
 logger = logging.getLogger()
