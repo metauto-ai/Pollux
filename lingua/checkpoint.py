@@ -12,7 +12,7 @@ from datetime import datetime
 import torch
 import torch.distributed as dist
 import torch.distributed.checkpoint as dcp
-from torch.distributed.checkpoint import FileSystemReader
+from torch.distributed.checkpoint import FileSystemWriter
 import torch.nn as nn
 from omegaconf import OmegaConf
 from torch.distributed._tensor import DeviceMesh
@@ -126,6 +126,7 @@ class CheckpointManager:
 
         self.existing_saves = self.get_existing_saves()
         self.checkpoint_future = None
+        self.checkpoint_process_group = None
 
     def get_existing_saves(self) -> List[Path]:
         folders = [
@@ -223,6 +224,32 @@ class CheckpointManager:
         model_sd, optim_sd = get_state_dict(model, optimizer)
         return {"model": model_sd, "optim": optim_sd}
 
+    def _get_optimal_thread_count(self):
+        """Calculates the optimal thread count for I/O operations based on system resources.
+        Aims to balance between using sufficient threads for I/O without overcommitting.
+        """
+        try:
+            import multiprocessing
+            # Use half of available CPU cores, but at least 2 and at most 8
+            cpu_count = multiprocessing.cpu_count()
+            return max(2, min(cpu_count // 2, 8))
+        except:
+            # Default to 4 threads if we can't determine CPU count
+            return 4
+
+    def _create_optimized_writer(self, checkpoint_dir):
+        """Creates an optimized FileSystemWriter with pinned memory cache for faster GPU-to-CPU transfers."""
+        thread_count = self._get_optimal_thread_count()
+        return FileSystemWriter(
+            path=checkpoint_dir,
+            single_file_per_rank=True,  # One file per rank is more efficient
+            sync_files=True,
+            thread_count=thread_count,  # Use multiple threads for I/O operations
+            per_thread_copy_ahead=50000000,  # 50MB buffer
+            cache_staged_state_dict=True,  # Enable pinned memory caching
+            overwrite=True
+        )
+
     def save(
         self,
         model,
@@ -239,19 +266,37 @@ class CheckpointManager:
 
         if self.checkpoint_future is not None and not self.checkpoint_future.done():
             logger.info("Waiting for previous checkpoint save to finish...")
-            self.checkpoint_future.result()
-            logger.info("Previous checkpoint save finished.")
+            try:
+                # Set a timeout for waiting for the previous save operation
+                self.checkpoint_future.result(timeout=1800)  # 30 minutes timeout
+                logger.info("Previous checkpoint save finished.")
+            except TimeoutError:
+                logger.error("Previous checkpoint save timed out after 30 minutes! Proceeding with new save.")
+                # The checkpoint_future is now considered invalid, so we'll null it out
+                self.checkpoint_future = None
+            except Exception as e:
+                logger.error(f"Error during previous checkpoint save: {str(e)}")
+                # The checkpoint_future is now considered invalid, so we'll null it out
+                self.checkpoint_future = None
 
         if dist.is_initialized():
             dist.barrier()
 
+        # Ensure we have a checkpoint process group
+        if self.checkpoint_process_group is None:
+            self.initialize_checkpoint_process_group()
+            
         logger.info("Getting state dict for async save...")
         state_dict = self.get_state_dict(model, optimizer)
 
+        # Create an optimized storage writer with pinned memory for faster GPU-to-CPU transfers
+        storage_writer = self._create_optimized_writer(curr_save_dir)
+        
         logger.info("Initiating asynchronous save...")
         self.checkpoint_future = dcp.async_save(
             state_dict,
-            checkpoint_id=curr_save_dir,
+            storage_writer=storage_writer,
+            process_group=self.checkpoint_process_group,  # Use dedicated process group
         )
         logger.info("Asynchronous save initiated.")
 
@@ -282,8 +327,18 @@ class CheckpointManager:
     def wait_for_final_save(self):
          if self.checkpoint_future is not None and not self.checkpoint_future.done():
             logger.info("Waiting for final checkpoint save to finish...")
-            self.checkpoint_future.result()
-            logger.info("Final checkpoint save finished.")
+            try:
+                # Set a timeout for the final save to avoid hanging indefinitely
+                self.checkpoint_future.result(timeout=1800)  # 30 minutes timeout
+                logger.info("Final checkpoint save finished.")
+            except TimeoutError:
+                logger.error("Final checkpoint save timed out after 30 minutes. This may indicate network issues or resource contention.")
+                if dist.is_initialized():
+                    dist.barrier()  # Ensure all processes are synchronized
+            except Exception as e:
+                logger.error(f"Error during final checkpoint save: {str(e)}")
+                if dist.is_initialized():
+                    dist.barrier()  # Ensure all processes are synchronized
 
     @torch.no_grad()
     def load(
@@ -311,12 +366,20 @@ class CheckpointManager:
         train_state.load_state_dict(train_state_dict)
         logger.info("Train state reloaded")
 
+        # Ensure we have a checkpoint process group for loading
+        if self.checkpoint_process_group is None:
+            self.initialize_checkpoint_process_group()
+
         logger.info(f"Loading from: {str(path)}")
         state_dict = self.get_state_dict(
             model=model,
             optimizer=optimizer,
         )
-        dcp.load(state_dict, checkpoint_id=path)
+        dcp.load(
+            state_dict, 
+            checkpoint_id=path,
+            process_group=self.checkpoint_process_group,  # Use dedicated process group for loading too
+        )
         logger.info("State dict loaded.")
 
         logger.info("Reloading model and optim")
@@ -336,3 +399,57 @@ class CheckpointManager:
         dist.barrier()
 
         return cls(args)
+
+    def initialize_checkpoint_process_group(self):
+        """
+        Initialize a separate process group dedicated for checkpoint operations.
+        This helps avoid NCCL conflicts between training and checkpoint operations.
+        
+        Call this after the main process group is initialized.
+        """
+        if dist.is_initialized() and self.checkpoint_process_group is None:
+            # Use gloo backend as it's CPU-based and works well for checkpoint operations
+            try:
+                # Create a unique name for the checkpoint process group
+                group_name = f"checkpoint_group_{int(datetime.now().timestamp())}"
+                # Initialize the process group with gloo backend
+                # We need to create a new process group with gloo backend to avoid NCCL conflicts
+                gloo_pg = dist.new_group(
+                    ranks=list(range(dist.get_world_size())),
+                    backend="gloo",
+                    group_desc=group_name
+                )
+                self.checkpoint_process_group = gloo_pg
+                logger.info(f"Initialized separate process group for checkpointing: {group_name}")
+                return self.checkpoint_process_group
+            except Exception as e:
+                logger.error(f"Failed to initialize checkpoint process group: {str(e)}")
+                return None
+        return self.checkpoint_process_group
+
+    def get_checkpoint_status(self):
+        """
+        Returns the status of the current checkpoint operation.
+        
+        Returns:
+            dict: Status information about current checkpoint
+                - has_pending: Whether there's a pending checkpoint
+                - is_complete: Whether the checkpoint is complete (if any)
+                - error: Error message (if any)
+        """
+        status = {
+            "has_pending": self.checkpoint_future is not None,
+            "is_complete": False,
+            "error": None
+        }
+        
+        if self.checkpoint_future is not None:
+            status["is_complete"] = self.checkpoint_future.done()
+            if self.checkpoint_future.done():
+                try:
+                    # Check if there was an exception
+                    self.checkpoint_future.result(timeout=0)
+                except Exception as e:
+                    status["error"] = str(e)
+                    
+        return status
