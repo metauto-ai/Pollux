@@ -105,7 +105,6 @@ class Qwen2_5_VL(BaseTextEncoder):
             torch_dtype=self.dtype,
         ).cuda()
         apply_liger_kernel_to_qwen2_5_vl(model)
-        model = torch.compile(model)
         model.eval()
         model.requires_grad_(False)
         self.model = model

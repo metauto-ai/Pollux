@@ -12,10 +12,10 @@ from torch import nn
 from torch.nn.attention.flex_attention import BlockMask
 from xformers.ops import AttentionBias, fmha
 
-from .component import (AdaLN, Attention, BaseTransformerArgs, FeedForward,
+from .component import (AdaLN, BaseTransformerArgs, FeedForward,
                         FlashAttention, ImageEmbedder, InitStdFactor, RMSNorm,
                         RotaryEmbedding1D, RotaryEmbedding2D, TimestepEmbedder,
-                        create_causal_mask, modulate_and_gate)
+                        modulate_and_gate, nearest_multiple_of_8)
 
 logger = logging.getLogger()
 
@@ -289,6 +289,7 @@ class DiffusionTransformer(BaseDiffusionTransformer):
             max_seq_len = max(
                 [cond_l[i] + (H_list[i] // pH) * (W_list[i] // pW) for i in range(bsz)]
             )
+            max_seq_len = nearest_multiple_of_8(max_seq_len)
             x_new = torch.zeros(bsz, max_seq_len, self.dim, dtype=x[0].dtype).to(
                 x[0].device
             )
@@ -333,39 +334,55 @@ class DiffusionTransformer(BaseDiffusionTransformer):
             B, C, H, W = x.size()
             target_dtype = x.dtype
             cond_l = condition.size(1)
-
+            
             # 1. Patchify and embed image tensor
             x_img_patch = (
                 x.view(B, C, H // pH, pH, W // pW, pW)
                 .permute(0, 2, 4, 3, 5, 1)
                 .flatten(3)
             )
-            x_img_embed = self.img_embed(x_img_patch) # Assume img_embed preserves or outputs target_dtype
+            x_img_embed = self.img_embed(x_img_patch)
             x_img_embed = x_img_embed.flatten(1, 2) # Shape: [B, L_img, D]
 
             # Ensure image embedding has the target dtype
             x_img_embed = x_img_embed.to(target_dtype)
-
+            
             # 2. Prepare condition tensor
-            # Cast condition to the target dtype *before* concatenation
             condition = condition.to(target_dtype) # Shape: [B, L_cond, D]
-
-            # 3. Concatenate condition and image embeddings
-            x_combined = torch.cat([condition, x_img_embed], dim=1) # Shape: [B, L_cond + L_img, D]
-
-            # 4. Create attention mask
-            x_mask_img = torch.ones(B, (H // pH) * (W // pW), dtype=torch.bool, device=x.device)
-            x_mask = torch.cat([condition_mask, x_mask_img], dim=1) # Shape: [B, L_cond + L_img]
-
-            # 5. Prepare RoPE embeddings
-            # Ensure RoPE embeddings are on the correct device and have the target dtype
+            
+            # 3. Calculate total sequence length and pad to multiple of 8
+            img_l = (H // pH) * (W // pW)
+            total_len = cond_l + img_l
+            padded_len = nearest_multiple_of_8(total_len)
+            
+            # 4. Initialize tensors with padded length
+            embed_dim = condition.size(-1)
+            x_combined = torch.zeros((B, padded_len, embed_dim), dtype=target_dtype, device=x.device)
+            x_mask = torch.zeros((B, padded_len), dtype=torch.bool, device=x.device)
+            
+            # 5. Copy tensors into the initialized containers
+            x_combined[:, :cond_l] = condition
+            x_combined[:, cond_l:cond_l+img_l] = x_img_embed
+            
+            x_mask[:, :cond_l] = condition_mask
+            x_mask[:, cond_l:cond_l+img_l] = True
+            
+            # 6. Prepare RoPE embeddings
             freqs_cis_cond = self.rope_embeddings_conditions.freqs_cis[:cond_l].to(device=x.device, dtype=target_dtype)
             freqs_cis_img = self.rope_embeddings_image.freqs_cis[: H // pH, : W // pW].flatten(0, 1).to(device=x.device, dtype=target_dtype)
-
-            # Concatenate RoPE embeddings
-            freqs_cis = torch.cat([freqs_cis_cond, freqs_cis_img], dim=0) # Shape: [L_cond + L_img, ..., D/2, 2]
+            
+            # Initialize padded freqs_cis
+            rope_dim = freqs_cis_cond.shape[-2:]
+            freqs_cis_shape = list(freqs_cis_cond.shape[1:-2])  # Get middle dimensions if any
+            freqs_cis = torch.zeros((padded_len, *freqs_cis_shape, *rope_dim), 
+                                   dtype=target_dtype, device=x.device)
+            
+            # Copy RoPE embeddings
+            freqs_cis[:cond_l] = freqs_cis_cond
+            freqs_cis[cond_l:cond_l+img_l] = freqs_cis_img
+            
             # Expand for batch dimension
-            freqs_cis = freqs_cis.unsqueeze(0).expand(B, -1, *([-1] * (freqs_cis.dim() - 1))) # Shape: [B, L_cond + L_img, ..., D/2, 2]
+            freqs_cis = freqs_cis.unsqueeze(0).expand(B, -1, *([-1] * (freqs_cis.dim() - 1)))
 
             return (
                 x_combined,
