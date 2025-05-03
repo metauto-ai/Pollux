@@ -66,6 +66,8 @@ class DINOv2VisionEncoder(BaseVisionEncoder):
             use_flash_attention_2=True,
             torch_dtype=self.dtype
         ).requires_grad_(False).cuda()
+        self.model = self.model.eval()
+        self.model = torch.compile(self.model)
 
     @property
     def dim(self):
@@ -94,6 +96,8 @@ class Siglip2VisionEncoder(BaseVisionEncoder):
             use_flash_attention_2=True,
             torch_dtype=self.dtype
         ).requires_grad_(False).cuda()
+        self.model = self.model.eval()
+        self.model = torch.compile(self.model)
 
     @property
     def dim(self):

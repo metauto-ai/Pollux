@@ -15,7 +15,8 @@ from xformers.ops import AttentionBias, fmha
 from .component import (AdaLN, BaseTransformerArgs, FeedForward,
                         FlashAttention, ImageEmbedder, InitStdFactor, RMSNorm,
                         RotaryEmbedding1D, RotaryEmbedding2D, TimestepEmbedder,
-                        modulate_and_gate, nearest_multiple_of_8)
+                        create_causal_mask, modulate_and_gate)
+import copy
 
 logger = logging.getLogger()
 
@@ -34,6 +35,8 @@ class TransformerArgs(BaseTransformerArgs):
     pre_trained_path: Optional[str] = None
     qk_norm: bool = True
     shared_adaLN: bool = False
+    attention_window: Tuple[int, int] = (-1, -1)
+    full_attention_layers: Optional[List[int]] = None
 
 
 class DiffusionTransformerBlock(nn.Module):
@@ -65,6 +68,7 @@ class DiffusionTransformerBlock(nn.Module):
             qk_norm=args.qk_norm,
             liger_rms_norm=args.liger_rms_norm,
             liger_rotary_emb=args.liger_rotary_emb,
+            window_size=args.attention_window,
         )
         self.feed_forward = FeedForward(
             dim=args.dim,
@@ -155,8 +159,16 @@ class BaseDiffusionTransformer(nn.Module):
         self.gen_seqlen = args.gen_seqlen
         self.layers = nn.ModuleList()
         self.shared_adaLN = args.shared_adaLN
-        for _ in range(args.n_layers):
-            self.layers.append(DiffusionTransformerBlock(args))
+        
+
+        if args.full_attention_layers is None:
+            args.full_attention_layers = list(range(args.n_layers))
+            
+        for i in range(args.n_layers):
+            layer_args = copy.deepcopy(args)
+            if i in args.full_attention_layers:
+                layer_args.attention_window = (-1, -1)
+            self.layers.append(DiffusionTransformerBlock(layer_args))
         self.align_layer = args.align_layer
 
     def forward(
