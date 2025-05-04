@@ -10,12 +10,12 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 from torch.nn.attention.flex_attention import BlockMask
-from xformers.ops import AttentionBias, fmha
 
 from .component import (AdaLN, BaseTransformerArgs, FeedForward,
                         FlashAttention, ImageEmbedder, InitStdFactor, RMSNorm,
                         RotaryEmbedding1D, RotaryEmbedding2D, TimestepEmbedder,
-                        create_causal_mask, modulate_and_gate, nearest_multiple_of_8)
+                        create_causal_mask, modulate_and_gate, nearest_multiple_of_8, modulate_and_gate_unpadded)
+from flash_attn.bert_padding import unpad_input, pad_input  
 import copy
 
 logger = logging.getLogger()
@@ -37,6 +37,7 @@ class TransformerArgs(BaseTransformerArgs):
     shared_adaLN: bool = False
     attention_window: Tuple[int, int] = (-1, -1)
     full_attention_layers: Optional[List[int]] = None
+    unpadded: bool = False
 
 
 class DiffusionTransformerBlock(nn.Module):
@@ -49,6 +50,12 @@ class DiffusionTransformerBlock(nn.Module):
         self.head_dim = args.head_dim or args.dim // args.n_heads
         self.n_heads = args.n_heads or args.dim // args.head_dim
         self.n_kv_heads = args.n_kv_heads or self.n_heads
+
+        self.unpadded = args.unpadded
+        if self.unpadded:
+            self.modulate_and_gate = modulate_and_gate_unpadded
+        else:
+            self.modulate_and_gate = modulate_and_gate
 
         assert args.n_heads % self.n_kv_heads == 0
         assert args.dim % args.n_heads == 0
@@ -99,18 +106,24 @@ class DiffusionTransformerBlock(nn.Module):
         x_mask: torch.Tensor,
         freqs_cis: torch.Tensor,
         modulation_signal: torch.Tensor,
-        mask: Optional[Union[BlockMask, AttentionBias, str]] = None,
+        mask: Optional[Union[BlockMask, str]] = None,
         attn_impl: str = "sdpa",
         modulation_values: Optional[torch.Tensor] = None,
+        cu_seqlens: Optional[torch.Tensor] = None,
+        batch_indices: Optional[torch.Tensor] = None,
+        max_seqlen: Optional[int] = None,
     ) -> torch.Tensor:
         if modulation_values is None and not self.shared_adaLN:
             scale_msa, gate_msa, scale_mlp, gate_mlp = self.adaLN_modulation(
                 modulation_signal
             ).chunk(4, dim=1)
+        elif self.unpadded:
+            scale_msa, gate_msa, scale_mlp, gate_mlp = (self.modulation + modulation_values)[batch_indices].unbind(dim=1)
         else:
             scale_msa, gate_msa, scale_mlp, gate_mlp = (self.modulation + modulation_values).unbind(dim=1)
 
-        h = x + modulate_and_gate(
+
+        h = x + self.modulate_and_gate(
             self.attention(
                 self.attention_norm(x),
                 x_mask,
@@ -118,12 +131,15 @@ class DiffusionTransformerBlock(nn.Module):
                 tok_idx=None,
                 mask=mask,
                 attn_impl=attn_impl,
+                cu_seqlens=cu_seqlens,
+                batch_indices=batch_indices,
+                max_seqlen=max_seqlen,
             ),
             scale=scale_msa,
             gate=gate_msa
         )
 
-        h = h + modulate_and_gate(
+        h = h + self.modulate_and_gate(
             self.feed_forward(
                 self.ffn_norm(h)
             ),
@@ -179,6 +195,9 @@ class BaseDiffusionTransformer(nn.Module):
         modulation_signal: Optional[torch.Tensor] = None,
         modulation_values: Optional[torch.Tensor] = None,
         attn_impl: str = "sdpa",
+        cu_seqlens: Optional[torch.Tensor] = None,
+        batch_indices: Optional[torch.Tensor] = None,
+        max_seqlen: Optional[int] = None,
     ):
         for idx, layer in enumerate(self.layers):
             h = layer(
@@ -189,6 +208,9 @@ class BaseDiffusionTransformer(nn.Module):
                 mask=None,
                 attn_impl=attn_impl,
                 modulation_values=modulation_values,
+                cu_seqlens=cu_seqlens,
+                batch_indices=batch_indices,
+                max_seqlen=max_seqlen,
             )
             if idx == self.align_layer - 1:
                 align_hidden_state = h
@@ -243,6 +265,7 @@ class DiffusionTransformer(BaseDiffusionTransformer):
         self.patch_size = args.patch_size
         self.out_channels = args.out_channels
         self.in_channels = args.in_channels
+        self.unpadded = args.unpadded
         self.tmb_embed = TimestepEmbedder(
             hidden_size=args.time_step_dim, time_embedding_size=args.tmb_size
         )
@@ -301,7 +324,7 @@ class DiffusionTransformer(BaseDiffusionTransformer):
             max_seq_len = max(
                 [cond_l[i] + (H_list[i] // pH) * (W_list[i] // pW) for i in range(bsz)]
             )
-            max_seq_len = nearest_multiple_of_8(max_seq_len)
+            # max_seq_len = nearest_multiple_of_8(max_seq_len)
             x_new = torch.zeros(bsz, max_seq_len, self.dim, dtype=x[0].dtype).to(
                 x[0].device
             )
@@ -365,7 +388,8 @@ class DiffusionTransformer(BaseDiffusionTransformer):
             # 3. Calculate total sequence length and pad to multiple of 8
             img_l = (H // pH) * (W // pW)
             total_len = cond_l + img_l
-            padded_len = nearest_multiple_of_8(total_len)
+            # padded_len = nearest_multiple_of_8(total_len)
+            padded_len = total_len
             
             # 4. Initialize tensors with padded length
             embed_dim = condition.size(-1)
@@ -433,11 +457,34 @@ class DiffusionTransformer(BaseDiffusionTransformer):
         else:
             modulation_values = None
 
+        if self.unpadded:
+            B, S, D = x_patched.shape
+            x_patched, indices, cu_seqlens, max_seqlen, used_seqlens = unpad_input(x_patched, x_mask)
+            seqlens = torch.sum(x_mask, dim=-1, dtype=torch.int32)
+            batch_indices = torch.arange(B, device=x_patched.device, dtype=torch.int32).repeat_interleave(repeats=seqlens)
+            freqs_cis, _, _, _, _ = unpad_input(freqs_cis, x_mask)
+            x_mask = None
+        else:
+            batch_indices = None
+            cu_seqlens = None
+            max_seqlen = None
+
         last_hidden_state, align_hidden_state = super().forward(
-            x_patched, x_mask, freqs_cis, modulation_signal, attn_impl=attn_impl, modulation_values=modulation_values
+            x_patched,
+            x_mask,
+            freqs_cis,
+            modulation_signal,
+            attn_impl=attn_impl,
+            modulation_values=modulation_values,
+            cu_seqlens=cu_seqlens,
+            batch_indices=batch_indices,
+            max_seqlen=max_seqlen,
         )
 
         out = self.img_output(self.norm(last_hidden_state))
+        if self.unpadded:
+            out = pad_input(out, indices, B, S)
+            align_hidden_state = pad_input(align_hidden_state, indices, B, S)
         out = self.unpatchify_image(out, cond_l, img_size) # unpatchify handles list/tensor output
 
         output = BaseDiffusionTransformerOutputs(

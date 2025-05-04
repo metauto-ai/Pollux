@@ -4,8 +4,8 @@
 version: v1.0
 # From now on, start to align train, data, and model setting with train stage (just finish refactor for dara)
 train_stage: stage-1 # options: preliminary, pretraining, posttraining; aligned with data setting
-name: siglip2_flux_qwen_fixed_bs128 #used for local dump and wandb log
-output_dir: /mnt/pollux/checkpoints/ablations
+name: unpadded #used for local dump and wandb log
+output_dir: /mnt/pollux/checkpoints/aj
 dump_dir: '' # No need now
 steps: 500000
 seed: 777
@@ -49,8 +49,7 @@ model:
         n_heads: 32
         n_kv_heads: 8
         n_layers: 24
-        attention_window: [128, 128] # [-1, -1] for full attention
-        full_attention_layers: [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23]
+        attention_window: [-1, -1] # [-1, -1] for full attention
         align_layer: 8
         time_step_dim: *hidden_dim
         patch_size: 2
@@ -66,7 +65,7 @@ model:
         liger_ffn: true
         liger_rotary_emb: false
         shared_adaLN: true
-    
+        unpadded: true
     with_vae: true
     vae_args:
         vae_type: "flux"
