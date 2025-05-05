@@ -27,3 +27,4 @@ flash-attn
 transformers
 liger-kernel
 timm
+open-clip-torch
