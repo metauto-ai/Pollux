@@ -191,7 +191,7 @@ class RectifiedFlow(torch.nn.Module):
                 noise_model_input_list.append(_noisy_model_input)
                 target_list.append(_target)
 
-            return noise_model_input_list, timesteps, target_list
+            return noise_model_input_list, timesteps, sigmas, target_list
         else:
             bsz = x.size(0)
             noise = torch.randn_like(x)
@@ -203,4 +203,6 @@ class RectifiedFlow(torch.nn.Module):
             sigmas = self.get_sigmas(timesteps, n_dim=x.ndim, dtype=x.dtype)
             noisy_model_input = (1.0 - sigmas) * x + sigmas * noise
             target = noise - x
-            return noisy_model_input, timesteps, target
+            return noisy_model_input, timesteps, sigmas, target
+
+    

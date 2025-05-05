@@ -14,6 +14,7 @@ from .modules.text_encoder import TextEncoderArgs, create_text_encoder
 from .modules.transformer import DiffusionTransformer, TransformerArgs
 from .modules.vae import VideoVAEArgs, create_vae
 from .modules.vision_encoder import VisionEncoderArgs, create_vision_encoder
+from .modules.loss import Loss
 
 logger = logging.getLogger()
 
@@ -92,6 +93,9 @@ class Castor(nn.Module):
         self.scheduler = RectifiedFlow(args.scheduler)
         self.text_cfg_ratio = args.text_cfg_ratio
 
+        # Loss
+        self.loss = Loss()
+
     def forward(self, batch: dict[str:any]) -> dict[str:any]:
         if hasattr(self, "compressor"):
             batch["latent_code"] = self.compressor.extract_latents(batch)
@@ -113,7 +117,7 @@ class Castor(nn.Module):
             )
         
         latent_code = batch["latent_code"]
-        noised_x, t, target = self.scheduler.sample_noised_input(latent_code)
+        noised_x, t, sigmas, target = self.scheduler.sample_noised_input(latent_code)
         output = self.diffusion_transformer(
             x=noised_x,
             time_steps=t,
@@ -123,13 +127,14 @@ class Castor(nn.Module):
 
         batch["prediction"] = output.output
         batch["target"] = target
-        target_loss = self.mse_loss(output.output, batch["target"])
+
+        target_loss = self.loss.dwt_loss(noised_x - sigmas * output.output, latent_code)
 
         align_loss = None
         if hasattr(self, "vision_encoder"):
             vision_encoder_pred = self.vision_encoder_proj(output.align_hidden_state)
-            align_loss = self.consine_loss_with_features(
-                vision_encoder_pred, output.cond_l, output.img_size, batch["vision_encoder_target"])
+            align_loss = self.loss.consine_loss_with_features(
+                vision_encoder_pred, output.cond_l, output.img_size, self.diffusion_transformer.patch_size, batch["vision_encoder_target"])
             
         return CastorModelOutputs(
             batch=batch,
@@ -137,39 +142,6 @@ class Castor(nn.Module):
             target_loss=target_loss,
             align_loss=align_loss
         )
-
-    def mse_loss(self, output: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
-        if isinstance(target, list) or isinstance(output, list):
-            loss_list = [F.mse_loss(o, t.to(o.dtype)) for o, t in zip(output, target)]
-            return torch.mean(torch.stack(loss_list))
-        else:
-            target = target.to(output.dtype)
-            return F.mse_loss(output, target)
-
-    def consine_loss_with_features(self, x: torch.Tensor, cond_l: torch.Tensor, 
-                                   img_size: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
-        pH = pW = self.diffusion_transformer.patch_size
-        H, W = img_size
-        use_dynamic_res = isinstance(H, list) and isinstance(W, list)
-        
-        def _cosine_loss(x, t):
-            return 1 - F.cosine_similarity(x, t.to(x.dtype), dim=-1).mean()
-
-        if use_dynamic_res:
-            # Extract features for each image based on its resolution
-            return torch.stack([
-                _cosine_loss(
-                    x[i, cond_l[i]:cond_l[i] + (_H // pH) * (_W // pW)], 
-                    target[i]
-                )
-                for i, (_H, _W) in enumerate(zip(H, W))
-            ]).mean()
-        else:
-            # Handle condition length consistently whether it's a list or scalar
-            offset = max(cond_l) if isinstance(cond_l, list) else cond_l
-            feature_length = (H // pH) * (W // pW)
-            img_features = x[:, offset:offset + feature_length]
-            return _cosine_loss(img_features, target)
 
     def set_train(self):
         self.diffusion_transformer.train()
