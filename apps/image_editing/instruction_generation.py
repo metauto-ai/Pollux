@@ -222,7 +222,7 @@ class Qwen_Instruction():
     def change_background(self,):
         system_prompt = """
         You are an AI image editing assistant. Given the prompt and its corresponding image (maybe only have one), you need to analyze the image foreground object and background, generate precise instructions for changing the image backgrounds.
-        Your final task is to output a text description instruction to change the image background from its orignial background to new background.
+        Your final task is to output a text description instruction to change the image background from its original background to new background.
 
         Example Prompt:
         "A cat sitting on a wooden table in a cozy room with warm lighting."
@@ -232,6 +232,21 @@ class Qwen_Instruction():
 
         """
         return system_prompt
+
+    def text_editing(self,):
+        system_prompt = """
+        You are an AI image editing assistant. Given the prompt and its corresponding image (maybe only have one), you need to analyze the text content in the image, generate precise instructions for replace the text contents.
+        Your final task is to output a text description instruction to replace the text content in the image from its original text from prompt to new text. The new text can be any other words or sentence with different meaning from original ones. 
+
+        Example Prompt:
+        "A glowing blue sphere with floating metallic rings with text 'alien'."
+
+        Example Output:
+        "replace 'alien' with 'pollux'"
+
+        """
+        return system_prompt
+
 
     def pil_to_base64(self, image_path):
         image = Image.open(image_path).convert("RGB")
@@ -243,7 +258,8 @@ class Qwen_Instruction():
     def generate(self, img_path, prompt, task):
         if 'background' in task:
             system_prompt = self.change_background()
-
+        elif 'text' in task:
+            system_prompt = self.text_editing()
         if os.path.isfile(img_path):
             image = self.pil_to_base64(img_path)
             messages = [[
@@ -319,10 +335,10 @@ def instruction_generation(task):
 
 
 if __name__ == "__main__":
-    pipe = instruction_generation(task='background')
-    prompt = "A cute creature sits at the beach."
-    image = "/mnt/pollux/wentian/image_edit/duck.jpeg"
-    instruction = pipe.generate(image, prompt, task='background')
+    pipe = instruction_generation(task='text')
+    prompt = "a realistic image contains steam with text 'steam'."
+    image = "/mnt/pollux/wentian/image_edit/steam.png"
+    instruction = pipe.generate(image, prompt, task='text')
     print (instruction)
 
 
@@ -367,11 +383,24 @@ if __name__ == "__main__":
             task = 'background'
 
             pipe = instruction_generation(task=task)
-            for i in range(10):
-                instruction = pipe.generate(image_path, prompt, task=task)
-                print (instruction)
+            instruction = pipe.generate(image_path, prompt, task=task)
+            print (instruction)
 
         # Output:
             "change the beach to a snowy mountain landscape"
+
+    # Example 3
+
+        # Input
+            prompt = "a realistic image contains steam with text 'steam'."
+            image = "/mnt/pollux/wentian/image_edit/steam.png"
+            task = 'text'
+
+            pipe = instruction_generation(task='text')
+            instruction = pipe.generate(image, prompt, task='text')
+            print (instruction)
+
+        # Output:
+            "replace 'steam' with 'vapor'"
     """
 
