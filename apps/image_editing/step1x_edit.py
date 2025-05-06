@@ -478,7 +478,7 @@ def main():
         for i in range(args.num_inst):
             if args.task in ['add', 'remove']:
                 instruct = instruction_gen_model.generate(prompt, args.task)
-            elif args.task in ['background']:
+            elif args.task in ['background', 'text']:
                 path_ = choice(paths)
                 instruct = instruction_gen_model.generate(path_, prompt, args.task)
             instructions.append(instruct)
@@ -521,8 +521,6 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
 
     """
     # Environments
@@ -611,7 +609,7 @@ if __name__ == "__main__":
                     ref_images=Image.open(image_path).convert("RGB"),
                     num_samples=1,
                     num_steps=28,
-                    cfg_guidance=1.5,
+                    cfg_guidance=2.0,
                     seed=42,
                     show_progress=True,
                     size_level=1024,
@@ -625,4 +623,42 @@ if __name__ == "__main__":
             /mnt/pollux/wentian/image_edit/duck_edit_1.png
             /mnt/pollux/wentian/image_edit/duck_edit_2.png
             /mnt/pollux/wentian/image_edit/duck_edit_3.png
+
+    # Example 3
+
+        # Input
+
+            prompt = "a realistic image contains steam with text 'steam'."
+            image_path = '/mnt/pollux/wentian/image_edit/steam.png'
+            instruction = "replace 'steam' with 'pollux'"
+            image_edit = ImageGenerator(
+                ae_path='/mnt/pollux/checkpoints/Step1X-Edit/vae.safetensors',
+                dit_path='/mnt/pollux/checkpoints/Step1X-Edit/step1x-edit-i1258.safetensors',
+                qwen2vl_model_path='/mnt/pollux/checkpoints/Qwen2.5-VL-7B-Instruct/',
+                max_length=640,
+                quantized=False,
+                offload=False,
+            )
+            for i in range(4):
+                save_path = f'/mnt/pollux/wentian/image_edit/steam_edit_{str(i)}.png'
+                image = image_edit.generate_image(
+                    instruction,
+                    negative_prompt="",
+                    ref_images=Image.open(image_path).convert("RGB"),
+                    num_samples=1,
+                    num_steps=28,
+                    cfg_guidance=6.0,
+                    seed=42,
+                    show_progress=True,
+                    size_level=1024,
+                )[0]
+                image.save(save_path, lossless=True)
+
+        # CUDA_VISIBLE_DEVICES=0 python step1x_edit.py 
+
+        # Output:
+            /mnt/pollux/wentian/image_edit/steam_edit_0.png
+            /mnt/pollux/wentian/image_edit/steam_edit_1.png
+            /mnt/pollux/wentian/image_edit/steam_edit_2.png
+            /mnt/pollux/wentian/image_edit/steam_edit_3.png
     """
