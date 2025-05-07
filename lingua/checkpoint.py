@@ -4,6 +4,7 @@ import json
 import logging
 import os
 import re
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, List, Optional, Tuple
@@ -12,7 +13,7 @@ from datetime import datetime
 import torch
 import torch.distributed as dist
 import torch.distributed.checkpoint as dcp
-from torch.distributed.checkpoint import FileSystemReader
+from torch.distributed.checkpoint import FileSystemWriter
 import torch.nn as nn
 from omegaconf import OmegaConf
 from torch.distributed._tensor import DeviceMesh
@@ -111,6 +112,14 @@ def load_from_checkpoint(
 
     dcp.load(state_dict, checkpoint_id=ckpt_dir)
 
+def _create_optimized_writer(checkpoint_dir):
+    """Creates an optimized FileSystemWriter with pinned memory cache for faster GPU-to-CPU transfers."""
+    thread_count = 1
+    return FileSystemWriter(
+        path=checkpoint_dir,
+        cache_staged_state_dict=True,  # Enable pinned memory caching
+    )
+
 
 class CheckpointManager:
     def __init__(self, args: CheckpointArgs):
@@ -177,7 +186,6 @@ class CheckpointManager:
                         file.rmdir()
                 folder.rmdir()
 
-        dist.barrier()
 
         self.existing_saves = list(folder_to_keep)
         self.existing_saves.sort(key=lambda p: _get_key_step(p.name))
@@ -231,7 +239,7 @@ class CheckpointManager:
         config,
         device_mesh: Optional[DeviceMesh] = None,
     ) -> bool:
-
+        self.clean_up()
         # When creating directory check if only rank0 or is there other solution
         path = Path(self.path)
         curr_save_dir = self._create_folder(path, FOLDER_NAME.format(train_state.step))
@@ -242,18 +250,16 @@ class CheckpointManager:
             self.checkpoint_future.result()
             logger.info("Previous checkpoint save finished.")
 
-        if dist.is_initialized():
-            dist.barrier()
 
-        logger.info("Getting state dict for async save...")
+        start_time = time.time()
         state_dict = self.get_state_dict(model, optimizer)
 
-        logger.info("Initiating asynchronous save...")
         self.checkpoint_future = dcp.async_save(
             state_dict,
             checkpoint_id=curr_save_dir,
         )
-        logger.info("Asynchronous save initiated.")
+
+        logger.info(f"Time taken to async save: {time.time() - start_time} seconds")
 
         if get_is_master():
             with open(curr_save_dir / CONFIG_NAME, "w") as f:
@@ -275,7 +281,6 @@ class CheckpointManager:
 
         self.existing_saves.append(curr_save_dir)
 
-        self.clean_up()
 
         return True
 
