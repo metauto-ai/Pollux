@@ -30,6 +30,7 @@ from apps.main.utils.dict_tensor_data_load import DictTensorBatchIterator
 import ijson
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
+from urllib.parse import urlparse
 
 logging.getLogger("pymongo").setLevel(logging.WARNING)
 boto3.set_stream_logger("boto3", level=logging.WARNING)
@@ -131,8 +132,8 @@ class MongoDBDataLoad(Dataset):
                     if partition_key % self.num_shards == self.shard_idx:
                         data.append(item)
                         # # Note: used for debugging
-                        # if len(data) > 1400000:
-                        #     break
+                        if len(data) > 10000:
+                            break
             self.data = pd.DataFrame(data).reset_index()
         end_time = time.time()  # Record the end time
         # Calculate the duration in seconds
@@ -187,6 +188,7 @@ class MongoDBImageDataLoad(MongoDBDataLoad):
         adapter = HTTPAdapter(max_retries=retries, pool_connections=200, pool_maxsize=200)
         self.session.mount('http://', adapter)
         self.session.mount('https://', adapter)
+        self.url_prefix = urlparse(args.base_url)
 
     def __getitem__(self, idx: int) -> dict[str, Any]:
         # sample = self.data[idx]
@@ -205,6 +207,8 @@ class MongoDBImageDataLoad(MongoDBDataLoad):
         
         for k, v in self.extract_field.items():
             imageUrl = sample[k]
+            imageUrl = urlparse(imageUrl)._replace(netloc=self.url_prefix.netloc, scheme=self.url_prefix.scheme).geturl()
+           
             try:
                 head_response = self.session.head(imageUrl, timeout=1)
                 if head_response.status_code != 200:
