@@ -327,6 +327,8 @@ def train(args: TrainArgs):
         nwords_since_last_log = 0
         failure_rate = 0
         time_last_log = timer()
+        accumulated_data_load_time = 0.0
+        data_load_count = 0
         gc.collect()
 
         pb = tqdm(total=args.steps, initial=train_state.step, desc="Training Steps")
@@ -388,7 +390,8 @@ def train(args: TrainArgs):
                     nwords_since_last_log += batch["image"].numel()
             else:
                 raise ValueError("No image or latent code in batch")
-            data_load_time = round(timer() - data_load_start, 4)
+            accumulated_data_load_time += round(timer() - data_load_start, 4)
+            data_load_count += 1
 
             # forward
             start_timer = torch.cuda.Event(enable_timing=True)
@@ -489,7 +492,7 @@ def train(args: TrainArgs):
                             "wps": wps,
                             "FLOPS": FLOPS,
                             "curr_iter_time": curr_iter_time,
-                            "data_load_time": data_load_time,
+                            "data_load_time": accumulated_data_load_time/data_load_count,
                         },
                         "optim": {
                             "grad_norm": grad_norm,
@@ -525,12 +528,15 @@ def train(args: TrainArgs):
                     f"  flops: {FLOPS:.2e}"
                     f"  wps: {wps:.2e}"
                     f"  iter: {curr_iter_time:>7}"
-                    f"  data: {data_load_time:>5}"
+                    f"  data: {accumulated_data_load_time/data_load_count:>5}"
                     f"  data_failure_rate: {round(failure_rate,4):>7}"
                     f"  lr: {curr_lr:.2e}"
                     f"  mem: {gpu_mem_stats.max_active_pct:.0f}%"
                     f"  pow: {gpu_mem_stats.power_draw/1000} W",
                 )
+                # Reset accumulator and counter for the next logging interval
+                accumulated_data_load_time = 0.0
+                data_load_count = 0
 
             saved = False
             

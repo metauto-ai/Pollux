@@ -103,7 +103,8 @@ data:
         "media_path": "image"
     use: true
     root_dir: "/mnt/pollux/mongo_db_cache_train"
-    base_url: https://worldmodeldata-prod.s3.us-east-2.amazonaws.com
+    # https://worldmodeldata-prod.s3.us-east-2.amazonaws.com
+    base_url: s3://worldmodeldata-prod
     dataloader:
         prefetch_factor: 2
         batch_size: 16
