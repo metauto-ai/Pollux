@@ -14,7 +14,7 @@ def parse_args():
     parser.add_argument(
         "--batch_size",
         type=int,
-        default=16,
+        default=64,
         help="the number of prompts within a batch",
     )
     parser.add_argument(
@@ -73,7 +73,7 @@ if __name__ == '__main__':
 
     dataset = MJHQ_Dataset(mjhq_dir=args.data_path)
     print(len(dataset))
-    dataloader = torch.utils.data.DataLoader(dataset, shuffle=True, batch_size=args.batch_size,drop_last=False, collate_fn=custom_collate_fn)
+    dataloader = torch.utils.data.DataLoader(dataset, shuffle=True, batch_size=args.batch_size,drop_last=False, collate_fn=custom_collate_fn, num_workers=2, pin_memory=True)
 
     clip_score = 0
 

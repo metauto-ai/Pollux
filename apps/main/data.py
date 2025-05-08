@@ -61,6 +61,7 @@ class DataLoaderArgs:
 
 @dataclass
 class DataArgs:
+    base_url: str
     id: str = 0
     data_name: str = (
         "ILSVRC/imagenet-1k"  # the same as the dataset name in Huggingface or the collection name in MongoDB
