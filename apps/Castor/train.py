@@ -408,26 +408,6 @@ def train(args: TrainArgs):
             # For logging we undo that scaling
             loss = loss.detach() * args.grad_acc_steps
 
-            # Log vision encoder projection gradients specifically
-            vision_proj_grad_norm = None
-            if hasattr(model, 'vision_encoder_proj'):
-                if isinstance(model, torch.nn.parallel.DistributedDataParallel):
-                    vision_proj_params = model.module.vision_encoder_proj.parameters()
-                else:
-                    vision_proj_params = model.vision_encoder_proj.parameters()
-                
-                # Filter for parameters that have gradients
-                vision_proj_grads = [p.grad for p in vision_proj_params if p.grad is not None]
-                
-                if vision_proj_grads:
-                    vision_proj_grad_norm = torch.norm(
-                        torch.stack([torch.norm(g.detach()) for g in vision_proj_grads])
-                    ).item()
-                    
-                    # Print immediately for debugging
-                    if train_state.step % 10 == 0:  # Print more frequently than regular logging
-                        logger.info(f"Vision encoder proj grad norm: {vision_proj_grad_norm:.6f}")
-
             grad_norm = torch.nn.utils.clip_grad_norm_(
                 model.parameters(), max_norm=args.optim.clip, foreach=True
             )
@@ -504,8 +484,6 @@ def train(args: TrainArgs):
                     to_sync["loss/align"] = outputs.align_loss.item()
                 metrics.update(dist_mean_dict(to_sync))
 
-                if vision_proj_grad_norm is not None:
-                    metrics["optim/vision_proj_grad_norm"] = vision_proj_grad_norm
 
                 if get_is_master():
                     metric_logger.log(metrics)
@@ -531,6 +509,7 @@ def train(args: TrainArgs):
                 # Reset accumulator and counter for the next logging interval
                 max_data_load_time = 0.0
                 flops_meter.reset()
+
 
             saved = False
             
