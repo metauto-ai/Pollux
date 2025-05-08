@@ -327,6 +327,7 @@ def train(args: TrainArgs):
         nwords_since_last_log = 0
         failure_rate = 0
         time_last_log = timer()
+        max_data_load_time = 0.0
         gc.collect()
 
         pb = tqdm(total=args.steps, initial=train_state.step, desc="Training Steps")
@@ -388,7 +389,7 @@ def train(args: TrainArgs):
                     nwords_since_last_log += batch["image"].numel()
             else:
                 raise ValueError("No image or latent code in batch")
-            data_load_time = round(timer() - data_load_start, 4)
+            max_data_load_time = max(max_data_load_time, round(timer() - data_load_start, 4))
 
             # forward
             start_timer = torch.cuda.Event(enable_timing=True)
@@ -403,26 +404,6 @@ def train(args: TrainArgs):
             loss.backward()
             # For logging we undo that scaling
             loss = loss.detach() * args.grad_acc_steps
-
-            # Log vision encoder projection gradients specifically
-            vision_proj_grad_norm = None
-            if hasattr(model, 'vision_encoder_proj'):
-                if isinstance(model, torch.nn.parallel.DistributedDataParallel):
-                    vision_proj_params = model.module.vision_encoder_proj.parameters()
-                else:
-                    vision_proj_params = model.vision_encoder_proj.parameters()
-                
-                # Filter for parameters that have gradients
-                vision_proj_grads = [p.grad for p in vision_proj_params if p.grad is not None]
-                
-                if vision_proj_grads:
-                    vision_proj_grad_norm = torch.norm(
-                        torch.stack([torch.norm(g.detach()) for g in vision_proj_grads])
-                    ).item()
-                    
-                    # Print immediately for debugging
-                    if train_state.step % 10 == 0:  # Print more frequently than regular logging
-                        logger.info(f"Vision encoder proj grad norm: {vision_proj_grad_norm:.6f}")
 
             grad_norm = torch.nn.utils.clip_grad_norm_(
                 model.parameters(), max_norm=args.optim.clip, foreach=True
@@ -489,7 +470,7 @@ def train(args: TrainArgs):
                             "wps": wps,
                             "FLOPS": FLOPS,
                             "curr_iter_time": curr_iter_time,
-                            "data_load_time": data_load_time,
+                            "data_load_time": max_data_load_time,
                         },
                         "optim": {
                             "grad_norm": grad_norm,
@@ -508,8 +489,6 @@ def train(args: TrainArgs):
                     to_sync["loss/align"] = outputs.align_loss.item()
                 metrics.update(dist_mean_dict(to_sync))
 
-                if vision_proj_grad_norm is not None:
-                    metrics["optim/vision_proj_grad_norm"] = vision_proj_grad_norm
 
                 if get_is_master():
                     metric_logger.log(metrics)
@@ -525,12 +504,14 @@ def train(args: TrainArgs):
                     f"  flops: {FLOPS:.2e}"
                     f"  wps: {wps:.2e}"
                     f"  iter: {curr_iter_time:>7}"
-                    f"  data: {data_load_time:>5}"
+                    f"  data: {max_data_load_time:>5}"
                     f"  data_failure_rate: {round(failure_rate,4):>7}"
                     f"  lr: {curr_lr:.2e}"
                     f"  mem: {gpu_mem_stats.max_active_pct:.0f}%"
                     f"  pow: {gpu_mem_stats.power_draw/1000} W",
                 )
+                # Reset accumulator and counter for the next logging interval
+                max_data_load_time = 0.0
 
             saved = False
             

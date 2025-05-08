@@ -30,6 +30,7 @@ from apps.main.utils.dict_tensor_data_load import DictTensorBatchIterator
 import ijson
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
+from urllib.parse import urlparse
 
 logging.getLogger("pymongo").setLevel(logging.WARNING)
 boto3.set_stream_logger("boto3", level=logging.WARNING)
@@ -131,7 +132,7 @@ class MongoDBDataLoad(Dataset):
                     if partition_key % self.num_shards == self.shard_idx:
                         data.append(item)
                         # # Note: used for debugging
-                        # if len(data) > 1400000:
+                        # if len(data) > 10000:
                         #     break
             self.data = pd.DataFrame(data).reset_index()
         end_time = time.time()  # Record the end time
@@ -187,6 +188,71 @@ class MongoDBImageDataLoad(MongoDBDataLoad):
         adapter = HTTPAdapter(max_retries=retries, pool_connections=200, pool_maxsize=200)
         self.session.mount('http://', adapter)
         self.session.mount('https://', adapter)
+        self.base_url = urlparse(args.base_url)
+        if self.base_url.scheme == 'https':
+            self.client = self.http_client
+        elif self.base_url.scheme == 's3':
+            self.client = self.s3_client
+        else:
+            raise ValueError(f"Invalid scheme: {self.base_url.scheme}")
+
+    def http_client(self, imageUrl: str) -> tuple[Image.Image, bool]:
+        try:
+            imageUrl = urlparse(imageUrl)._replace(netloc=self.base_url.netloc, scheme=self.base_url.scheme).geturl()
+
+            head_response = self.session.head(imageUrl, timeout=1)
+            if head_response.status_code != 200:
+                raise requests.HTTPError(f"HEAD request failed with status code {head_response.status_code}")
+
+            # Use session and increase timeout
+            response = self.session.get(imageUrl, timeout=2, stream=True)
+            response.raise_for_status()  # Raise an exception for HTTP errors
+            
+            image = Image.open(io.BytesIO(response.content)).convert("RGB")
+            if random.random() > 0.9:
+                self.place_holder_image = image  # frequently update the placeholder image
+            return image, True # Signal success
+        except (requests.RequestException, IOError) as e:
+            status_code = getattr(locals().get('head_response'), 'status_code', 'N/A') # ensure head_response is accessed safely
+            if isinstance(e, requests.Timeout):
+                logging.debug(f"Timeout downloading image: {imageUrl}")
+            elif isinstance(e, requests.HTTPError):
+                logging.debug(f"HTTP error ({status_code}) for: {imageUrl}")
+            elif isinstance(e, requests.ConnectionError):
+                logging.debug(f"Connection error for: {imageUrl}")
+            else:
+                logging.debug(f"Error processing image {imageUrl}: {str(e)}")
+            
+            # Fall back to placeholder image
+            return self.place_holder_image, False # Signal failure
+
+    def s3_client(self, imageUrl: str) -> tuple[Image.Image, bool]:
+        # Initialize s3 client here
+        if not hasattr(self, 's3'):
+            assert S3KEY is not None and S3SECRET is not None, "S3KEY and S3SECRET must be provided"
+            self.s3 = boto3.client(
+                's3',
+                aws_access_key_id=S3KEY,
+                aws_secret_access_key=S3SECRET
+            )
+        try:
+            imageUrl = urlparse(imageUrl)._replace(netloc=self.base_url.netloc, scheme=self.base_url.scheme)
+            bucket_name = imageUrl.netloc
+            object_key = imageUrl.path.lstrip('/') # Remove leading slash
+
+            # Use the initialized self.s3 client
+            response = self.s3.get_object(Bucket=bucket_name, Key=object_key)
+            image_data = response['Body'].read()
+            
+            image = Image.open(io.BytesIO(image_data)).convert("RGB")
+            if random.random() > 0.9:
+                self.place_holder_image = image  # frequently update the placeholder image
+            return image, True # Signal success
+        except Exception as e: 
+            # Catching a broad exception. 
+            # For production, you might want to catch more specific Boto3 exceptions like ClientError
+            logging.debug(f"Error downloading image from S3 {imageUrl}: {str(e)}")
+            return self.place_holder_image, False # Signal failure
 
     def __getitem__(self, idx: int) -> dict[str, Any]:
         # sample = self.data[idx]
@@ -204,39 +270,17 @@ class MongoDBImageDataLoad(MongoDBDataLoad):
         return_sample["caption"] = caption
         
         for k, v in self.extract_field.items():
-            imageUrl = sample[k]
-            try:
-                head_response = self.session.head(imageUrl, timeout=1)
-                if head_response.status_code != 200:
-                    raise requests.HTTPError(f"HEAD request failed with status code {head_response.status_code}")
-
-                # Use session and increase timeout
-                response = self.session.get(imageUrl, timeout=2, stream=True)
-                response.raise_for_status()  # Raise an exception for HTTP errors
-                
-                image = Image.open(io.BytesIO(response.content)).convert("RGB")
-                if random.random() > 0.9:
-                    self.place_holder_image = image  # frequently update the placeholder image
-                
+            image, success = self.client(sample[k])
+            if success:
                 return_sample[v], return_sample[f"{v}_cond"] = self.image_processing.transform(image)
-            except (requests.RequestException, IOError) as e:
-                # Handle all request and image processing errors
-                if isinstance(e, requests.Timeout):
-                    logging.debug(f"Timeout downloading image: {imageUrl}")
-                elif isinstance(e, requests.HTTPError):
-                    logging.debug(f"HTTP error ({head_response.status_code}) for: {imageUrl}")
-                elif isinstance(e, requests.ConnectionError):
-                    logging.debug(f"Connection error for: {imageUrl}")
-                else:
-                    logging.debug(f"Error processing image: {str(e)}")
-                
+            else:
                 # Fall back to placeholder image
-                image = self.place_holder_image
-                return_sample[v], return_sample[f"{v}_cond"] = self.image_processing.transform(image)
+                return_sample[v], return_sample[f"{v}_cond"] = self.image_processing.transform(image) # image is placeholder here
                 return_sample["_id"] = "-1"
                 return_sample["caption"] = ""
                 
         return return_sample
+
     
     def __del__(self):
         # Clean up the session when the dataset object is destroyed

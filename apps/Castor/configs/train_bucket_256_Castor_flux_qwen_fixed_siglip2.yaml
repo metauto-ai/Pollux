@@ -4,7 +4,7 @@
 version: v1.0
 # From now on, start to align train, data, and model setting with train stage (just finish refactor for dara)
 train_stage: stage-1 # options: preliminary, pretraining, posttraining; aligned with data setting
-name: unpadded #used for local dump and wandb log
+name: unpadded3 #used for local dump and wandb log
 output_dir: /mnt/pollux/checkpoints/aj
 dump_dir: '' # No need now
 steps: 500000
@@ -102,6 +102,8 @@ data:
         "media_path": "image"
     use: true
     root_dir: "/mnt/pollux/mongo_db_cache_train"
+    # https://worldmodeldata-prod.s3.us-east-2.amazonaws.com
+    base_url: s3://worldmodeldata-prod
     dataloader:
         prefetch_factor: 2
         batch_size: 16
