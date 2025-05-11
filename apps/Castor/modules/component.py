@@ -12,16 +12,13 @@ from torch.nn import functional as F
 from torch.nn.attention.flex_attention import (BlockMask, _mask_mod_signature,
                                                create_block_mask,
                                                flex_attention)
+from xformers.ops import AttentionBias, fmha
 from liger_kernel.transformers import LigerSwiGLUMLP, LigerRMSNorm, liger_rotary_pos_emb
 from types import SimpleNamespace
 
-try:
-    from flash_attn_interface import flash_attn_varlen_func
-except ImportError:
-    print("flash_attn_3 not found, using flash_attn_2")
-    from flash_attn import flash_attn_varlen_func
+# fa3 
+from flash_attn_interface import flash_attn_varlen_func
 
-from flash_attn.layers.rotary import apply_rotary_emb as flash_attn_apply_rotary_emb
 
 flex_attention_comp = torch.compile(flex_attention)
 
@@ -424,7 +421,7 @@ class Attention(nn.Module):
         x_mask: torch.Tensor,
         freqs_cis: torch.Tensor,
         tok_idx: Optional[torch.Tensor] = None,
-        mask: Optional[Union[BlockMask, str]] = None,
+        mask: Optional[Union[BlockMask, AttentionBias, str]] = None,
         attn_impl: str = "sdpa",
     ) -> torch.Tensor:
         # B S D

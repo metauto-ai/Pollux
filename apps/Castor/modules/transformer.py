@@ -5,6 +5,7 @@ import os
 import random
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple, Union
+from xformers.ops import AttentionBias, fmha
 
 import torch
 import torch.nn.functional as F
@@ -106,7 +107,7 @@ class DiffusionTransformerBlock(nn.Module):
         x_mask: torch.Tensor,
         freqs_cis: torch.Tensor,
         modulation_signal: torch.Tensor,
-        mask: Optional[Union[BlockMask, str]] = None,
+        mask: Optional[Union[BlockMask, AttentionBias, str]] = None,
         attn_impl: str = "sdpa",
         modulation_values: Optional[torch.Tensor] = None,
         cu_seqlens: Optional[torch.Tensor] = None,
@@ -310,6 +311,7 @@ class DiffusionTransformer(BaseDiffusionTransformer):
         x: Union[torch.Tensor, List[torch.Tensor]],
         condition: torch.Tensor,
         condition_mask: torch.Tensor,
+        pad: Optional[bool] = True,
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, Tuple[int, int], torch.Tensor]:
         self.rope_embeddings_image.freqs_cis = self.rope_embeddings_image.freqs_cis.to(
             x[0].device
@@ -388,8 +390,10 @@ class DiffusionTransformer(BaseDiffusionTransformer):
             # 3. Calculate total sequence length and pad to multiple of 8
             img_l = (H // pH) * (W // pW)
             total_len = cond_l + img_l
-            # padded_len = nearest_multiple_of_8(total_len)
-            padded_len = total_len
+            if pad:
+                padded_len = nearest_multiple_of_8(total_len)
+            else:
+                padded_len = total_len
             
             # 4. Initialize tensors with padded length
             embed_dim = condition.size(-1)
@@ -443,7 +447,7 @@ class DiffusionTransformer(BaseDiffusionTransformer):
         modulation_signal = self.tmb_embed(time_steps)
 
         x_patched, x_mask, cond_l, img_size, freqs_cis = self.patchify_and_embed_image(
-            x, condition, condition_mask
+            x, condition, condition_mask, pad=self.unpadded
         )
 
         if flops_meter is not None:
