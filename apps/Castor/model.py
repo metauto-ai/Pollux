@@ -92,15 +92,15 @@ class Castor(nn.Module):
         self.scheduler = RectifiedFlow(args.scheduler)
         self.text_cfg_ratio = args.text_cfg_ratio
 
-    def forward(self, batch: dict[str:any]) -> dict[str:any]:
+    def forward(self, batch: dict[str:any], flops_meter= None) -> dict[str:any]:
         if hasattr(self, "compressor"):
-            batch["latent_code"] = self.compressor.extract_latents(batch)
+            batch["latent_code"] = self.compressor.extract_latents(batch, flops_meter)
 
         if hasattr(self, "vision_encoder"):
-            batch["vision_encoder_target"] = self.vision_encoder.extract_image_representations(batch)
+            batch["vision_encoder_target"] = self.vision_encoder.extract_image_representations(batch, flops_meter)
 
         if "text_embedding" not in batch:
-            batch["text_embedding"], batch["attention_mask"] = self.text_encoder(batch)
+            batch["text_embedding"], batch["attention_mask"] = self.text_encoder(batch, flops_meter)
         
         conditional_signal, conditional_mask = batch["text_embedding"], batch["attention_mask"]
 
@@ -119,6 +119,7 @@ class Castor(nn.Module):
             time_steps=t,
             condition=conditional_signal,
             condition_mask=conditional_mask,
+            flops_meter=flops_meter
         )
 
         batch["prediction"] = output.output

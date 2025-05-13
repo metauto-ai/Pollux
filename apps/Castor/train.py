@@ -34,6 +34,8 @@ from apps.main.modules.schedulers import SchedulerArgs
 from apps.main.utils.cal_flops import get_num_flop_per_token
 from apps.main.utils.dict_tensor_data_load import DictTensorBatchIterator
 from apps.main.utils.sampler import StatefulDistributedSampler
+from apps.Castor.utils.flop_meter import FlopsMeter
+
 from lingua.args import dataclass_from_dict, dump_config, flatten_dict
 from lingua.checkpoint import (CheckpointArgs, CheckpointManager,
                                load_from_checkpoint)
@@ -260,6 +262,7 @@ def train(args: TrainArgs):
         logger.info("Model is built !")
 
         model_param_count = get_num_params(model)
+        flops_meter = FlopsMeter(args.model, model)
 
         torch.manual_seed(args.seed)
         model.init_weights(args.model)
@@ -396,7 +399,7 @@ def train(args: TrainArgs):
             end_timer = torch.cuda.Event(enable_timing=True)
             start_timer.record()
 
-            outputs = model(batch)
+            outputs = model(batch, flops_meter)
             # We scale loss with grad_acc_steps so the gradient is the same
             # regardless of grad_acc_steps
             loss = outputs.loss / args.grad_acc_steps
@@ -452,15 +455,6 @@ def train(args: TrainArgs):
                 # This is an estimate and the correct values may change
                 # if you change the architecture
                 # Use xformer's analyze profile trace to get actual measurement
-                FLOPS = (
-                    get_num_flop_per_token(
-                        model_param_count,
-                        args.model.diffusion_model.n_layers,
-                        args.model.diffusion_model.dim,
-                        args.model.diffusion_model.max_seqlen,
-                    )
-                    * wps
-                )
                 metrics = flatten_dict(
                     {
                         "global_step": train_state.step,
@@ -468,7 +462,8 @@ def train(args: TrainArgs):
                         "data_failure_rate": failure_rate,
                         "speed": {
                             "wps": wps,
-                            "FLOPS": FLOPS,
+                            "FLOPS": flops_meter.get_total_flops(time_delta),
+                            "MFU": flops_meter.get_mfu(time_delta),
                             "curr_iter_time": curr_iter_time,
                             "data_load_time": max_data_load_time,
                         },
@@ -501,7 +496,8 @@ def train(args: TrainArgs):
                     f"  acc: {train_state.acc_step}"
                     f"  loss: {round(loss.item(),4):>7}"
                     f"  grad: {grad_norm:.2e}"
-                    f"  flops: {FLOPS:.2e}"
+                    f"  flops: {flops_meter.get_total_flops(time_delta):.2e}"
+                    f"  mfu: {flops_meter.get_mfu(time_delta):.2e}"
                     f"  wps: {wps:.2e}"
                     f"  iter: {curr_iter_time:>7}"
                     f"  data: {max_data_load_time:>5}"
@@ -512,6 +508,8 @@ def train(args: TrainArgs):
                 )
                 # Reset accumulator and counter for the next logging interval
                 max_data_load_time = 0.0
+                flops_meter.reset()
+
 
             saved = False
             
