@@ -259,7 +259,7 @@ class CheckpointManager:
             checkpoint_id=curr_save_dir,
         )
 
-        logger.info(f"Time taken to async save: {time.time() - start_time} seconds")
+        logger.info(f"Time taken to initiate async save: {time.time() - start_time} seconds")
 
         if get_is_master():
             with open(curr_save_dir / CONFIG_NAME, "w") as f:
