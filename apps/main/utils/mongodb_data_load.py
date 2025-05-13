@@ -193,6 +193,8 @@ class MongoDBImageDataLoad(MongoDBDataLoad):
             self.client = self.http_client
         elif self.base_url.scheme == 's3':
             self.client = self.s3_client
+        elif self.base_url.scheme == 'dummy':
+            self.client = self.dummy_client
         else:
             raise ValueError(f"Invalid scheme: {self.base_url.scheme}")
 
@@ -253,6 +255,9 @@ class MongoDBImageDataLoad(MongoDBDataLoad):
             # For production, you might want to catch more specific Boto3 exceptions like ClientError
             logging.debug(f"Error downloading image from S3 {imageUrl}: {str(e)}")
             return self.place_holder_image, False # Signal failure
+        
+    def dummy_client(self, imageUrl: str) -> tuple[Image.Image, bool]:
+        return self.place_holder_image, True # Signal success
 
     def __getitem__(self, idx: int) -> dict[str, Any]:
         # sample = self.data[idx]

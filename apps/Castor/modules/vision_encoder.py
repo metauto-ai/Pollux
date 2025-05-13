@@ -27,9 +27,11 @@ class BaseVisionEncoder:
         raise NotImplementedError
     
     @torch.no_grad()
-    def extract_image_representations(self, batch: dict[str:any]) -> Union[torch.Tensor, List[torch.Tensor]]:
+    def extract_image_representations(self, batch: dict[str:any], flops_meter= None) -> Union[torch.Tensor, List[torch.Tensor]]:
         images = batch["image"]
         if isinstance(images, torch.Tensor):
+            if flops_meter is not None:
+                flops_meter.log_vision_encoder_flops(images.shape)
             return self.forward(images)
         elif isinstance(images, list):
             grouped_images: Dict[Tuple[int, int], List[Tuple[int, torch.Tensor]]] = {}
@@ -46,6 +48,9 @@ class BaseVisionEncoder:
                 tensors = [item[1] for item in indexed_tensors]
 
                 input_batch = torch.cat(tensors, dim=0)
+
+                if flops_meter is not None:
+                    flops_meter.log_vision_encoder_flops(input_batch.shape)
 
                 feature_batch = self.forward(input_batch)
 

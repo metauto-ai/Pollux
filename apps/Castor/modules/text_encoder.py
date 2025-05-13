@@ -104,6 +104,8 @@ class Qwen2_5_VL(BaseTextEncoder):
             config=config,
             torch_dtype=self.dtype,
         ).cuda()
+        # avoid norm layer in the last layer
+        model.norm = torch.nn.Identity()
         apply_liger_kernel_to_qwen2_5_vl(model)
         model.eval()
         model.requires_grad_(False)
@@ -141,7 +143,7 @@ class Qwen2_5_VL(BaseTextEncoder):
             add_generation_prompt=True,
         )
 
-    def __call__(self, batch: dict[str:any]) -> Tuple[torch.Tensor, torch.Tensor]:
+    def __call__(self, batch: dict[str:any], flops_meter= None) -> Tuple[torch.Tensor, torch.Tensor]:
         assert "caption" in batch
         if isinstance(batch["caption"][0], tuple):
             batch["caption"] = [x[0] for x in batch["caption"]]
@@ -157,8 +159,11 @@ class Qwen2_5_VL(BaseTextEncoder):
                 max_length=self.text_seqlen,
                 truncation=True,
             ).to(device=self.model.device, dtype=self.dtype)
-
-            outputs = self.model(**inputs)
+            
+            if flops_meter is not None:
+                flops_meter.log_text_encoder_flops(inputs['input_ids'].shape)
+            
+            outputs = self.model(**inputs, output_hidden_states=True)
             last_hidden_state = outputs.last_hidden_state
             attention_mask = inputs.attention_mask
 

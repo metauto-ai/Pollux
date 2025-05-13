@@ -411,6 +411,7 @@ class DiffusionTransformer(BaseDiffusionTransformer):
         condition: torch.Tensor,
         condition_mask: torch.Tensor,
         attn_impl: str = "sdpa",
+        flops_meter = None,
     ):
         condition = self.cond_proj(condition)
         condition = self.cond_norm(condition)
@@ -420,6 +421,9 @@ class DiffusionTransformer(BaseDiffusionTransformer):
         x_patched, x_mask, cond_l, img_size, freqs_cis = self.patchify_and_embed_image(
             x, condition, condition_mask
         )
+
+        if flops_meter is not None:
+            flops_meter.log_diffusion_flops(x_patched.shape)
 
         # Ensure modulation values match the patched data dtype if shared_adaLN is used
         if self.shared_adaLN:

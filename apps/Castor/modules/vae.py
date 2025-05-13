@@ -58,10 +58,12 @@ class BaseLatentVideoVAE:
         )
         pass
 
-    def extract_latents(self, batch: dict[str:any]) -> Union[torch.Tensor, List[torch.Tensor]]:
+    def extract_latents(self, batch: dict[str:any], flops_meter= None) -> Union[torch.Tensor, List[torch.Tensor]]:
         images = batch["image"]
         if isinstance(images, torch.Tensor):
             # Handle the case where input is already a batched tensor
+            if flops_meter is not None:
+                flops_meter.log_vae_flops(images.shape)
             return self.encode(images)
         elif isinstance(images, list):
             # Group images by resolution (H, W) while preserving original index
@@ -81,6 +83,9 @@ class BaseLatentVideoVAE:
 
                 # Stack tensors into a batch
                 input_batch = torch.stack(tensors, dim=0)
+
+                if flops_meter is not None:
+                    flops_meter.log_vae_flops(input_batch.shape)
 
                 # Encode the batch
                 latent_batch = self.encode(input_batch)
