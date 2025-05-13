@@ -16,13 +16,9 @@ from xformers.ops import AttentionBias, fmha
 from liger_kernel.transformers import LigerSwiGLUMLP, LigerRMSNorm, liger_rotary_pos_emb
 from types import SimpleNamespace
 
-try:
-    from flash_attn_interface import flash_attn_func
-except ImportError:
-    print("flash_attn_3 not found, using flash_attn_2")
-    from flash_attn import flash_attn_func
+# fa3 
+from flash_attn_interface import flash_attn_varlen_func
 
-from . import probe
 
 flex_attention_comp = torch.compile(flex_attention)
 
@@ -164,15 +160,30 @@ def apply_rotary_emb(
         cos = freqs_cis[:, :, 0, 0]
         xq, xk = liger_rotary_pos_emb(xq, xk, cos, sin)
         return xq, xk
-    
-    xq_ = xq.reshape(*xq.shape[:-1], -1, 1, 2)  # B S H D -> B S H D/2 1 2
-    xk_ = xk.reshape(*xk.shape[:-1], -1, 1, 2)  # B S H D -> B S H D/2 1 2
-    # B S D/2 2 2 -> B S 1 D/2 2 2
-    freqs_cis = freqs_cis.unsqueeze(seq_dim)
-    xq_out = (xq_ * freqs_cis).sum(5).flatten(3)
-    xk_out = (xk_ * freqs_cis).sum(5).flatten(3)
-    return xq_out.type_as(xq), xk_out.type_as(xk)
+    if xq.ndim == 4: 
+        xq_ = xq.reshape(*xq.shape[:-1], -1, 1, 2)  # B S H D -> B S H D/2 1 2
+        xk_ = xk.reshape(*xk.shape[:-1], -1, 1, 2)  # B S H D -> B S H D/2 1 2
+        # B S D/2 2 2 -> B S 1 D/2 2 2
+        freqs_cis = freqs_cis.unsqueeze(seq_dim)
+        xq_out = (xq_ * freqs_cis).sum(5).flatten(3)
+        xk_out = (xk_ * freqs_cis).sum(5).flatten(3)
+        return xq_out.type_as(xq), xk_out.type_as(xk)
+    elif xq.ndim == 3:
+         # Expect freqs_cis shape (T, D/2, 2, 2)
+        head_dim_idx = 1 # The Head dimension index
+        flatten_start_dim = 2
+        xq_ = xq.reshape(*xq.shape[:-1], -1, 1, 2)  # T H D -> T H D/2 1 2
+        xk_ = xk.reshape(*xk.shape[:-1], -1, 1, 2)  # T H D -> T H D/2 1 2
+        freqs_cis_ = freqs_cis.unsqueeze(head_dim_idx)
+        # xq_ * freqs_cis_ -> broadcasts to (B, S, H, D/2, 2, 2) or (T, H, D/2, 2, 2)
+        # .sum(-1) -> sums the last dim -> (B, S, H, D/2, 2) or (T, H, D/2, 2)
+        # .flatten(flatten_start_dim) -> reshapes to target (B, S, H, D) or (T, H, D)
+        xq_out = (xq_ * freqs_cis_).sum(-1).flatten(flatten_start_dim)
+        xk_out = (xk_ * freqs_cis_).sum(-1).flatten(flatten_start_dim)
 
+        return xq_out.type_as(xq), xk_out.type_as(xk)
+
+    raise ValueError(f"xq.ndim: {xq.ndim}, xk.ndim: {xk.ndim}")
 
 def causal_mask(b, h, q_idx, kv_idx):
     return q_idx >= kv_idx
@@ -254,6 +265,10 @@ def generate_doc_mask_mod(
 @torch.compile
 def modulate_and_gate(x, scale, gate):
     return (x * (1 + scale.unsqueeze(1))) * gate.unsqueeze(1).tanh()
+
+@torch.compile
+def modulate_and_gate_unpadded(x, scale, gate):
+    return (x * (1 + scale)) * gate.tanh()
 
 
 def create_causal_mask(seqlen, attn_impl):
@@ -337,7 +352,6 @@ class RMSNorm(nn.Module):
         if self.liger_rms_norm:
             return self.rms_norm(x)
         else:
-            x = probe.log_stats(x, "resid")
             output = self._norm(x.float())
             return (output * self.weight.float()).type_as(x)
 
@@ -506,6 +520,7 @@ class FlashAttention(nn.Module):
         liger_rms_norm: bool = True,
         liger_rotary_emb: bool = True,
         window_size: Tuple[int, int] = (-1, -1),
+        **kwargs,
     ):
         """
         Initialize the Attention module.
@@ -630,10 +645,9 @@ class FlashAttention(nn.Module):
         x: torch.Tensor,
         x_mask: torch.Tensor,
         freqs_cis: torch.Tensor,
-        # Note: mask sure the input is same as original Attention
-        tok_idx: Optional[torch.Tensor] = None,
-        mask: Optional[Union[BlockMask, AttentionBias, str]] = None,
-        attn_impl: str = "sdpa"
+        cu_seqlens: Optional[torch.Tensor] = None,
+        max_seqlen: Optional[int] = None,
+        **kwargs,
     ) -> torch.Tensor:
         """
 
@@ -645,48 +659,76 @@ class FlashAttention(nn.Module):
         Returns:
 
         """
-        bsz, seqlen, _ = x.shape
         dtype = x.dtype
 
         xq = self.wq(x)
         xk = self.wk(x)
         xv = self.wv(x)
-        xq = xq.view(bsz, seqlen, self.n_local_heads, self.head_dim)
-        xk = xk.view(bsz, seqlen, self.n_local_kv_heads, self.head_dim)
-        xv = xv.view(bsz, seqlen, self.n_local_kv_heads, self.head_dim)
+
+        if cu_seqlens is None:
+            bsz, seqlen, _ = x.shape
+            xq = xq.view(bsz, seqlen, self.n_local_heads, self.head_dim)
+            xk = xk.view(bsz, seqlen, self.n_local_kv_heads, self.head_dim)
+            xv = xv.view(bsz, seqlen, self.n_local_kv_heads, self.head_dim)
+        else:
+            # padded case total_tokens, dim
+            xq = xq.view(-1, self.n_local_heads, self.head_dim)
+            xk = xk.view(-1, self.n_local_kv_heads, self.head_dim)
+            xv = xv.view(-1, self.n_local_kv_heads, self.head_dim)
+
         xq = self.q_norm(xq)
         xk = self.k_norm(xk)
-        xq, xk = apply_rotary_emb(xq, xk, 2, freqs_cis[:, 0:seqlen], liger_rotary_emb=self.liger_rotary_emb)
+        if cu_seqlens is None:
+            xq, xk = apply_rotary_emb(xq, xk, 2, freqs_cis[:, 0:seqlen], liger_rotary_emb=self.liger_rotary_emb)
+        else:
+            xq, xk = apply_rotary_emb(xq, xk, 2, freqs_cis, liger_rotary_emb=False)
         xq, xk = xq.to(dtype), xk.to(dtype)
 
         softmax_scale = math.sqrt(1 / self.head_dim)
 
         if dtype in [torch.float16, torch.bfloat16]:
+            if cu_seqlens is not None:
+                output, _ = flash_attn_varlen_func(
+                    xq,
+                    xk,
+                    xv,
+                    cu_seqlens_q=cu_seqlens,
+                    cu_seqlens_k=cu_seqlens,
+                    max_seqlen_q=max_seqlen,
+                    max_seqlen_k=max_seqlen,
+                    causal=False,
+                    softmax_scale=softmax_scale,
+                    window_size=self.window_size,
+                )
+            else:
             # begin var_len flash attn
-            # (
-            #     query_states,
-            #     key_states,
-            #     value_states,
-            #     indices_q,
-            #     cu_seq_lens,
-            #     max_seq_lens,
-            # ) = self._upad_input(xq, xk, xv, x_mask, seqlen)
+                (
+                    query_states,
+                    key_states,
+                    value_states,
+                    indices_q,
+                    cu_seq_lens,
+                    max_seq_lens,
+                ) = self._upad_input(xq, xk, xv, x_mask, seqlen)
 
-            # cu_seqlens_q, cu_seqlens_k = cu_seq_lens
-            # max_seqlen_in_batch_q, max_seqlen_in_batch_k = max_seq_lens
-
-            output, _ = flash_attn_func(
-                xq,
-                xk,
-                xv,
-                causal=False,
-                softmax_scale=softmax_scale,
-                window_size=self.window_size,
-            )
-
-            # print("OUTPUT", attn_output_unpad)
-            # output = pad_input(attn_output_unpad, indices_q, bsz, seqlen)
-            # end var_len_flash_attn
+                cu_seqlens_q, cu_seqlens_k = cu_seq_lens
+                max_seqlen_in_batch_q, max_seqlen_in_batch_k = max_seq_lens
+                attn_output_unpad = flash_attn_varlen_func(
+                   query_states,
+                    key_states,
+                    value_states,
+                    cu_seqlens_q=cu_seqlens_q,
+                    cu_seqlens_k=cu_seqlens_k,
+                    max_seqlen_q=max_seqlen_in_batch_q,
+                    max_seqlen_k=max_seqlen_in_batch_k,
+                    dropout_p=0.0,
+                    softmax_scale=softmax_scale,
+                    causal=False,
+                    window_size=self.window_size,
+                )
+                # print("OUTPUT", attn_output_unpad)
+                output = pad_input(attn_output_unpad, indices_q, bsz, seqlen)
+                # end var_len_flash_attn
 
         else:
             n_rep = self.n_local_heads // self.n_local_kv_heads
@@ -846,7 +888,7 @@ class TransformerBlock(nn.Module):
         x: torch.Tensor,
         freqs_cis: torch.Tensor,
         tok_idx: Optional[torch.Tensor] = None,
-        mask: Optional[Union[BlockMask, AttentionBias, str]] = None,
+        mask: Optional[Union[BlockMask, str]] = None,
         attn_impl: str = "sdpa",
     ) -> torch.Tensor:
 
