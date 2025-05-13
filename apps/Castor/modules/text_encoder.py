@@ -163,7 +163,7 @@ class Qwen2_5_VL(BaseTextEncoder):
             if flops_meter is not None:
                 flops_meter.log_text_encoder_flops(inputs['input_ids'].shape)
             
-            outputs = self.model(**inputs, output_hidden_states=True)
+            outputs = self.model(**inputs)
             last_hidden_state = outputs.last_hidden_state
             attention_mask = inputs.attention_mask
 
