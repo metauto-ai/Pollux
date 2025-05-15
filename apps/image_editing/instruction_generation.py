@@ -219,10 +219,10 @@ class Qwen_Instruction():
         print("loading Qwen2.5-VL finished")
 
 
-    def change_background(self,):
-        system_prompt = """
-        You are an AI image editing assistant. Given the prompt and its corresponding image (maybe only have one), you need to analyze the image foreground object and background, generate precise instructions for changing the image backgrounds.
-        Your final task is to output a text description instruction to change the image background from its original background to new background.
+    def change_background(self,num_inst):
+        system_prompt = f"""
+        You are an AI image editing assistant. Given the prompt and its corresponding image (maybe only have one), you need to analyze the image foreground object and background, generate {num_inst} precise instructions for changing the image backgrounds.
+        Your final task is to output {num_inst} different text description instructions to change the image background from its original background to new background with list format.
 
         Example Prompt:
         "A cat sitting on a wooden table in a cozy room with warm lighting."
@@ -233,10 +233,10 @@ class Qwen_Instruction():
         """
         return system_prompt
 
-    def text_editing(self,):
-        system_prompt = """
-        You are an AI image editing assistant. Given the prompt and its corresponding image (maybe only have one), you need to analyze the text content in the image, generate precise instructions for replace the text contents.
-        Your final task is to output a text description instruction to replace the text content in the image from its original text from prompt to new text. The new text can be any other words or sentence with different meaning from original ones. 
+    def text_editing(self,num_inst):
+        system_prompt = f"""
+        You are an AI image editing assistant. Given the prompt and its corresponding image (maybe only have one), you need to analyze the text content in the image, generate {num_inst} precise instructions for replace the text contents.
+        Your final task is to output {num_inst} different text description instructions to replace the text content in the image from its original text from prompt to new texts with list format. The new texts can be any other words or sentence with different meaning from original ones. 
 
         Example Prompt:
         "A glowing blue sphere with floating metallic rings with text 'alien'."
@@ -247,6 +247,25 @@ class Qwen_Instruction():
         """
         return system_prompt
 
+    def style_transfer(self,num_inst):
+        system_prompt = f"""
+        You are an AI instruction generation assistant. Given the prompt and its corresponding image, you need to generate {num_inst} new text prompts according to the original prompt for changing the image style.
+        Your final task is to output {num_inst} different text prompts based on the original prompt to change the image style with list format.
+
+        Example Prompt:
+        "a photo of a white horse."
+
+        Example Output:
+        "
+        1. A photo of a zebra in the snow with a colorful winter coat.
+        2. A photo of a zebra in the snow with a futuristic cityscape background.
+        3. A photo of a zebra in the snow with a surreal, dreamlike atmosphere.
+        4. A photo of a zebra in the snow with a vintage, old-fashioned filter.
+        5. A photo of a zebra in the snow with a high-contrast, black-and-white effect.
+        "
+
+        """
+        return system_prompt
 
     def pil_to_base64(self, image_path):
         image = Image.open(image_path).convert("RGB")
@@ -255,11 +274,13 @@ class Qwen_Instruction():
         return base64.b64encode(buffered.getvalue()).decode("utf-8")
 
 
-    def generate(self, img_path, prompt, task):
+    def generate(self, img_path, prompt, num_inst=5, task='style'):
         if 'background' in task:
-            system_prompt = self.change_background()
+            system_prompt = self.change_background(num_inst)
         elif 'text' in task:
-            system_prompt = self.text_editing()
+            system_prompt = self.text_editing(num_inst)
+        elif 'style' in task:
+            system_prompt = self.style_transfer(num_inst)
         if os.path.isfile(img_path):
             image = self.pil_to_base64(img_path)
             messages = [[
@@ -321,7 +342,8 @@ class Qwen_Instruction():
             skip_special_tokens=True,
             clean_up_tokenization_spaces=False,
         )[0]
-        return output_text
+        content_list = [line.split('. ', 1)[1] for line in output_text.split('\n') if line.strip()]
+        return content_list
 
 
 
@@ -329,16 +351,16 @@ class Qwen_Instruction():
 def instruction_generation(task):
     if task in ['add', 'remove']:
         return Llama_Instruction()
-    if task in ['background', 'text']:
+    if task in ['background', 'text', 'style']:
         return Qwen_Instruction()
 
 
 
 if __name__ == "__main__":
-    pipe = instruction_generation(task='text')
-    prompt = "a realistic image contains steam with text 'steam'."
-    image = "/mnt/pollux/wentian/image_edit/steam.png"
-    instruction = pipe.generate(image, prompt, task='text')
+    pipe = instruction_generation(task='style')
+    prompt = "a photo of a zebra in the snow."
+    image = "/mnt/pollux/wentian/image_edit/zebra.png"
+    instruction = pipe.generate(image, prompt, num_inst=5, task='style')
     print (instruction)
 
 
@@ -393,14 +415,33 @@ if __name__ == "__main__":
 
         # Input
             prompt = "a realistic image contains steam with text 'steam'."
-            image = "/mnt/pollux/wentian/image_edit/steam.png"
+            image = "/mnt/pollux/wentian/image_edit/images/steam.png"
             task = 'text'
 
-            pipe = instruction_generation(task='text')
-            instruction = pipe.generate(image, prompt, task='text')
+            pipe = instruction_generation(task=task)
+            instruction = pipe.generate(image, prompt, task=task)
             print (instruction)
 
         # Output:
             "replace 'steam' with 'vapor'"
-    """
 
+    # Example 4
+
+        # Input
+            prompt = "a photo of a zebra in the snow."
+            image = "/mnt/pollux/wentian/image_edit/images/zebra.png"
+            task = 'style'
+
+            pipe = instruction_generation(task=task)
+            instruction = pipe.generate(image, prompt, num_inst=5, task=task)
+            print (instruction)
+
+        # Output:
+            ['A photo of a zebra in the snow with a vibrant, psychedelic background.', 
+             'A photo of a zebra in the snow with a futuristic, cyberpunk aesthetic.', 
+             'A photo of a zebra in the snow with a surreal, dreamlike atmosphere.', 
+             'A photo of a zebra in the snow with a vintage, old-fashioned filter.', 
+             'A photo of a zebra in the snow with a high-contrast, black-and-white effect.'
+            ]
+
+    """
