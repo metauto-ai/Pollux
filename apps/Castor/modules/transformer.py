@@ -447,7 +447,7 @@ class DiffusionTransformer(BaseDiffusionTransformer):
         modulation_signal = self.tmb_embed(time_steps)
 
         x_patched, x_mask, cond_l, img_size, freqs_cis = self.patchify_and_embed_image(
-            x, condition, condition_mask, pad=self.unpadded
+            x, condition, condition_mask, pad= not self.unpadded
         )
 
         if flops_meter is not None:

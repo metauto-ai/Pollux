@@ -713,7 +713,7 @@ class FlashAttention(nn.Module):
 
                 cu_seqlens_q, cu_seqlens_k = cu_seq_lens
                 max_seqlen_in_batch_q, max_seqlen_in_batch_k = max_seq_lens
-                attn_output_unpad = flash_attn_varlen_func(
+                attn_output_unpad, _ = flash_attn_varlen_func(
                    query_states,
                     key_states,
                     value_states,
@@ -721,7 +721,6 @@ class FlashAttention(nn.Module):
                     cu_seqlens_k=cu_seqlens_k,
                     max_seqlen_q=max_seqlen_in_batch_q,
                     max_seqlen_k=max_seqlen_in_batch_k,
-                    dropout_p=0.0,
                     softmax_scale=softmax_scale,
                     causal=False,
                     window_size=self.window_size,
