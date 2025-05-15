@@ -475,13 +475,15 @@ def main():
 
     for prompt, paths in image_dict.items():
         instructions = []
-        for i in range(args.num_inst):
-            if args.task in ['add', 'remove']:
+        if args.task in ['add', 'remove']:
+            for i in range(args.num_inst):
                 instruct = instruction_gen_model.generate(prompt, args.task)
-            elif args.task in ['background', 'text']:
-                path_ = choice(paths)
-                instruct = instruction_gen_model.generate(path_, prompt, args.task)
-            instructions.append(instruct)
+                instructions.append(instruct)
+
+        elif args.task in ['background', 'text', 'style']:
+            path_ = choice(paths)
+            instruct = instruction_gen_model.generate(path_, prompt, args.num_inst, args.task)
+            instructions.extend(instruct)
                 
 
         for path in tqdm(paths):
@@ -661,4 +663,40 @@ if __name__ == "__main__":
             /mnt/pollux/wentian/image_edit/steam_edit_1.png
             /mnt/pollux/wentian/image_edit/steam_edit_2.png
             /mnt/pollux/wentian/image_edit/steam_edit_3.png
+
+    # Example 4
+
+        # Input
+            prompt = ['A photo of a zebra in the snow with a futuristic, cyberpunk aesthetic.', 
+                     'A photo of a zebra in the snow with a vintage, old-fashioned filter.', 
+                     'A photo of a zebra in the snow with a high-contrast, black-and-white effect.'
+                     ]
+            image_path = '/mnt/pollux/wentian/image_edit/images/zebra.png'
+
+            image_edit = ImageGenerator(
+                ae_path='/mnt/pollux/checkpoints/Step1X-Edit/vae.safetensors',
+                dit_path='/mnt/pollux/checkpoints/Step1X-Edit/step1x-edit-i1258.safetensors',
+                qwen2vl_model_path='/mnt/pollux/checkpoints/Qwen2.5-VL-7B-Instruct/',
+                max_length=640,
+                quantized=False,
+                offload=False,
+            )
+            for i in range(len(prompt)):
+                save_path = f'/mnt/pollux/wentian/image_edit/images/zebra_edit_{str(i)}.png'
+                image = image_edit.generate_image(
+                    prompt[i],
+                    negative_prompt="",
+                    ref_images=Image.open(image_path).convert("RGB"),
+                    num_samples=1,
+                    num_steps=28,
+                    cfg_guidance=6.0,
+                    seed=42,
+                    show_progress=True,
+                    size_level=1024,
+                )[0]
+                image.save(save_path, lossless=True)
+        # Output:
+            /mnt/pollux/wentian/image_edit/images/zebra_edit_0.png
+            /mnt/pollux/wentian/image_edit/images/zebra_edit_1.png
+            /mnt/pollux/wentian/image_edit/images/zebra_edit_2.png
     """
