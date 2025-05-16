@@ -201,6 +201,7 @@ class BaseDiffusionTransformer(nn.Module):
         max_seqlen: Optional[int] = None,
     ):
         for idx, layer in enumerate(self.layers):
+            print("**** At layer", idx)
             h = layer(
                 h,
                 h_mask,

@@ -483,6 +483,6 @@ def parallelize_model(
         torch._dynamo.config.cache_size_limit = (
             distributed_args.compile_cache_size_limit
         )
-        model = torch.compile(model)
+        model.diffusion_transformer = torch.compile(model.diffusion_transformer)
 
     return model

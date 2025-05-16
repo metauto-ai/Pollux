@@ -54,6 +54,9 @@ from torch.distributed._tensor import DTensor
 from torch.distributed.checkpoint.stateful import Stateful
 from torch.optim import lr_scheduler
 
+from transformer_engine.common.recipe import Format, DelayedScaling
+import transformer_engine.pytorch as te
+
 logger = logging.getLogger()
 
 
@@ -245,6 +248,7 @@ def train(args: TrainArgs):
 
         # build dataloader
         # need dp world size and rank
+        print("**** world_mesh['dp_shard']", world_mesh["dp_shard"], "world_mesh['dp_replicate']", world_mesh["dp_replicate"])
         dp_mesh = world_mesh["dp_replicate"]
         dp_degree = dp_mesh.size()
         dp_rank = dp_mesh.get_local_rank()
@@ -314,6 +318,14 @@ def train(args: TrainArgs):
         checkpoint = CheckpointManager.instantiate_and_make_dir(args.checkpoint)
         checkpoint.load(model, optimizer, train_state, world_mesh)
         # Either load from latest checkpoint or start from scratch
+
+        fp8_recipe = None
+        if args.model.diffusion_model.use_fp8_ffn: 
+            logger.info("FP8 is enabled. Defining FP8 recipe.")
+            # Example recipe, adjust as needed
+            fp8_format = Format.HYBRID # Or Format.E4M3
+            fp8_recipe = DelayedScaling(fp8_format=fp8_format, amax_history_len=16, amax_compute_algo="max")
+            # You might want to make recipe parameters configurable via TrainArgs
 
         gc.disable()
 
@@ -399,7 +411,8 @@ def train(args: TrainArgs):
             end_timer = torch.cuda.Event(enable_timing=True)
             start_timer.record()
 
-            outputs = model(batch, flops_meter)
+            with te.fp8_autocast(enabled=args.model.diffusion_model.use_fp8_ffn, fp8_recipe=fp8_recipe, fp8_group=world_mesh["dp_shard"].get_group()):
+                outputs = model(batch, flops_meter)
             # We scale loss with grad_acc_steps so the gradient is the same
             # regardless of grad_acc_steps
             loss = outputs.loss / args.grad_acc_steps
