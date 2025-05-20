@@ -482,9 +482,20 @@ def main():
 
         elif args.task in ['background', 'text', 'style']:
             path_ = choice(paths)
-            instruct = instruction_gen_model.generate(path_, prompt, args.num_inst, args.task)
+            instruct = instruction_gen_model.generate(img_path=path_, 
+                                                      prompt=prompt, 
+                                                      num_inst=args.num_inst, 
+                                                      task=args.task
+                                                    )
             instructions.extend(instruct)
-                
+        elif args.task == 'lighting':
+            path_ = choice(paths)
+            instruct = instruction_gen_model.generate(img_path=path_, 
+                                                      prompt=None, 
+                                                      num_inst=args.num_inst, 
+                                                      task=args.task
+                                                    )
+            instructions.extend(instruct)
 
         for path in tqdm(paths):
             for j, instruct in enumerate(instructions):
@@ -523,180 +534,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-    """
-    # Environments
-        conda create -n step1xedit python==3.10
-        conda activate step1xedit
-
-        pip install torch==2.5.1 torchvision==0.20.1
-        pip install transformers==4.49.0
-        pip install safetensors qwen_vl_utils accelerate
-        pip install liger_kernel einops
-
-        git clone https://github.com/stepfun-ai/Step1X-Edit.git
-        
-        python scripts/get_flash_attn.py
-        https://github.com/Dao-AILab/flash-attention/releases
-        wget https://github.com/Dao-AILab/flash-attention/releases/download/v2.7.2.post1/flash_attn-2.7.2.post1+cu12torch2.5cxx11abiFALSE-cp310-cp310-linux_x86_64.whl
-        pip install flash_attn-2.7.2.post1+cu12torch2.5cxx11abiFALSE-cp310-cp310-linux_x86_64.whl
-
-        cp Step1X-Edit/sampling.py ./
-        cp -r Step1X-Edit/modules/ ./
-
-    # Example 1
-
-        # Input
-
-        prompt = 'a cat'
-        image_path = '/mnt/pollux/wentian/image_edit/cat.png'
-        instruction = [
-                    "add a colorful rainbow",
-                    "add a dog and a cat",
-                    "add a flying saucer",
-                    "Make it wear a helmet",
-        ]
-        image_edit = ImageGenerator(
-            ae_path='/mnt/pollux/checkpoints/Step1X-Edit/vae.safetensors',
-            dit_path='/mnt/pollux/checkpoints/Step1X-Edit/step1x-edit-i1258.safetensors',
-            qwen2vl_model_path='/mnt/pollux/checkpoints/Qwen2.5-VL-7B-Instruct/',
-            max_length=640,
-            quantized=False,
-            offload=False,
-        )
-
-        for i, instruct in enumerate(instruction):
-            save_path = f'/mnt/pollux/wentian/image_edit/cat_edit_{str(i)}.png'
-            image = image_edit.generate_image(
-                instruct,
-                negative_prompt="",
-                ref_images=Image.open(image_path).convert("RGB"),
-                num_samples=1,
-                num_steps=28,
-                cfg_guidance=6.0,
-                seed=1234,
-                show_progress=True,
-                size_level=1024,
-            )[0]
-            image.save(save_path, lossless=True)
-
-        # CUDA_VISIBLE_DEVICES=0 python step1x_edit.py 
-
-        # Output:
-            /mnt/pollux/wentian/image_edit/cat_edit_0.png
-            /mnt/pollux/wentian/image_edit/cat_edit_1.png
-            /mnt/pollux/wentian/image_edit/cat_edit_2.png
-            /mnt/pollux/wentian/image_edit/cat_edit_3.png
-
-    # Example 2
-
-        # Input
-
-            prompt = 'A cute creature sits at the beach.'
-            image_path = '/mnt/pollux/wentian/image_edit/duck.jpeg'
-            instruction = "change the beach to a snowy mountain landscape"
-            image_edit = ImageGenerator(
-                ae_path='/mnt/pollux/checkpoints/Step1X-Edit/vae.safetensors',
-                dit_path='/mnt/pollux/checkpoints/Step1X-Edit/step1x-edit-i1258.safetensors',
-                qwen2vl_model_path='/mnt/pollux/checkpoints/Qwen2.5-VL-7B-Instruct/',
-                max_length=640,
-                quantized=False,
-                offload=False,
-            )
-            for i in range(4):
-                save_path = f'/mnt/pollux/wentian/image_edit/duck_edit_{str(i)}.png'
-                image = image_edit.generate_image(
-                    instruction,
-                    negative_prompt="",
-                    ref_images=Image.open(image_path).convert("RGB"),
-                    num_samples=1,
-                    num_steps=28,
-                    cfg_guidance=2.0,
-                    seed=42,
-                    show_progress=True,
-                    size_level=1024,
-                )[0]
-                image.save(save_path, lossless=True)
-
-        # CUDA_VISIBLE_DEVICES=0 python step1x_edit.py 
-
-        # Output:
-            /mnt/pollux/wentian/image_edit/duck_edit_0.png
-            /mnt/pollux/wentian/image_edit/duck_edit_1.png
-            /mnt/pollux/wentian/image_edit/duck_edit_2.png
-            /mnt/pollux/wentian/image_edit/duck_edit_3.png
-
-    # Example 3
-
-        # Input
-
-            prompt = "a realistic image contains steam with text 'steam'."
-            image_path = '/mnt/pollux/wentian/image_edit/steam.png'
-            instruction = "replace 'steam' with 'pollux'"
-            image_edit = ImageGenerator(
-                ae_path='/mnt/pollux/checkpoints/Step1X-Edit/vae.safetensors',
-                dit_path='/mnt/pollux/checkpoints/Step1X-Edit/step1x-edit-i1258.safetensors',
-                qwen2vl_model_path='/mnt/pollux/checkpoints/Qwen2.5-VL-7B-Instruct/',
-                max_length=640,
-                quantized=False,
-                offload=False,
-            )
-            for i in range(4):
-                save_path = f'/mnt/pollux/wentian/image_edit/steam_edit_{str(i)}.png'
-                image = image_edit.generate_image(
-                    instruction,
-                    negative_prompt="",
-                    ref_images=Image.open(image_path).convert("RGB"),
-                    num_samples=1,
-                    num_steps=28,
-                    cfg_guidance=6.0,
-                    seed=42,
-                    show_progress=True,
-                    size_level=1024,
-                )[0]
-                image.save(save_path, lossless=True)
-
-        # CUDA_VISIBLE_DEVICES=0 python step1x_edit.py 
-
-        # Output:
-            /mnt/pollux/wentian/image_edit/steam_edit_0.png
-            /mnt/pollux/wentian/image_edit/steam_edit_1.png
-            /mnt/pollux/wentian/image_edit/steam_edit_2.png
-            /mnt/pollux/wentian/image_edit/steam_edit_3.png
-
-    # Example 4
-
-        # Input
-            prompt = ['A photo of a zebra in the snow with a futuristic, cyberpunk aesthetic.', 
-                     'A photo of a zebra in the snow with a vintage, old-fashioned filter.', 
-                     'A photo of a zebra in the snow with a high-contrast, black-and-white effect.'
-                     ]
-            image_path = '/mnt/pollux/wentian/image_edit/images/zebra.png'
-
-            image_edit = ImageGenerator(
-                ae_path='/mnt/pollux/checkpoints/Step1X-Edit/vae.safetensors',
-                dit_path='/mnt/pollux/checkpoints/Step1X-Edit/step1x-edit-i1258.safetensors',
-                qwen2vl_model_path='/mnt/pollux/checkpoints/Qwen2.5-VL-7B-Instruct/',
-                max_length=640,
-                quantized=False,
-                offload=False,
-            )
-            for i in range(len(prompt)):
-                save_path = f'/mnt/pollux/wentian/image_edit/images/zebra_edit_{str(i)}.png'
-                image = image_edit.generate_image(
-                    prompt[i],
-                    negative_prompt="",
-                    ref_images=Image.open(image_path).convert("RGB"),
-                    num_samples=1,
-                    num_steps=28,
-                    cfg_guidance=6.0,
-                    seed=42,
-                    show_progress=True,
-                    size_level=1024,
-                )[0]
-                image.save(save_path, lossless=True)
-        # Output:
-            /mnt/pollux/wentian/image_edit/images/zebra_edit_0.png
-            /mnt/pollux/wentian/image_edit/images/zebra_edit_1.png
-            /mnt/pollux/wentian/image_edit/images/zebra_edit_2.png
-    """
