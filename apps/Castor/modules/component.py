@@ -16,8 +16,25 @@ from xformers.ops import AttentionBias, fmha
 from liger_kernel.transformers import LigerSwiGLUMLP, LigerRMSNorm, liger_rotary_pos_emb
 from types import SimpleNamespace
 
-# fa3 
-from flash_attn_interface import flash_attn_varlen_func
+# fa3 - try multiple import paths for better compatibility
+try:
+    # First try the normal path that should work with flash-attn package
+    from flash_attn.flash_attn_interface import flash_attn_varlen_func
+except ImportError:
+    try:
+        # Try the compatibility layer
+        from flash_attn.flash_attn_interface import flash_attn_varlen_func
+    except ImportError:
+        # Create a dummy placeholder that will raise a more descriptive error when used
+        def flash_attn_varlen_func(*args, **kwargs):
+            raise RuntimeError(
+                "flash_attn_varlen_func could not be imported. "
+                "Please install flash-attention properly or check the import paths."
+            )
+        warnings.warn(
+            "flash_attn_varlen_func could not be imported from either "
+            "flash_attn.flash_attn_interface or flash_attn_interface. Using dummy placeholder."
+        )
 
 
 flex_attention_comp = torch.compile(flex_attention)
