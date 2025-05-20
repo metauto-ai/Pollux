@@ -1,18 +1,18 @@
 # Image-edit Data Preparation
 
 
-| Tasks            | Generation |
-|------------------|------------|
-| Add              | Need       |
-| Remove           | Need       |
-| Background       | Need       |
-| Text Edit        | Need       |
-| Segmentation     | -          |
-| Pose             | -          |
-| Detection        | -          |
-| Depth Maps       | -          |
-| Style Transfer   | Need       |
-| Lighting Control | Need       |
+| Tasks            | Instruction Generation |
+|------------------|------------------------|
+| Add              | Need                   |
+| Remove           | Need                   |
+| Background       | Need                   |
+| Text Edit        | Need                   |
+| Segmentation     | -                      |
+| Pose             | -                      |
+| Detection        | -                      |
+| Depth Maps       | -                      |
+| Style Transfer   | Need                   |
+| Lighting Control | Need                   |
 
 ## 1. Instruction Generation
 
