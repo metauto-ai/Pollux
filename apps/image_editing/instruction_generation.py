@@ -267,6 +267,26 @@ class Qwen_Instruction():
         """
         return system_prompt
 
+    def lighting_control(self,num_inst):
+        system_prompt = f"""
+        You are an AI instruction generation assistant. Given an image, you need to analyze the objects in the image and generate {num_inst} new text description instructions for adjusting the brightness and lighting intensity across different elements in the image.
+        Your final task is to output {num_inst} different text description instructions to adjust the brightness and lighting intensity across different elements in the image.
+
+        Example :
+        You are given an image that includes objects: tree, horse, woman, child
+
+        Example Output:
+        "
+        1. Darken the scene.
+        2. Relight the scene.
+        3. Make the lighting on child softer.
+        4. Make the lighting on woman sharper.
+        5. Given a directional lighting on the tree.
+        "
+
+        """
+
+        return system_prompt
     def pil_to_base64(self, image_path):
         image = Image.open(image_path).convert("RGB")
         buffered = BytesIO()
@@ -281,7 +301,39 @@ class Qwen_Instruction():
             system_prompt = self.text_editing(num_inst)
         elif 'style' in task:
             system_prompt = self.style_transfer(num_inst)
-        if os.path.isfile(img_path):
+        elif 'lighting' in task:
+            system_prompt = self.lighting_control(num_inst)
+
+        if (prompt is None) and (os.path.isfile(img_path)):
+            image = self.pil_to_base64(img_path)
+            messages = [[
+                        {"role": "system", "content": system_prompt},
+                        {
+                            "role": "user",
+                            "content": [
+                                {
+                                    "type": "image",
+                                    "image": f'data:image;base64,{image}',
+                                    "min_pixels": 50176,
+                                    "max_pixels": 50176,
+                                },
+                            ],
+                        },
+                    ]]
+        elif (prompt is not None) and (image_path is None):
+            messages = [[
+                        {"role": "system", "content": system_prompt},
+                        {
+                            "role": "user",
+                            "content": [
+                                {
+                                    "type": "text",
+                                    "text": f'The prompt is {prompt}.',
+                                },
+                            ],
+                        },
+                    ]]
+        else:
             image = self.pil_to_base64(img_path)
             messages = [[
                         {"role": "system", "content": system_prompt},
@@ -301,19 +353,7 @@ class Qwen_Instruction():
                             ],
                         },
                     ]]
-        else:
-            messages = [[
-                        {"role": "system", "content": system_prompt},
-                        {
-                            "role": "user",
-                            "content": [
-                                {
-                                    "type": "text",
-                                    "text": f'The prompt is {prompt}.',
-                                },
-                            ],
-                        },
-                    ]]
+
         # Preparation for inference
         texts = [
             self.processor.apply_chat_template(
@@ -351,97 +391,5 @@ class Qwen_Instruction():
 def instruction_generation(task):
     if task in ['add', 'remove']:
         return Llama_Instruction()
-    if task in ['background', 'text', 'style']:
+    if task in ['background', 'text', 'style', 'lighting']:
         return Qwen_Instruction()
-
-
-
-if __name__ == "__main__":
-    pipe = instruction_generation(task='style')
-    prompt = "a photo of a zebra in the snow."
-    image = "/mnt/pollux/wentian/image_edit/zebra.png"
-    instruction = pipe.generate(image, prompt, num_inst=5, task='style')
-    print (instruction)
-
-
-    ## CUDA_VISIBLE_DEVICES=0 python instruction_generation.py
-
-    """
-    # Environments
-        pip install torch==2.5.1 torchvision==0.20.1
-        pip install transformers==4.49.0
-        pip install safetensors qwen_vl_utils accelerate
-        pip install liger_kernel einops
-
-    # Example 1
-        # Input
-
-            prompt = "A glowing blue sphere with floating metallic rings"
-            task = 'add'
-            
-            pipe = instruction_generation(task=task)
-            for i in range(10):
-                instruction = pipe.generate(prompt, task=task)
-                print (instruction)
-
-        # Output:
-            "add a colorful rainbow."
-            "make a robot stand next to the sphere"
-            "put a blue planet in the background"
-            "make the sphere have a yellow ring."
-            "add a dog and a cat"
-            "Set a firework in the back"
-            "add a flying saucer"
-            "place a glowing blue sphere with floating metallic rings in the middle of the
-            "Make it wear a helmet"
-            "make the sphere a little bit bigger"
-
-    # Example 2
-
-        # Input
-
-            prompt = "A cute creature sits at the beach."
-            image_path = '/mnt/pollux/wentian/image_edit/duck.jpeg'
-            task = 'background'
-
-            pipe = instruction_generation(task=task)
-            instruction = pipe.generate(image_path, prompt, task=task)
-            print (instruction)
-
-        # Output:
-            "change the beach to a snowy mountain landscape"
-
-    # Example 3
-
-        # Input
-            prompt = "a realistic image contains steam with text 'steam'."
-            image = "/mnt/pollux/wentian/image_edit/images/steam.png"
-            task = 'text'
-
-            pipe = instruction_generation(task=task)
-            instruction = pipe.generate(image, prompt, task=task)
-            print (instruction)
-
-        # Output:
-            "replace 'steam' with 'vapor'"
-
-    # Example 4
-
-        # Input
-            prompt = "a photo of a zebra in the snow."
-            image = "/mnt/pollux/wentian/image_edit/images/zebra.png"
-            task = 'style'
-
-            pipe = instruction_generation(task=task)
-            instruction = pipe.generate(image, prompt, num_inst=5, task=task)
-            print (instruction)
-
-        # Output:
-            ['A photo of a zebra in the snow with a vibrant, psychedelic background.', 
-             'A photo of a zebra in the snow with a futuristic, cyberpunk aesthetic.', 
-             'A photo of a zebra in the snow with a surreal, dreamlike atmosphere.', 
-             'A photo of a zebra in the snow with a vintage, old-fashioned filter.', 
-             'A photo of a zebra in the snow with a high-contrast, black-and-white effect.'
-            ]
-
-    """
