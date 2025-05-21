@@ -323,6 +323,7 @@ def train(args: TrainArgs):
         if args.model.diffusion_model.use_fp8_ffn: 
             logger.info("FP8 is enabled. Defining FP8 recipe.")
             # Example recipe, adjust as needed
+            all_gpus = torch.distributed.new_group(backend="nccl")
             fp8_format = Format.HYBRID # Or Format.E4M3
             fp8_recipe = DelayedScaling(fp8_format=fp8_format, amax_history_len=16, amax_compute_algo="max")
             # You might want to make recipe parameters configurable via TrainArgs
@@ -411,11 +412,11 @@ def train(args: TrainArgs):
             end_timer = torch.cuda.Event(enable_timing=True)
             start_timer.record()
 
-            with te.fp8_autocast(enabled=args.model.diffusion_model.use_fp8_ffn, fp8_recipe=fp8_recipe, fp8_group=world_mesh["dp_shard"].get_group()):
+            with te.fp8_autocast(enabled=args.model.diffusion_model.use_fp8_ffn, fp8_recipe=fp8_recipe, fp8_group=all_gpus):
                 outputs = model(batch, flops_meter)
-            # We scale loss with grad_acc_steps so the gradient is the same
-            # regardless of grad_acc_steps
-            loss = outputs.loss / args.grad_acc_steps
+                # We scale loss with grad_acc_steps so the gradient is the same
+                # regardless of grad_acc_steps
+                loss = outputs.loss / args.grad_acc_steps
             # backward on scaled loss to create scaled gradients
             loss.backward()
             # For logging we undo that scaling

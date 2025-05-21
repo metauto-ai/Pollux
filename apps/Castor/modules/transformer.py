@@ -201,7 +201,6 @@ class BaseDiffusionTransformer(nn.Module):
         max_seqlen: Optional[int] = None,
     ):
         for idx, layer in enumerate(self.layers):
-            print("**** At layer", idx)
             h = layer(
                 h,
                 h_mask,
@@ -216,6 +215,7 @@ class BaseDiffusionTransformer(nn.Module):
             )
             if idx == self.align_layer - 1:
                 align_hidden_state = h
+        
         return h, align_hidden_state
 
     def reset_parameters(self):
