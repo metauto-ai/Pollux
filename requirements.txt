@@ -23,7 +23,6 @@ s3fs
 boto3
 python-dotenv
 ijson
-flash-attn
 transformers
 liger-kernel
 timm
