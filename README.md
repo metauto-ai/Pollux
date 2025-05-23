@@ -30,7 +30,7 @@ Follow these steps to set up the environment and install dependencies.
 *   Install xformers, ninja, packaging, and requirements:
     ```bash
     pip install xformers # installs xformers-0.0.30
-    pip install ninja packaging
+    pip install ninja packaging flash-attn
     pip install --requirement requirements.txt
     ```
 
