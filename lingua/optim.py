@@ -7,6 +7,7 @@ import math
 import logging
 from torch import nn
 from torch.optim import AdamW, lr_scheduler
+from mup import MuAdamW
 
 logger = logging.getLogger()
 
@@ -145,7 +146,7 @@ def build_lr_fn(args: OptimArgs, n_steps: int):
 
 def build_optimizer(model: nn.Module, args: OptimArgs, n_steps: int):
     logger.info("Starting build of optimizer...")
-    optimizer = AdamW(
+    optimizer = MuAdamW(
         (param for param in model.parameters() if param.requires_grad),
         lr=args.lr,
         betas=(args.beta1, args.beta2),

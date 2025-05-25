@@ -15,6 +15,8 @@ from .modules.transformer import DiffusionTransformer, TransformerArgs
 from .modules.vae import VideoVAEArgs, create_vae
 from .modules.vision_encoder import VisionEncoderArgs, create_vision_encoder
 
+from .modules.component import layer_init_kaiming_normal
+
 logger = logging.getLogger()
 
 
@@ -45,18 +47,25 @@ class AlignmentProjection(nn.Module):
         super(AlignmentProjection, self).__init__()
         
         self.proj = nn.Sequential(
-            nn.Sequential(
-                nn.Linear(input_dim, hidden_dim),
-                nn.SiLU(),
-                nn.Linear(hidden_dim, hidden_dim),
-                nn.SiLU(),
-                nn.Linear(hidden_dim, encoder_dim),
-            )
+            nn.Linear(input_dim, hidden_dim),
+            nn.SiLU(),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.SiLU(),
+            nn.Linear(hidden_dim, encoder_dim),
         )
+
+        self.proj.reset_parameters()
         
     def forward(self, x):
         x = self.proj(x)
         return x
+
+    def reset_parameters(self):
+        layer_init_kaiming_normal(self.proj[0])
+        layer_init_kaiming_normal(self.proj[2])
+        nn.init.constant_(self.proj[4].weight, 0.) # initialize output weights by zero.
+        if self.proj[4].bias is not None:
+            nn.init.constant_(self.proj[4].bias, 0.)
 
 
 class Castor(nn.Module):
