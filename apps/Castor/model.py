@@ -47,11 +47,11 @@ class AlignmentProjection(nn.Module):
         super(AlignmentProjection, self).__init__()
         
         self.proj = nn.Sequential(
-            nn.Linear(input_dim, hidden_dim),
+            nn.Linear(input_dim, hidden_dim),  # mup
             nn.SiLU(),
-            nn.Linear(hidden_dim, hidden_dim),
+            nn.Linear(hidden_dim, hidden_dim),  # mup
             nn.SiLU(),
-            nn.Linear(hidden_dim, encoder_dim),
+            nn.Linear(hidden_dim, encoder_dim),  # mup
         )
 
         self.proj.reset_parameters()
