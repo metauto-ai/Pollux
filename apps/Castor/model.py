@@ -54,7 +54,7 @@ class AlignmentProjection(nn.Module):
             nn.Linear(hidden_dim, encoder_dim),  # mup
         )
 
-        self.proj.reset_parameters()
+        self.reset_parameters()
         
     def forward(self, x):
         x = self.proj(x)

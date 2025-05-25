@@ -561,7 +561,7 @@ class FlashAttention(nn.Module):
         layer_init_kaiming_normal(self.wk)
         layer_init_kaiming_normal(self.wv)
         layer_init_kaiming_normal(self.wo)
-        if self.q_norm:
+        if self.qk_norm:
             self.q_norm.reset_parameters()
             self.k_norm.reset_parameters()
 
