@@ -231,12 +231,12 @@ def every_n_steps(train_state, freq, acc_step=None, acc_freq=None):
 
 
 def mup_set_base_shapes(model, args):
-    base_args = copy.deepcopy(args.model)
+    base_args = copy.deepcopy(args)
     base_args.diffusion_model.dim = 288
     base_args.diffusion_model.n_heads = 4
     base_model = Castor(base_args)
 
-    delta_args = copy.deepcopy(args.model)
+    delta_args = copy.deepcopy(args)
     delta_args.diffusion_model.dim = 360
     delta_args.diffusion_model.n_heads = 5
     delta_model = Castor(delta_args)
