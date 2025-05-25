@@ -52,21 +52,21 @@ class AlignmentProjection(nn.Module):
             nn.SiLU(),
             nn.Linear(hidden_dim, hidden_dim),  # mup
             nn.SiLU(),
-            MuReadout(hidden_dim, encoder_dim),  # mup
         )
+        self.output = MuReadout(hidden_dim, encoder_dim),  # mup
 
         self.reset_parameters()
         
     def forward(self, x):
         x = self.proj(x)
-        return x
+        return self.output(x)
 
     def reset_parameters(self):
         layer_init_kaiming_normal(self.proj[0])
         layer_init_kaiming_normal(self.proj[2])
-        nn.init.constant_(self.proj[4].weight, 0.) # initialize output weights by zero.
-        if self.proj[4].bias is not None:
-            nn.init.constant_(self.proj[4].bias, 0.)
+        nn.init.constant_(self.output.weight, 0.) # initialize output weights by zero.
+        if self.output.bias is not None:
+            nn.init.constant_(self.output.bias, 0.)
 
 
 class Castor(nn.Module):
