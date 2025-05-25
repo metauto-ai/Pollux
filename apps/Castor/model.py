@@ -53,7 +53,7 @@ class AlignmentProjection(nn.Module):
             nn.Linear(hidden_dim, hidden_dim),  # mup
             nn.SiLU(),
         )
-        self.output = MuReadout(hidden_dim, encoder_dim),  # mup
+        self.output = MuReadout(hidden_dim, encoder_dim)  # mup
 
         self.reset_parameters()
         
