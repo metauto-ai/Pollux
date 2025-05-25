@@ -1,6 +1,7 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # This software may be used and distributed according to the terms of the Llama 2 Community License Agreement.
 
+import copy
 import gc
 import logging
 import os
@@ -53,6 +54,8 @@ from lingua.profiling import ProfilerArgs, maybe_run_profiler
 from torch.distributed._tensor import DTensor
 from torch.distributed.checkpoint.stateful import Stateful
 from torch.optim import lr_scheduler
+
+from mup import set_base_shapes
 
 logger = logging.getLogger()
 
@@ -227,6 +230,23 @@ def every_n_steps(train_state, freq, acc_step=None, acc_freq=None):
     return test
 
 
+def mup_set_base_shapes(model, args):
+    base_args = copy.deepcopy(args.model)
+    base_args.diffusion_model.dim = 288
+    base_args.diffusion_model.n_heads = 4
+    base_model = Castor(base_args)
+
+    delta_args = copy.deepcopy(args.model)
+    delta_args.diffusion_model.dim = 360
+    delta_args.diffusion_model.n_heads = 5
+    delta_model = Castor(delta_args)
+
+    set_base_shapes(model, base_model, delta=delta_model)
+
+    del base_model, delta_model
+    gc.collect()
+
+
 def train(args: TrainArgs):
     with ExitStack() as context_stack:
         validate_train_args(
@@ -260,6 +280,8 @@ def train(args: TrainArgs):
 
         model = Castor(args.model)
         logger.info("Model is built !")
+
+        mup_set_base_shapes(model, args.model)
 
         model_param_count = get_num_params(model)
         flops_meter = FlopsMeter(args.model, model)
