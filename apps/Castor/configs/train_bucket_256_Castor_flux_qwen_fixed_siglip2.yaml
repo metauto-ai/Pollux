@@ -4,8 +4,8 @@
 version: v1.0
 # From now on, start to align train, data, and model setting with train stage (just finish refactor for dara)
 train_stage: stage-1 # options: preliminary, pretraining, posttraining; aligned with data setting
-name: unpadded3 #used for local dump and wandb log
-output_dir: /mnt/pollux/checkpoints/aj
+name: mup_test #used for local dump and wandb log
+output_dir: /mnt/pollux/checkpoints/ablations
 dump_dir: '' # No need now
 steps: 500000
 seed: 777

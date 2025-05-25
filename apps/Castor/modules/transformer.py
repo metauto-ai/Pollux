@@ -13,11 +13,13 @@ from torch import nn
 from torch.nn.attention.flex_attention import BlockMask
 
 from .component import (AdaLN, BaseTransformerArgs, FeedForward,
-                        FlashAttention, ImageEmbedder, InitStdFactor, RMSNorm,
+                        FlashAttention, ImageEmbedder, RMSNorm,
                         RotaryEmbedding1D, RotaryEmbedding2D, TimestepEmbedder,
-                        create_causal_mask, modulate_and_gate, nearest_multiple_of_8, modulate_and_gate_unpadded)
+                        create_causal_mask, layer_init_kaiming_normal, modulate_and_gate, nearest_multiple_of_8, modulate_and_gate_unpadded)
 from flash_attn.bert_padding import unpad_input, pad_input  
 import copy
+
+from mup import MuReadout
 
 logger = logging.getLogger()
 
@@ -150,10 +152,10 @@ class DiffusionTransformerBlock(nn.Module):
 
         return h
 
-    def init_weights(self, init_std=None, factor=1.0):
-        self.attention.reset_parameters(init_std, factor)
+    def init_weights(self):
+        self.attention.reset_parameters()
         self.attention_norm.reset_parameters()
-        self.feed_forward.reset_parameters(init_std, factor)
+        self.feed_forward.reset_parameters()
         self.ffn_norm.reset_parameters()
         if not self.shared_adaLN:
             self.adaLN_modulation.reset_parameters()
@@ -171,8 +173,6 @@ class BaseDiffusionTransformer(nn.Module):
     def __init__(self, args: TransformerArgs):
         super().__init__()
         self.dim = args.dim
-        self.init_base_std = args.init_base_std
-        self.init_std_factor = InitStdFactor(args.init_std_factor)
         self.gen_seqlen = args.gen_seqlen
         self.layers = nn.ModuleList()
         self.shared_adaLN = args.shared_adaLN
@@ -223,15 +223,8 @@ class BaseDiffusionTransformer(nn.Module):
 
     def init_weights(self, pre_trained_path: Optional[str] = None):
         self.reset_parameters()
-        for depth, layer in enumerate(self.layers):
-            factor = {
-                InitStdFactor.CURRENT_DEPTH: (2 * (depth + 1)) ** 0.5,
-                InitStdFactor.GLOBAL_DEPTH: (2 * (len(self.layers) + 1)) ** 0.5,
-                InitStdFactor.DIM_RATIO: self.dim / 4096,
-                InitStdFactor.DISABLED: 1.0,
-            }[self.init_std_factor]
-
-            layer.init_weights(self.init_base_std, factor)
+        for layer in self.layers:
+            layer.init_weights()
         if pre_trained_path:
             assert os.path.exists(pre_trained_path)
             ckpt_state_dict = torch.load(pre_trained_path, map_location="cpu")
@@ -274,10 +267,10 @@ class DiffusionTransformer(BaseDiffusionTransformer):
             in_dim=self.patch_size * self.patch_size * args.in_channels,
             out_dim=args.dim,
         )
-        self.img_output = nn.Linear(
+        self.img_output = MuReadout(
             args.dim,
             self.patch_size * self.patch_size * args.out_channels,
-            bias=False,
+            bias=True,
         )
         self.rope_embeddings_image = RotaryEmbedding2D(
             theta=args.rope_theta,
@@ -559,30 +552,22 @@ class DiffusionTransformer(BaseDiffusionTransformer):
             img_features = img_features.permute(0, 5, 1, 3, 2, 4).flatten(4, 5).flatten(2, 3)
             return img_features
 
-    def reset_parameters(self, init_std=None):
+    def reset_parameters(self):
         # Either use fixed base std or sqrt model dim
         super().reset_parameters()
         self.rope_embeddings_image.reset_parameters()
         self.rope_embeddings_conditions.reset_parameters()
-        init_std = init_std or (self.dim ** (-0.5))
         self.norm.reset_parameters()
         self.cond_norm.reset_parameters()
         self.tmb_embed.reset_parameters()
         self.img_embed.reset_parameters()
-        nn.init.trunc_normal_(
-            self.img_output.weight,
-            mean=0.0,
-            std=init_std,
-            a=-3 * init_std,
-            b=3 * init_std,
-        )
-        nn.init.trunc_normal_(
-            self.cond_proj.weight,
-            mean=0.0,
-            std=init_std,
-            a=-3 * init_std,
-            b=3 * init_std,
-        )
+        
+        nn.init.constant_(self.img_output.weight, 0.) # initialize output weights by zero.
+        if self.img_output.bias is not None:
+            nn.init.constant_(self.img_output.bias, 0.)
+        
+        layer_init_kaiming_normal(self.cond_proj)
+        
         nn.init.normal_(self.negative_token, std=0.02)
         if self.shared_adaLN:
             self.adaLN_modulation.reset_parameters()
