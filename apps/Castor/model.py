@@ -16,6 +16,7 @@ from .modules.vae import VideoVAEArgs, create_vae
 from .modules.vision_encoder import VisionEncoderArgs, create_vision_encoder
 
 from .modules.component import layer_init_kaiming_normal
+from mup import MuReadout
 
 logger = logging.getLogger()
 
@@ -51,7 +52,7 @@ class AlignmentProjection(nn.Module):
             nn.SiLU(),
             nn.Linear(hidden_dim, hidden_dim),  # mup
             nn.SiLU(),
-            nn.Linear(hidden_dim, encoder_dim),  # mup
+            MuReadout(hidden_dim, encoder_dim),  # mup
         )
 
         self.reset_parameters()
