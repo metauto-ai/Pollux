@@ -15,6 +15,7 @@ from torch.nn.attention.flex_attention import (BlockMask, _mask_mod_signature,
 from xformers.ops import AttentionBias, fmha
 from liger_kernel.transformers import LigerSwiGLUMLP, LigerRMSNorm, liger_rotary_pos_emb
 from types import SimpleNamespace
+from mup import MuReadout
 
 # fa3 
 from flash_attn_interface import flash_attn_varlen_func
@@ -531,12 +532,12 @@ class FlashAttention(nn.Module):
             n_heads * self.head_dim,
             bias=False,
         )  # mup
-        self.wk = nn.Linear(
+        self.wk = MuReadout(
             dim,
             n_kv_heads * self.head_dim,
             bias=False,
         )  # mup
-        self.wv = nn.Linear(
+        self.wv = MuReadout(
             dim,
             n_kv_heads * self.head_dim,
             bias=False,
@@ -558,8 +559,7 @@ class FlashAttention(nn.Module):
 
     def reset_parameters(self, *args, **kwargs):
         layer_init_kaiming_normal(self.wq)
-        layer_init_kaiming_normal(self.wk)
-        layer_init_kaiming_normal(self.wv)
+        # MuReadout layers have their own initialization
         layer_init_kaiming_normal(self.wo)
         if self.qk_norm:
             self.q_norm.reset_parameters()

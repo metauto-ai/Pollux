@@ -234,13 +234,13 @@ def mup_set_base_shapes(model, args):
     base_args = copy.deepcopy(args)
     base_args.diffusion_model.dim = 288
     base_args.diffusion_model.n_heads = 4
-    base_args.diffusion_model.n_kv_heads = 1
+    base_args.diffusion_model.n_kv_heads = 2  # Scale this too
     base_model = Castor(base_args)
 
     delta_args = copy.deepcopy(args)
     delta_args.diffusion_model.dim = 360
     delta_args.diffusion_model.n_heads = 5
-    delta_args.diffusion_model.n_kv_heads = 1
+    delta_args.diffusion_model.n_kv_heads = 3  # Scale this too
     delta_model = Castor(delta_args)
 
     set_base_shapes(model, base_model, delta=delta_model)
