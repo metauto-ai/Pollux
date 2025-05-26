@@ -15,7 +15,9 @@ def test_mup_setup():
     print("Testing MuP setup...")
     
     # Build the main model
+    print("Building main model...")
     model_args = build_2B_Castor().args
+    print(f"Main model args: {model_args}")
     model = Castor(model_args)
     
     print(f"Main model config:")
@@ -23,7 +25,7 @@ def test_mup_setup():
     print(f"  n_heads: {model_args.diffusion_model.n_heads}")
     print(f"  n_kv_heads: {model_args.diffusion_model.n_kv_heads}")
     
-    # Create base model
+    # Create base model (matching train.py)
     base_args = copy.deepcopy(model_args)
     base_args.diffusion_model.dim = 288
     base_args.diffusion_model.n_heads = 4
@@ -35,10 +37,10 @@ def test_mup_setup():
     print(f"  n_heads: {base_args.diffusion_model.n_heads}")
     print(f"  n_kv_heads: {base_args.diffusion_model.n_kv_heads}")
 
-    # Create delta model
+    # Create delta model (matching train.py)
     delta_args = copy.deepcopy(model_args)
     delta_args.diffusion_model.dim = 360
-    delta_args.diffusion_model.n_heads = 5
+    delta_args.diffusion_model.n_heads = 6  # Updated to match your change
     delta_args.diffusion_model.n_kv_heads = 3
     delta_model = Castor(delta_args)
     
@@ -46,6 +48,14 @@ def test_mup_setup():
     print(f"  dim: {delta_args.diffusion_model.dim}")
     print(f"  n_heads: {delta_args.diffusion_model.n_heads}")
     print(f"  n_kv_heads: {delta_args.diffusion_model.n_kv_heads}")
+
+    # Debug: Check parameters before MuP setup
+    print("\nChecking parameters that might need MuP treatment...")
+    for name, param in model.named_parameters():
+        if param.shape == torch.Size([2048, 2048]):
+            print(f"Found 2048x2048 parameter: {name}")
+        if len(param.shape) == 2 and (2048 in param.shape):
+            print(f"Parameter with 2048 dimension: {name} - shape: {param.shape}")
 
     # Test MuP setup
     try:
@@ -70,6 +80,10 @@ def test_mup_setup():
             
     except Exception as e:
         print(f"❌ Error: {e}")
+        print("\nDebugging: Checking which parameters don't have infshape...")
+        for name, param in model.named_parameters():
+            if not hasattr(param, 'infshape'):
+                print(f"Missing infshape: {name} - shape: {param.shape}")
         return False
     
     finally:
