@@ -158,7 +158,7 @@ class Qwen2_5_VL(BaseTextEncoder):
                 return_tensors="pt",
                 max_length=self.text_seqlen,
                 truncation=True,
-            ).to(device=self.model.device)
+            ).to(device=self.model.device, dtype=self.dtype)
             
             if flops_meter is not None:
                 flops_meter.log_text_encoder_flops(inputs['input_ids'].shape)
