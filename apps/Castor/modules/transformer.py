@@ -94,11 +94,6 @@ class DiffusionTransformerBlock(nn.Module):
                 in_dim=args.time_step_dim,
                 out_dim=4 * args.dim,
             )
-        else:
-            self.register_parameter(
-                'modulation', 
-                nn.Parameter(torch.randn(1, 4, args.dim) / args.dim**0.5)
-            )
 
 
     def forward(
@@ -119,9 +114,9 @@ class DiffusionTransformerBlock(nn.Module):
                 modulation_signal
             ).chunk(4, dim=1)
         elif self.unpadded:
-            scale_msa, gate_msa, scale_mlp, gate_mlp = (self.modulation + modulation_values)[batch_indices].unbind(dim=1)
+            scale_msa, gate_msa, scale_mlp, gate_mlp = modulation_values[batch_indices].unbind(dim=1)
         else:
-            scale_msa, gate_msa, scale_mlp, gate_mlp = (self.modulation + modulation_values).unbind(dim=1)
+            scale_msa, gate_msa, scale_mlp, gate_mlp = modulation_values.unbind(dim=1)
 
 
         h = x + self.modulate_and_gate(
@@ -293,7 +288,6 @@ class DiffusionTransformer(BaseDiffusionTransformer):
         self.dim = args.dim
         self.norm = RMSNorm(args.dim, eps=args.norm_eps, liger_rms_norm=args.liger_rms_norm)
         self.cond_norm = RMSNorm(args.dim, eps=args.norm_eps, liger_rms_norm=args.liger_rms_norm)
-        self.negative_token = nn.Parameter(torch.zeros(1, 1, args.condition_dim))
         self.cond_proj = nn.Linear(
             in_features=args.condition_dim,
             out_features=args.dim,
@@ -583,6 +577,5 @@ class DiffusionTransformer(BaseDiffusionTransformer):
             a=-3 * init_std,
             b=3 * init_std,
         )
-        nn.init.normal_(self.negative_token, std=0.02)
         if self.shared_adaLN:
             self.adaLN_modulation.reset_parameters()

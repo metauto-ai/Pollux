@@ -100,18 +100,12 @@ class Castor(nn.Module):
             batch["vision_encoder_target"] = self.vision_encoder.extract_image_representations(batch, flops_meter)
 
         if "text_embedding" not in batch:
+            if random.random() <= self.text_cfg_ratio:
+                batch["caption"] = ["" for _ in batch["caption"]]
             batch["text_embedding"], batch["attention_mask"] = self.text_encoder(batch, flops_meter)
         
         conditional_signal, conditional_mask = batch["text_embedding"], batch["attention_mask"]
 
-        if random.random() <= self.text_cfg_ratio:
-            conditional_signal = self.diffusion_transformer.negative_token.repeat(
-                conditional_signal.size(0), conditional_signal.size(1), 1
-            )
-            conditional_mask = torch.ones_like(
-                conditional_mask, dtype=conditional_signal.dtype
-            )
-        
         latent_code = batch["latent_code"]
         noised_x, t, target = self.scheduler.sample_noised_input(latent_code)
         output = self.diffusion_transformer(
