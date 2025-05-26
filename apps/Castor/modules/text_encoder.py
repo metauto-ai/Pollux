@@ -20,7 +20,6 @@ from transformers import (
 from liger_kernel.transformers import apply_liger_kernel_to_qwen2_5_vl
 
 logger = logging.getLogger()
-from typing import Optional
 
 
 @dataclass
@@ -95,6 +94,17 @@ class Qwen2_5_VL(BaseTextEncoder):
         self.init_model(args, model_path)
         self.init_tokenizer(model_path)
         self.init_processor(model_path)
+
+        self.system_prompts = [
+            """You are NucleusT2I, a text-to-image assistant, trained to generate high-quality images from user prompts.""",
+            """You are NucleusT2I, a text-to-image assistant. Your task is to generate the highest-quality image possible based solely on the user's description, even if it is vague or incomplete. 
+
+- Do not ask the user for clarification or provide suggestions.
+- If the user's input is ambiguous, make reasonable creative assumptions and proceed.
+- Only modify or refine the image when the user provides additional instructions in follow-up messages.
+- Always maintain context from previous turns to support iterative improvements, but never initiate clarification.
+"""
+        ]
     
     def init_model(self, args: TextEncoderArgs, model_path: str):
         config = AutoConfig.from_pretrained(model_path)
@@ -125,10 +135,12 @@ class Qwen2_5_VL(BaseTextEncoder):
         return self.model.config.hidden_size
 
     def _convert_caption_to_messages(self, caption: str) -> str:
+        if not caption:
+            return ""
         messages = [
             {
                 "role": "system",
-                "content": "You are an assistant designed to generate high-quality images based on user prompts.",
+                "content": self.system_prompts[0],
             },
             {
                 "role": "user",
@@ -152,6 +164,15 @@ class Qwen2_5_VL(BaseTextEncoder):
                 self._convert_caption_to_messages(caption)
                 for caption in batch["caption"]
             ]
+            
+            if all(msg == "" for msg in messages):
+                B = len(batch["caption"])
+                context = torch.zeros(
+                    B, 0, self.dim(), dtype=self.dtype, device=self.model.device)
+                context_mask = torch.zeros(
+                    B, 0, dtype=torch.bool, device=self.model.device)
+                return context, context_mask
+            
             inputs = self.processor(
                 text=messages,
                 padding=True,
