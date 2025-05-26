@@ -48,25 +48,25 @@ class AlignmentProjection(nn.Module):
         super(AlignmentProjection, self).__init__()
         
         self.proj = nn.Sequential(
-            nn.Linear(input_dim, hidden_dim),  # mup
+            MuReadout(input_dim, hidden_dim),  # mup
             nn.SiLU(),
             nn.Linear(hidden_dim, hidden_dim),  # mup
             nn.SiLU(),
+            nn.Linear(hidden_dim, encoder_dim),  # mup
         )
-        self.output = MuReadout(hidden_dim, encoder_dim)  # mup
 
         self.reset_parameters()
         
     def forward(self, x):
         x = self.proj(x)
-        return self.output(x)
+        return x
 
     def reset_parameters(self):
-        layer_init_kaiming_normal(self.proj[0])
+        # MuReadout has its own initialization
         layer_init_kaiming_normal(self.proj[2])
-        nn.init.constant_(self.output.weight, 0.) # initialize output weights by zero.
-        if self.output.bias is not None:
-            nn.init.constant_(self.output.bias, 0.)
+        nn.init.constant_(self.proj[4].weight, 0.) # initialize output weights by zero.
+        if self.proj[4].bias is not None:
+            nn.init.constant_(self.proj[4].bias, 0.)
 
 
 class Castor(nn.Module):

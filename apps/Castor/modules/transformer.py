@@ -562,9 +562,10 @@ class DiffusionTransformer(BaseDiffusionTransformer):
         self.tmb_embed.reset_parameters()
         self.img_embed.reset_parameters()
         
-        nn.init.constant_(self.img_output.weight, 0.) # initialize output weights by zero.
-        if self.img_output.bias is not None:
-            nn.init.constant_(self.img_output.bias, 0.)
+        # muReadout has its own initialization
+        # nn.init.constant_(self.img_output.weight, 0.) # initialize output weights by zero.
+        # if self.img_output.bias is not None:
+        #     nn.init.constant_(self.img_output.bias, 0.)
         
         layer_init_kaiming_normal(self.cond_proj)
         
