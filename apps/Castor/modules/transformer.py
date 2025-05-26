@@ -94,6 +94,11 @@ class DiffusionTransformerBlock(nn.Module):
                 in_dim=args.time_step_dim,
                 out_dim=4 * args.dim,
             )
+        else:
+            self.register_parameter(
+                'modulation', 
+                nn.Parameter(torch.randn(1, 4, args.dim) / args.dim**0.5)
+            )
 
 
     def forward(
@@ -114,9 +119,9 @@ class DiffusionTransformerBlock(nn.Module):
                 modulation_signal
             ).chunk(4, dim=1)
         elif self.unpadded:
-            scale_msa, gate_msa, scale_mlp, gate_mlp = modulation_values[batch_indices].unbind(dim=1)
+            scale_msa, gate_msa, scale_mlp, gate_mlp = (self.modulation + modulation_values)[batch_indices].unbind(dim=1)
         else:
-            scale_msa, gate_msa, scale_mlp, gate_mlp = modulation_values.unbind(dim=1)
+            scale_msa, gate_msa, scale_mlp, gate_mlp = (self.modulation + modulation_values).unbind(dim=1)
 
 
         h = x + self.modulate_and_gate(
