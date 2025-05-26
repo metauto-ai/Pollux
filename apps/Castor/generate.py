@@ -92,8 +92,27 @@ class LatentGenerator(nn.Module):
             mu=mu,
         )
         latent = self.prepare_latent(context, device=cur_device)
-        context['caption'] = context['caption'] + ["" for _ in context['caption']]
-        context, context_mask = self.model.text_encoder(context)
+        pos_conditional_signal, pos_conditional_mask = self.model.text_encoder(context)
+        negative_conditional_signal = (
+            self.model.diffusion_transformer.negative_token.repeat(
+                pos_conditional_signal.size(0), pos_conditional_signal.size(1), 1
+            )
+        )
+        negative_conditional_mask = torch.ones_like(
+            pos_conditional_mask, dtype=pos_conditional_mask.dtype
+        )
+        context = torch.cat(
+            [
+                pos_conditional_signal,
+                negative_conditional_signal,
+            ]
+        )
+        context_mask = torch.cat(
+            [
+                pos_conditional_mask,
+                negative_conditional_mask,
+            ]
+        )
         for i, t in enumerate(timesteps):
             latent_model_input = torch.cat([latent] * 2)
             timestep = t.expand(latent_model_input.shape[0])
