@@ -132,7 +132,9 @@ class RectifiedFlow(torch.nn.Module):
         )
         return scheduler
 
-    def compute_density_for_timestep_sampling(self, batch_size: int) -> torch.Tensor:
+    def compute_density_for_timestep_sampling(
+        self, batch_size: int, image_seq_len: Optional[Union[int, List[int]]] = None
+    ) -> torch.Tensor:
         """
         Compute the density for sampling the timesteps when doing SD3 training.
 
@@ -140,19 +142,62 @@ class RectifiedFlow(torch.nn.Module):
 
         SD3 paper reference: https://arxiv.org/abs/2403.03206v1.
         """
-        if self.weighting_scheme == "logit_normal":
-            # See 3.1 in the SD3 paper ($rf/lognorm(0.00,1.00)$).
-            u = torch.normal(
-                mean=self.logit_mean,
-                std=self.logit_std,
-                size=(batch_size,),
-                device="cpu",
+        # Determine the logit_mean parameter for torch.normal
+        # It can be a scalar or a tensor of shape (batch_size,)
+        if image_seq_len is not None and self.scheduler.config.use_dynamic_shifting:
+            if isinstance(image_seq_len, int):
+                # Single sequence length for the whole batch
+                mu = calculate_shift(
+                    image_seq_len=image_seq_len,
+                    base_seq_len=self.scheduler.config.base_image_seq_len,
+                    max_seq_len=self.scheduler.config.max_image_seq_len,
+                    base_shift=self.scheduler.config.base_shift,
+                    max_shift=self.scheduler.config.max_shift,
+                )
+                adjusted_logit_mean = mu * self.scheduler.config.shift
+                logit_mean_param = torch.full(
+                    (batch_size,), adjusted_logit_mean, device="cpu"
+                )
+            elif isinstance(image_seq_len, list):
+                # List of sequence lengths, one for each item in the batch
+                if len(image_seq_len) != batch_size:
+                    raise ValueError(
+                        "If image_seq_len is a list, its length must match batch_size."
+                    )
+                
+                mus = [
+                    calculate_shift(
+                        image_seq_len=sl,
+                        base_seq_len=self.scheduler.config.base_image_seq_len,
+                        max_seq_len=self.scheduler.config.max_image_seq_len,
+                        base_shift=self.scheduler.config.base_shift,
+                        max_shift=self.scheduler.config.max_shift,
+                    )
+                    for sl in image_seq_len
+                ]
+                # Create a tensor of means, one for each item in the batch
+                logit_mean_param = torch.tensor(
+                    mus, device="cpu"
+                ) * self.scheduler.config.shift
+            else:
+                raise TypeError(
+                    "image_seq_len must be an int or a list of ints, but got "
+                    f"{type(image_seq_len)}"
+                )
+        else:
+            # No dynamic shifting or no seq_len provided, use default logit_mean for all
+            logit_mean_param = torch.full(
+                (batch_size,), self.logit_mean, device="cpu"
             )
+
+        if self.weighting_scheme == "logit_normal":
+            # See 3.1 in the SD3 paper ($rf/lognorm(mu * shift, std_dev)$).
+            u = torch.normal(logit_mean_param, self.logit_std)
             u = torch.nn.functional.sigmoid(u)
         elif self.weighting_scheme == "mode":
             u = torch.rand(size=(batch_size,), device="cpu")
             u = 1 - u - self.mode_scale * (torch.cos(math.pi * u / 2) ** 2 - 1 + u)
-        else:
+        else:  # 'uniform'
             u = torch.rand(size=(batch_size,), device="cpu")
         return u
 
@@ -167,8 +212,12 @@ class RectifiedFlow(torch.nn.Module):
         return sigma
 
     def sample_noised_input(
-        self, x: torch.Tensor
-    ) -> Tuple[torch.tensor, torch.tensor, torch.tensor]:
+        self, x: Union[torch.Tensor, List[torch.Tensor]]
+    ) -> Tuple[
+        Union[torch.Tensor, List[torch.Tensor]],
+        torch.Tensor,
+        Union[torch.Tensor, List[torch.Tensor]],
+    ]:
         """
         Samples a noisy input given a clean latent x and returns noisy input, timesteps and target.
         """
@@ -176,31 +225,47 @@ class RectifiedFlow(torch.nn.Module):
         use_dynamic_res = isinstance(x, list)
         if use_dynamic_res:
             bsz = len(x)
+            # Assuming x[i] is shaped [seq_len_i, ...], so seq_len is shape[0]
+            # Adjust if seq_len is at a different dimension.
+            image_seq_lens = [
+                s.shape[0] for s in x
+            ]  # Get seq_len for each tensor in the list
+
             u = self.compute_density_for_timestep_sampling(
                 batch_size=bsz,
+                image_seq_len=image_seq_lens, # Pass list of sequence lengths
             )
             indices = (u * self.scheduler.config.num_train_timesteps).long()
             timesteps = self.scheduler.timesteps[indices].to(device=x[0].device)
-            sigmas = self.get_sigmas(timesteps, n_dim=x[0].ndim + 1, dtype=x[0].dtype)
+            # n_dim ensures sigmas[i] can broadcast with x[i]
+            # If x[i] is [S_i, D], x[0].ndim = 2. sigmas[i] will be (1,) or (1,1) after unsqueeze.
+            sigmas = self.get_sigmas(timesteps, n_dim=x[0].ndim, dtype=x[0].dtype)
             noise_model_input_list = []
             target_list = []
             for i in range(bsz):
                 _noise = torch.randn_like(x[i])
+                # sigmas is (bsz, 1, ...), so sigmas[i] is (1, ...)
                 _noisy_model_input = (1.0 - sigmas[i]) * x[i] + sigmas[i] * _noise
-                _target = _noise - x[i]
+                _target = _noise - x[i] # Velocity prediction target
                 noise_model_input_list.append(_noisy_model_input)
                 target_list.append(_target)
 
             return noise_model_input_list, timesteps, target_list
-        else:
+        else: # x is a single torch.Tensor
             bsz = x.size(0)
+            # Assuming x is of shape [bsz, seq_len, dim]
+            # The sequence length for shifting is x.shape[1]
+            image_seq_len_for_shift = x.shape[1]
+            
             noise = torch.randn_like(x)
             u = self.compute_density_for_timestep_sampling(
                 batch_size=bsz,
+                image_seq_len=image_seq_len_for_shift, # Pass single sequence length
             )
             indices = (u * self.scheduler.config.num_train_timesteps).long()
             timesteps = self.scheduler.timesteps[indices].to(device=x.device)
+            # If x is [bsz, S, D], x.ndim = 3. sigmas will be (bsz, 1, 1) after unsqueeze.
             sigmas = self.get_sigmas(timesteps, n_dim=x.ndim, dtype=x.dtype)
             noisy_model_input = (1.0 - sigmas) * x + sigmas * noise
-            target = noise - x
+            target = noise - x # Velocity prediction target
             return noisy_model_input, timesteps, target
