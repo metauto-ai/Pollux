@@ -248,7 +248,6 @@ def train(args: TrainArgs):
 
         # build dataloader
         # need dp world size and rank
-        print("**** world_mesh['dp_shard']", world_mesh["dp_shard"], "world_mesh['dp_replicate']", world_mesh["dp_replicate"])
         dp_mesh = world_mesh["dp_replicate"]
         dp_degree = dp_mesh.size()
         dp_rank = dp_mesh.get_local_rank()
