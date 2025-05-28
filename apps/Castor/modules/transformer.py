@@ -52,7 +52,7 @@ class TransformerArgs(BaseTransformerArgs):
     attention_window: Tuple[int, int] = (-1, -1)
     full_attention_layers: Optional[List[int]] = None
     unpadded: bool = False
-
+    fp8_ffn_skip_layers: Optional[List[int]] = None
 
 class DiffusionTransformerBlock(nn.Module):
     def __init__(self, args: TransformerArgs):
@@ -207,6 +207,9 @@ class BaseDiffusionTransformer(nn.Module):
             layer_args = copy.deepcopy(args)
             if i in args.full_attention_layers:
                 layer_args.attention_window = (-1, -1)
+            if i in args.fp8_ffn_skip_layers:
+                layer_args.liger_ffn = True
+                layer_args.use_fp8_ffn = False
             self.layers.append(DiffusionTransformerBlock(layer_args))
         self.align_layer = args.align_layer
 

@@ -62,11 +62,12 @@ model:
         condition_dim: 3584
         qk_norm: false
         liger_rms_norm: true
-        liger_ffn: False
+        liger_ffn: true
         liger_rotary_emb: false
         shared_adaLN: true
         unpadded: true
         use_fp8_ffn: true
+        fp8_ffn_skip_layers: [] # falls back to liger_ffn
     with_vae: true
     vae_args:
         vae_type: "flux"
