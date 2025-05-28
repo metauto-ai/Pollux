@@ -12,11 +12,24 @@ import torch.nn.functional as F
 from torch import nn
 from torch.nn.attention.flex_attention import BlockMask
 
-from .component import (AdaLN, BaseTransformerArgs, FeedForward,
-                        FlashAttention, ImageEmbedder, InitStdFactor, RMSNorm,
-                        RotaryEmbedding1D, RotaryEmbedding2D, TimestepEmbedder,
-                        create_causal_mask, modulate_and_gate, nearest_multiple_of_8, modulate_and_gate_unpadded)
-from flash_attn.bert_padding import unpad_input, pad_input  
+from .component import (
+    AdaLN,
+    BaseTransformerArgs,
+    FeedForward,
+    FlashAttention,
+    ImageEmbedder,
+    InitStdFactor,
+    RMSNorm,
+    RotaryEmbedding1D,
+    RotaryEmbedding2D,
+    TimestepEmbedder,
+    create_causal_mask,
+    modulate_and_gate,
+    nearest_multiple_of_8,
+    modulate_and_gate_unpadded,
+)
+from flash_attn.bert_padding import unpad_input, pad_input
+from apps.Castor.utils.pad import pad_flat_tokens_to_multiple, unpad_flat_tokens
 import copy
 
 logger = logging.getLogger()
@@ -45,9 +58,9 @@ class DiffusionTransformerBlock(nn.Module):
     def __init__(self, args: TransformerArgs):
         super().__init__()
 
-        assert (args.head_dim is not None) or (
-            args.n_heads is not None
-        ), "Should specify at least head_dim or n_heads"
+        assert (args.head_dim is not None) or (args.n_heads is not None), (
+            "Should specify at least head_dim or n_heads"
+        )
         self.head_dim = args.head_dim or args.dim // args.n_heads
         self.n_heads = args.n_heads or args.dim // args.head_dim
         self.n_kv_heads = args.n_kv_heads or self.n_heads
@@ -86,8 +99,12 @@ class DiffusionTransformerBlock(nn.Module):
             liger_ffn=args.liger_ffn,
         )
 
-        self.attention_norm = RMSNorm(args.dim, eps=args.norm_eps, liger_rms_norm=args.liger_rms_norm)
-        self.ffn_norm = RMSNorm(args.dim, eps=args.norm_eps, liger_rms_norm=args.liger_rms_norm)
+        self.attention_norm = RMSNorm(
+            args.dim, eps=args.norm_eps, liger_rms_norm=args.liger_rms_norm
+        )
+        self.ffn_norm = RMSNorm(
+            args.dim, eps=args.norm_eps, liger_rms_norm=args.liger_rms_norm
+        )
         self.shared_adaLN = args.shared_adaLN
         if not args.shared_adaLN:
             self.adaLN_modulation = AdaLN(
@@ -99,7 +116,6 @@ class DiffusionTransformerBlock(nn.Module):
                 'modulation', 
                 nn.Parameter(torch.randn(1, 4, args.dim) / args.dim**0.5)
             )
-
 
     def forward(
         self,
@@ -119,10 +135,13 @@ class DiffusionTransformerBlock(nn.Module):
                 modulation_signal
             ).chunk(4, dim=1)
         elif self.unpadded:
-            scale_msa, gate_msa, scale_mlp, gate_mlp = (self.modulation + modulation_values)[batch_indices].unbind(dim=1)
+            scale_msa, gate_msa, scale_mlp, gate_mlp = (
+                self.modulation + modulation_values
+            )[batch_indices].unbind(dim=1)
         else:
-            scale_msa, gate_msa, scale_mlp, gate_mlp = (self.modulation + modulation_values).unbind(dim=1)
-
+            scale_msa, gate_msa, scale_mlp, gate_mlp = (
+                self.modulation + modulation_values
+            ).unbind(dim=1)
 
         h = x + self.modulate_and_gate(
             self.attention(
@@ -137,7 +156,7 @@ class DiffusionTransformerBlock(nn.Module):
                 max_seqlen=max_seqlen,
             ),
             scale=scale_msa,
-            gate=gate_msa
+            gate=gate_msa,
         )
 
         h = h + self.modulate_and_gate(
@@ -177,10 +196,13 @@ class BaseDiffusionTransformer(nn.Module):
         self.layers = nn.ModuleList()
         self.shared_adaLN = args.shared_adaLN
         
+        
+
+
 
         if args.full_attention_layers is None:
             args.full_attention_layers = list(range(args.n_layers))
-            
+
         for i in range(args.n_layers):
             layer_args = copy.deepcopy(args)
             if i in args.full_attention_layers:
@@ -292,8 +314,12 @@ class DiffusionTransformer(BaseDiffusionTransformer):
         )
         self.time_step_dim = args.time_step_dim
         self.dim = args.dim
-        self.norm = RMSNorm(args.dim, eps=args.norm_eps, liger_rms_norm=args.liger_rms_norm)
-        self.cond_norm = RMSNorm(args.dim, eps=args.norm_eps, liger_rms_norm=args.liger_rms_norm)
+        self.norm = RMSNorm(
+            args.dim, eps=args.norm_eps, liger_rms_norm=args.liger_rms_norm
+        )
+        self.cond_norm = RMSNorm(
+            args.dim, eps=args.norm_eps, liger_rms_norm=args.liger_rms_norm
+        )
         self.negative_token = nn.Parameter(torch.zeros(1, 1, args.condition_dim))
         self.cond_proj = nn.Linear(
             in_features=args.condition_dim,
@@ -372,7 +398,7 @@ class DiffusionTransformer(BaseDiffusionTransformer):
             B, C, H, W = x.size()
             target_dtype = x.dtype
             cond_l = condition.size(1)
-            
+
             # 1. Patchify and embed image tensor
             x_img_patch = (
                 x.view(B, C, H // pH, pH, W // pW, pW)
@@ -380,14 +406,14 @@ class DiffusionTransformer(BaseDiffusionTransformer):
                 .flatten(3)
             )
             x_img_embed = self.img_embed(x_img_patch)
-            x_img_embed = x_img_embed.flatten(1, 2) # Shape: [B, L_img, D]
+            x_img_embed = x_img_embed.flatten(1, 2)  # Shape: [B, L_img, D]
 
             # Ensure image embedding has the target dtype
             x_img_embed = x_img_embed.to(target_dtype)
-            
+
             # 2. Prepare condition tensor
-            condition = condition.to(target_dtype) # Shape: [B, L_cond, D]
-            
+            condition = condition.to(target_dtype)  # Shape: [B, L_cond, D]
+
             # 3. Calculate total sequence length and pad to multiple of 8
             img_l = (H // pH) * (W // pW)
             total_len = cond_l + img_l
@@ -395,35 +421,50 @@ class DiffusionTransformer(BaseDiffusionTransformer):
                 padded_len = nearest_multiple_of_8(total_len)
             else:
                 padded_len = total_len
-            
+
             # 4. Initialize tensors with padded length
             embed_dim = condition.size(-1)
-            x_combined = torch.zeros((B, padded_len, embed_dim), dtype=target_dtype, device=x.device)
+            x_combined = torch.zeros(
+                (B, padded_len, embed_dim), dtype=target_dtype, device=x.device
+            )
             x_mask = torch.zeros((B, padded_len), dtype=torch.bool, device=x.device)
-            
+
             # 5. Copy tensors into the initialized containers
             x_combined[:, :cond_l] = condition
-            x_combined[:, cond_l:cond_l+img_l] = x_img_embed
-            
+            x_combined[:, cond_l : cond_l + img_l] = x_img_embed
+
             x_mask[:, :cond_l] = condition_mask
-            x_mask[:, cond_l:cond_l+img_l] = True
-            
+            x_mask[:, cond_l : cond_l + img_l] = True
+
             # 6. Prepare RoPE embeddings
-            freqs_cis_cond = self.rope_embeddings_conditions.freqs_cis[:cond_l].to(device=x.device, dtype=target_dtype)
-            freqs_cis_img = self.rope_embeddings_image.freqs_cis[: H // pH, : W // pW].flatten(0, 1).to(device=x.device, dtype=target_dtype)
-            
+            freqs_cis_cond = self.rope_embeddings_conditions.freqs_cis[:cond_l].to(
+                device=x.device, dtype=target_dtype
+            )
+            freqs_cis_img = (
+                self.rope_embeddings_image.freqs_cis[: H // pH, : W // pW]
+                .flatten(0, 1)
+                .to(device=x.device, dtype=target_dtype)
+            )
+
             # Initialize padded freqs_cis
             rope_dim = freqs_cis_cond.shape[-2:]
-            freqs_cis_shape = list(freqs_cis_cond.shape[1:-2])  # Get middle dimensions if any
-            freqs_cis = torch.zeros((padded_len, *freqs_cis_shape, *rope_dim), 
-                                   dtype=target_dtype, device=x.device)
-            
+            freqs_cis_shape = list(
+                freqs_cis_cond.shape[1:-2]
+            )  # Get middle dimensions if any
+            freqs_cis = torch.zeros(
+                (padded_len, *freqs_cis_shape, *rope_dim),
+                dtype=target_dtype,
+                device=x.device,
+            )
+
             # Copy RoPE embeddings
             freqs_cis[:cond_l] = freqs_cis_cond
-            freqs_cis[cond_l:cond_l+img_l] = freqs_cis_img
-            
+            freqs_cis[cond_l : cond_l + img_l] = freqs_cis_img
+
             # Expand for batch dimension
-            freqs_cis = freqs_cis.unsqueeze(0).expand(B, -1, *([-1] * (freqs_cis.dim() - 1)))
+            freqs_cis = freqs_cis.unsqueeze(0).expand(
+                B, -1, *([-1] * (freqs_cis.dim() - 1))
+            )
 
             return (
                 x_combined,
@@ -440,7 +481,7 @@ class DiffusionTransformer(BaseDiffusionTransformer):
         condition: torch.Tensor,
         condition_mask: torch.Tensor,
         attn_impl: str = "sdpa",
-        flops_meter = None,
+        flops_meter=None,
     ):
         condition = self.cond_proj(condition)
         condition = self.cond_norm(condition)
@@ -448,31 +489,46 @@ class DiffusionTransformer(BaseDiffusionTransformer):
         modulation_signal = self.tmb_embed(time_steps)
 
         x_patched, x_mask, cond_l, img_size, freqs_cis = self.patchify_and_embed_image(
-            x, condition, condition_mask, pad= not self.unpadded
+            x, condition, condition_mask, pad=not self.unpadded
         )
 
         if flops_meter is not None:
             flops_meter.log_diffusion_flops(x_patched.shape)
 
-        # Ensure modulation values match the patched data dtype if shared_adaLN is used
-        if self.shared_adaLN:
-            modulation_values = self.adaLN_modulation(
-                modulation_signal
-            ).unflatten(1, (4, self.dim))
-        else:
-            modulation_values = None
-
         if self.unpadded:
             B, S, D = x_patched.shape
-            x_patched, indices, cu_seqlens, max_seqlen, used_seqlens = unpad_input(x_patched, x_mask)
+            x_patched, indices, cu_seqlens, max_seqlen, used_seqlens = unpad_input(
+                x_patched, x_mask
+            )
             seqlens = torch.sum(x_mask, dim=-1, dtype=torch.int32)
-            batch_indices = torch.arange(B, device=x_patched.device, dtype=torch.int32).repeat_interleave(repeats=seqlens)
             freqs_cis, _, _, _, _ = unpad_input(freqs_cis, x_mask)
+            (
+                x_patched,
+                freqs_cis,
+                seqlens,
+                cu_seqlens,
+                max_seqlen,
+                modulation_signal,
+                flat_pad_len,
+            ) = pad_flat_tokens_to_multiple(
+                x_patched, freqs_cis, seqlens, cu_seqlens, max_seqlen, modulation_signal, multiple=128
+            )
+            batch_indices = torch.arange(
+                seqlens.shape[0], device=x_patched.device, dtype=torch.int32
+            ).repeat_interleave(repeats=seqlens)
             x_mask = None
         else:
             batch_indices = None
             cu_seqlens = None
             max_seqlen = None
+
+        # Ensure modulation values match the patched data dtype if shared_adaLN is used
+        if self.shared_adaLN:
+            modulation_values = self.adaLN_modulation(modulation_signal).unflatten(
+                1, (4, self.dim)
+            )
+        else:
+            modulation_values = None
 
         last_hidden_state, align_hidden_state = super().forward(
             x_patched,
@@ -488,15 +544,21 @@ class DiffusionTransformer(BaseDiffusionTransformer):
 
         out = self.img_output(self.norm(last_hidden_state))
         if self.unpadded:
+            out = unpad_flat_tokens(out, flat_pad_len)
+            align_hidden_state = unpad_flat_tokens(align_hidden_state, flat_pad_len)
             out = pad_input(out, indices, B, S)
             align_hidden_state = pad_input(align_hidden_state, indices, B, S)
-        out = self.unpatchify_image(out, cond_l, img_size) # unpatchify handles list/tensor output
+        out = self.unpatchify_image(
+            out, cond_l, img_size
+        )  # unpatchify handles list/tensor output
 
         output = BaseDiffusionTransformerOutputs(
             output=out,
-            align_hidden_state=align_hidden_state if align_hidden_state is not None else None,
+            align_hidden_state=align_hidden_state
+            if align_hidden_state is not None
+            else None,
             cond_l=cond_l,
-            img_size=img_size
+            img_size=img_size,
         )
 
         return output
@@ -506,18 +568,18 @@ class DiffusionTransformer(BaseDiffusionTransformer):
     ) -> Union[torch.Tensor, List[torch.Tensor]]:
         """
         Convert patched image features back to the original latent format.
-        
+
         Args:
             image_features: Patched image features
             img_size: Original image size (H, W) or list of sizes for dynamic resolution
-            
+
         Returns:
             Reconstructed image tensor(s) in shape [B, C, H, W] or list of [C, H, W] tensors
         """
         pH = pW = self.patch_size
         H, W = img_size
         use_dynamic_res = isinstance(H, list) and isinstance(W, list)
-        
+
         if use_dynamic_res:
             out_x_list = []
             for i, (_H, _W) in enumerate(zip(H, W)):
@@ -531,19 +593,19 @@ class DiffusionTransformer(BaseDiffusionTransformer):
         else:
             # Handle the case where cond_l is an integer, not a list
             if isinstance(cond_l, list):
-                 # If cond_l is unexpectedly a list here, take the first element or max?
-                 # Assuming it should be consistent with the input type logic.
-                 # If input was Tensor, cond_l should be int. If list, list.
-                 # This path assumes input was Tensor, so cond_l should be int.
-                 # If it's a list, maybe log a warning or error.
-                 # For now, assume it's an int if we reach here.
-                 if len(cond_l) > 0:
-                     max_cond_l = cond_l[0] # Or max(cond_l) if that makes sense
-                     # logger.warning("cond_l was a list in unpatchify_image tensor path.")
-                 else:
-                     max_cond_l = 0 # Handle empty list case
+                # If cond_l is unexpectedly a list here, take the first element or max?
+                # Assuming it should be consistent with the input type logic.
+                # If input was Tensor, cond_l should be int. If list, list.
+                # This path assumes input was Tensor, so cond_l should be int.
+                # If it's a list, maybe log a warning or error.
+                # For now, assume it's an int if we reach here.
+                if len(cond_l) > 0:
+                    max_cond_l = cond_l[0]  # Or max(cond_l) if that makes sense
+                    # logger.warning("cond_l was a list in unpatchify_image tensor path.")
+                else:
+                    max_cond_l = 0  # Handle empty list case
             else:
-                max_cond_l = cond_l # It's already an int
+                max_cond_l = cond_l  # It's already an int
 
             B = x.size(0)
             L = (H // pH) * (W // pW)
@@ -557,7 +619,9 @@ class DiffusionTransformer(BaseDiffusionTransformer):
             img_features = img_features.view(
                 B, H // pH, W // pW, pH, pW, self.out_channels
             )
-            img_features = img_features.permute(0, 5, 1, 3, 2, 4).flatten(4, 5).flatten(2, 3)
+            img_features = (
+                img_features.permute(0, 5, 1, 3, 2, 4).flatten(4, 5).flatten(2, 3)
+            )
             return img_features
 
     def reset_parameters(self, init_std=None):
