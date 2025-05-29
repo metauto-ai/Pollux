@@ -81,6 +81,7 @@ class DataArgs:
 
     # * Huggingface specific args
     root_dir: Optional[str] = None  # For local/huggingface datasets
+    root_dir_type: Optional[str] = None  # For "json" or "parquet" datasets
 
     # * MongoDB specific args
     query: Optional[Dict[str, Any]] = field(default_factory=dict)  # MongoDB query
@@ -177,6 +178,7 @@ class AutoDataLoader:
                 extract_field=args.extract_field,  # {"s3url": "image",}
                 partition_key=args.partition_key,
                 root_dir=args.root_dir,
+                root_dir_type=args.root_dir_type,
                 args=args,
             )
         elif args.data_name in [

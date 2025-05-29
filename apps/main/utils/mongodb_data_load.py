@@ -26,6 +26,7 @@ import torch
 import s3fs
 import boto3
 import wandb
+import glob
 from apps.main.utils.dict_tensor_data_load import DictTensorBatchIterator
 import ijson
 from requests.adapters import HTTPAdapter
@@ -66,6 +67,7 @@ class MongoDBDataLoad(Dataset):
         partition_key: str,
         query: dict[str, Any],
         root_dir: str = None,
+        root_dir_type: str = None,
     ) -> None:
         super().__init__()
         assert shard_idx >= 0 and shard_idx < num_shards, "Invalid shard index"
@@ -76,6 +78,7 @@ class MongoDBDataLoad(Dataset):
         self.data = None
         self.partition_key = partition_key
         self.root_dir = root_dir
+        self.root_dir_type = root_dir_type
 
     def set_local_partition(self):
         """
@@ -122,18 +125,33 @@ class MongoDBDataLoad(Dataset):
 
             client.close()
         else:
-            logging.info(f"Loading data from local parquet files: {self.root_dir}")
-
-            file_path = os.path.join(self.root_dir, f"{self.collection_name}.json")
             data = []
-            with open(file_path, "r") as file:
-                for item in tqdm(ijson.items(file, "item"), desc=f"Loading data to shard {self.shard_idx}"):
-                    partition_key = int(item[self.partition_key])
-                    if partition_key % self.num_shards == self.shard_idx:
-                        data.append(item)
-                        # # Note: used for debugging
-                        # if len(data) > 10000:
-                        #     break
+            if self.root_dir_type == "json":
+                logging.info(f"Loading data from local parquet files: {self.root_dir}")
+
+                file_path = os.path.join(self.root_dir, f"{self.collection_name}.json")
+                
+                with open(file_path, "r") as file:
+                    for item in tqdm(ijson.items(file, "item"), desc=f"Loading data to shard {self.shard_idx}"):
+                        partition_key = int(item[self.partition_key])
+                        if partition_key % self.num_shards == self.shard_idx:
+                            data.append(item)
+                            # # Note: used for debugging
+                            # if len(data) > 10000:
+                            #     break
+            elif self.root_dir_type == "parquet":
+                logging.info(f"Loading data from local parquet files: {self.root_dir}")
+                parquet_files = glob.glob(os.path.join(self.root_dir, "*.parquet"))
+                for file in tqdm(parquet_files, desc=f"Loading data to shard {self.shard_idx}"):
+                    df = pd.read_parquet(file)
+                    df = df[df[self.partition_key] % self.num_shards == self.shard_idx]
+                    data.extend(df.to_dict(orient="records"))
+                    
+                    # # Note: used for debugging
+                    # if len(data) > 10000:
+                    #     break
+            else:
+                raise ValueError(f"Invalid Root Directory Type. Set root_dir_type to 'json' or 'parquet'")
 
             self.data = pd.DataFrame(data).reset_index()
         end_time = time.time()  # Record the end time
@@ -159,6 +177,7 @@ class MongoDBImageDataLoad(MongoDBDataLoad):
         shard_idx,
         query,
         root_dir,
+        root_dir_type,
         collection_name,
         extract_field,
         partition_key,
@@ -171,6 +190,7 @@ class MongoDBImageDataLoad(MongoDBDataLoad):
             query=query,
             partition_key=partition_key,
             root_dir=root_dir,
+            root_dir_type=root_dir_type,
         )
         self.image_processing = PolluxImageProcessing(args)
         self.extract_field = extract_field
