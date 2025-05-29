@@ -23,7 +23,7 @@ s3fs
 boto3
 python-dotenv
 ijson
-transformers
+transformers==4.51.3
 liger-kernel
 timm
 open-clip-torch
