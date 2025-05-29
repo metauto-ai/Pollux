@@ -125,8 +125,8 @@ class MongoDBDataLoad(Dataset):
 
             client.close()
         else:
-            data = []
             if self.root_dir_type == "json":
+                data = []
                 logging.info(f"Loading data from local parquet files: {self.root_dir}")
 
                 file_path = os.path.join(self.root_dir, f"{self.collection_name}.json")
@@ -139,21 +139,26 @@ class MongoDBDataLoad(Dataset):
                             # # Note: used for debugging
                             # if len(data) > 10000:
                             #     break
+                self.data = pd.DataFrame(data).reset_index()
             elif self.root_dir_type == "parquet":
                 logging.info(f"Loading data from local parquet files: {self.root_dir}")
-                parquet_files = glob.glob(os.path.join(self.root_dir, "*.parquet"))
+                dir_path = os.path.join(self.root_dir, f"{self.collection_name}")
+                parquet_files = glob.glob(os.path.join(dir_path, "*/*.parquet"))
+                data = []
+                len_data = 0
                 for file in tqdm(parquet_files, desc=f"Loading data to shard {self.shard_idx}"):
-                    df = pd.read_parquet(file)
+                    df = pd.read_parquet(file, engine="pyarrow")
                     df = df[df[self.partition_key] % self.num_shards == self.shard_idx]
-                    data.extend(df.to_dict(orient="records"))
-                    
+                    data.append(df)
+                    len_data += len(df)
                     # # Note: used for debugging
-                    # if len(data) > 10000:
-                    #     break
+                    if len_data > 2500000:
+                        break
+                self.data = pd.concat(data).reset_index()
             else:
                 raise ValueError(f"Invalid Root Directory Type. Set root_dir_type to 'json' or 'parquet'")
 
-            self.data = pd.DataFrame(data).reset_index()
+            
         end_time = time.time()  # Record the end time
         # Calculate the duration in seconds
         elapsed_time = end_time - start_time
@@ -164,7 +169,7 @@ class MongoDBDataLoad(Dataset):
         )
 
     def __len__(self) -> int:
-        return self.data.index.max()
+        return len(self.data)
 
     def __getitem__(self, idx: int) -> dict[str, Any]:
         return self.data[idx]
@@ -286,7 +291,7 @@ class MongoDBImageDataLoad(MongoDBDataLoad):
         # for pd data
         sample = self.data.iloc[idx]  # Use iloc for row access in DataFrame
         return_sample = {}
-        return_sample["_id"] = str(sample["_id"])
+        return_sample["_id"] = str(sample["_id"] if "_id" in sample else sample["id"])
         caption = sample["caption"]
         if isinstance(caption, tuple):
             caption = caption[0]
