@@ -17,6 +17,7 @@ class SchedulerArgs:
 
     num_train_timesteps: int = 1000
     base_image_seq_len: int = 256
+    avg_image_seq_len: int = 256
     base_shift: float = 0.5
     max_image_seq_len: int = 4096
     max_shift: float = 1.15
@@ -94,15 +95,16 @@ def retrieve_timesteps(
     return timesteps, num_inference_steps
 
 
-def calculate_shift(
+
+def calculate_shift_avg(
     image_seq_len,
-    base_seq_len: int = 256,
+    avg_seq_len: int = 256,
     max_seq_len: int = 4096,
     base_shift: float = 0.5,
     max_shift: float = 1.16,
 ):
-    m = (max_shift - base_shift) / (max_seq_len - base_seq_len)
-    b = base_shift - m * base_seq_len
+    m = (max_shift - base_shift) / (max_seq_len - avg_seq_len)
+    b = base_shift - m * avg_seq_len
     mu = image_seq_len * m + b
     return mu
 
@@ -119,6 +121,7 @@ class RectifiedFlow(torch.nn.Module):
         self.logit_mean = args.logit_mean
         self.logit_std = args.logit_std
         self.mode_scale = args.mode_scale
+        self.avg_seq_len = args.avg_image_seq_len
 
     def create_schedulers(self, args: SchedulerArgs):
         scheduler = FlowMatchEulerDiscreteScheduler(
@@ -147,9 +150,9 @@ class RectifiedFlow(torch.nn.Module):
         if image_seq_len is not None and self.scheduler.config.use_dynamic_shifting:
             if isinstance(image_seq_len, int):
                 # Single sequence length for the whole batch
-                mu = calculate_shift(
+                mu = calculate_shift_avg(
                     image_seq_len=image_seq_len,
-                    base_seq_len=self.scheduler.config.base_image_seq_len,
+                    avg_seq_len=self.avg_seq_len,
                     max_seq_len=self.scheduler.config.max_image_seq_len,
                     base_shift=self.scheduler.config.base_shift,
                     max_shift=self.scheduler.config.max_shift,
@@ -166,9 +169,9 @@ class RectifiedFlow(torch.nn.Module):
                     )
                 
                 mus = [
-                    calculate_shift(
+                    calculate_shift_avg(
                         image_seq_len=sl,
-                        base_seq_len=self.scheduler.config.base_image_seq_len,
+                        avg_seq_len=self.avg_seq_len,
                         max_seq_len=self.scheduler.config.max_image_seq_len,
                         base_shift=self.scheduler.config.base_shift,
                         max_shift=self.scheduler.config.max_shift,
