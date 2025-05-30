@@ -32,6 +32,7 @@ model:
     scheduler:
         num_train_timesteps: 1000
         base_image_seq_len: 256
+        avg_image_seq_len: 256
         base_shift: 0.5
         max_image_seq_len: 4096
         max_shift: 1.15
