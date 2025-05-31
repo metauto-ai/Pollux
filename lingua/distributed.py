@@ -89,6 +89,13 @@ class EnvironmentArgs:
     NCCL_IB_TIMEOUT: str = "22"
     NCCL_DEBUG: str = "INFO"
     TORCH_NCCL_ASYNC_ERROR_HANDLING: str = "1"
+    NCCL_PROTO: str = "Simple"
+    FI_PROVIDER: str = "efa"
+    FI_EFA_USE_DEVICE_RDMA: str = "1"
+    FI_EFA_USE_HUGE_PAGE: str = "0"
+    FI_EFA_SET_CUDA_SYNC_MEMOPS: str = "0"
+    NCCL_SOCKET_IFNAME: str = "^docker,lo,veth,eth"
+    LD_PRELOAD: str = "/usr/local/cuda-12.8/lib/libnccl.so"
 
 
 def get_device_mesh(distributed_args: DistributedArgs):

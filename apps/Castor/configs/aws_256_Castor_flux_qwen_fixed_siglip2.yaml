@@ -1,4 +1,4 @@
-# torchrun --standalone --nnodes 1 --nproc-per-node 4 -m apps.Castor.train config=apps/Castor/configs/train_bucket_256_Castor_flux_qwen_dynamic.yaml
+# torchrun --standalone --nnodes 1 --nproc-per-node 8 -m apps.Castor.train config=apps/Castor/configs/aws_256_Castor_flux_qwen_fixed_siglip2.yaml
 
 # Set up single experiment
 version: v1.0
@@ -20,7 +20,7 @@ distributed:
     gpus: "0,1,2,3,4,5,6,7"
     fsdp_type: full_shard
     dp_shard: 8
-    dp_replicate: 1
+    dp_replicate: 2
     compile: false
     model_dtype: bf16 # options: `fb8` is only supported by H100
     matmul_allow_tf32: false
@@ -48,9 +48,9 @@ model:
         multiple_of: 256
         n_heads: 32
         n_kv_heads: 8
-        n_layers: 24
+        n_layers: 4
         attention_window: [-1, -1] # [-1, -1] for full attention
-        align_layer: 8
+        align_layer: 2
         time_step_dim: *hidden_dim
         patch_size: 2
         in_channels: 16
@@ -133,5 +133,5 @@ logging:
         name: ''
 
 env:
-    ENABLE_INTRA_NODE_COMM: '1'  # '0' for local machine (otherwise errors happen); '1' for slurmn (need test)
-    NCCL_DEBUG: 'ERROR'
+    ENABLE_INTRA_NODE_COMM: '0'  # '0' for local machine (otherwise errors happen); '1' for slurmn (need test)
+    NCCL_DEBUG: 'WARN'

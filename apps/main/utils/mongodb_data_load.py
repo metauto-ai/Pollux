@@ -152,8 +152,8 @@ class MongoDBDataLoad(Dataset):
                     data.append(df)
                     len_data += len(df)
                     # # Note: used for debugging
-                    if len_data > 2500000:
-                        break
+                    # if len_data > 200000:
+                    #     break
                 self.data = pd.concat(data).reset_index()
             else:
                 raise ValueError(f"Invalid Root Directory Type. Set root_dir_type to 'json' or 'parquet'")
