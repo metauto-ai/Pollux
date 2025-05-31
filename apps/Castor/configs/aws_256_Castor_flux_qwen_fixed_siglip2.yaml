@@ -48,9 +48,9 @@ model:
         multiple_of: 256
         n_heads: 32
         n_kv_heads: 8
-        n_layers: 4
+        n_layers: 24
         attention_window: [-1, -1] # [-1, -1] for full attention
-        align_layer: 2
+        align_layer: 8
         time_step_dim: *hidden_dim
         patch_size: 2
         in_channels: 16
