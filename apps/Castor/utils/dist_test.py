@@ -29,12 +29,15 @@ def main():
     # Define the mesh shape (e.g., a 2D mesh with 2 replicas and 4 shards)
     # Ensure world_size is 8 (2 * 4) for this specific configuration
     if world_size != 8:
-        raise ValueError(f"This example requires world_size=8 for a (2, 4) mesh, but got {world_size}")
+        raise ValueError(f"This example requires world_size=16 for a (2, 4) mesh, but got {world_size}")
     mesh_shape = (2, 4)
 
     # Create the device mesh
     # Define dimension names for clarity: 'rp' for replication, 'dp' (or 'sp') for data/shard parallelism
     mesh = init_device_mesh(device_type=device_type, mesh_shape=mesh_shape, mesh_dim_names=("rp", "dp"))
+
+    # Barrier to ensure all processes have created the mesh
+    dist.barrier()
 
     print(f"Rank {rank}: Successfully created 2D device mesh: {mesh}")
     print(f"Rank {rank}: Mesh coordinates: {mesh.get_coordinate()}")

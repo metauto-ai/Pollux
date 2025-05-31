@@ -54,6 +54,7 @@ class TransformerArgs(BaseTransformerArgs):
     unpadded: bool = False
     fp8_ffn_skip_layers: Optional[List[int]] = None
 
+
 class DiffusionTransformerBlock(nn.Module):
     def __init__(self, args: TransformerArgs):
         super().__init__()
@@ -97,14 +98,29 @@ class DiffusionTransformerBlock(nn.Module):
             multiple_of=args.multiple_of,
             ffn_dim_multiplier=args.ffn_dim_multiplier,
             liger_ffn=args.liger_ffn,
+            use_fp8_ffn=args.use_fp8_ffn,
+            rms_eps = args.norm_eps
         )
 
         self.attention_norm = RMSNorm(
             args.dim, eps=args.norm_eps, liger_rms_norm=args.liger_rms_norm
         )
-        self.ffn_norm = RMSNorm(
-            args.dim, eps=args.norm_eps, liger_rms_norm=args.liger_rms_norm
+
+        # fp8 ffn does not need normalization layer
+        self.ffn_norm = (
+            nn.Identity()
+            if args.use_fp8_ffn
+            else RMSNorm(
+                args.dim, eps=args.norm_eps, liger_rms_norm=args.liger_rms_norm
+            )
         )
+
+        self.sandwich_norm = (
+            RMSNorm(args.dim, eps=args.norm_eps, liger_rms_norm=args.liger_rms_norm)
+            if args.sandwich_norm
+            else nn.Identity()
+        )
+
         self.shared_adaLN = args.shared_adaLN
         if not args.shared_adaLN:
             self.adaLN_modulation = AdaLN(
@@ -113,8 +129,7 @@ class DiffusionTransformerBlock(nn.Module):
             )
         else:
             self.register_parameter(
-                'modulation', 
-                nn.Parameter(torch.randn(1, 4, args.dim) / args.dim**0.5)
+                "modulation", nn.Parameter(torch.randn(1, 4, args.dim) / args.dim**0.5)
             )
 
     def forward(
@@ -159,12 +174,10 @@ class DiffusionTransformerBlock(nn.Module):
             gate=gate_msa,
         )
 
-        h = h + self.modulate_and_gate(
-            self.feed_forward(
-                self.ffn_norm(h)
-            ),
-            scale=scale_mlp,
-            gate=gate_mlp
+        h = h + self.sandwich_norm(
+            self.modulate_and_gate(
+                self.feed_forward(self.ffn_norm(h)), scale=scale_mlp, gate=gate_mlp
+            )
         )
 
         return h
@@ -173,7 +186,10 @@ class DiffusionTransformerBlock(nn.Module):
         self.attention.reset_parameters(init_std, factor)
         self.attention_norm.reset_parameters()
         self.feed_forward.reset_parameters(init_std, factor)
-        self.ffn_norm.reset_parameters()
+        if not isinstance(self.ffn_norm, nn.Identity):
+            self.ffn_norm.reset_parameters()
+        if not isinstance(self.sandwich_norm, nn.Identity):
+            self.sandwich_norm.reset_parameters()
         if not self.shared_adaLN:
             self.adaLN_modulation.reset_parameters()
 
@@ -195,10 +211,6 @@ class BaseDiffusionTransformer(nn.Module):
         self.gen_seqlen = args.gen_seqlen
         self.layers = nn.ModuleList()
         self.shared_adaLN = args.shared_adaLN
-        
-        
-
-
 
         if args.full_attention_layers is None:
             args.full_attention_layers = list(range(args.n_layers))
@@ -240,7 +252,7 @@ class BaseDiffusionTransformer(nn.Module):
             )
             if idx == self.align_layer - 1:
                 align_hidden_state = h
-        
+
         return h, align_hidden_state
 
     def reset_parameters(self):
@@ -514,7 +526,13 @@ class DiffusionTransformer(BaseDiffusionTransformer):
                 modulation_signal,
                 flat_pad_len,
             ) = pad_flat_tokens_to_multiple(
-                x_patched, freqs_cis, seqlens, cu_seqlens, max_seqlen, modulation_signal, multiple=128
+                x_patched,
+                freqs_cis,
+                seqlens,
+                cu_seqlens,
+                max_seqlen,
+                modulation_signal,
+                multiple=128,
             )
             batch_indices = torch.arange(
                 seqlens.shape[0], device=x_patched.device, dtype=torch.int32

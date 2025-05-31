@@ -57,7 +57,8 @@ class BaseTransformerArgs:
     liger_ffn: bool = True
     liger_rms_norm: bool = True
     liger_rotary_emb: bool = False
-    use_fp8_ffn: bool = True
+    use_fp8_ffn: bool = False
+    sandwich_norm: bool = False
 
 
 def nearest_multiple_of_8(x):
@@ -764,7 +765,8 @@ class FeedForward(nn.Module):
         ffn_dim_multiplier: Optional[float],
         mp_size: int = 1,
         liger_ffn: bool = True,
-        use_fp8_ffn: bool = True
+        use_fp8_ffn: bool = False,
+        rms_eps = None
     ):
         super().__init__()
 
@@ -789,11 +791,15 @@ class FeedForward(nn.Module):
             self.ffn = LigerSwiGLUMLP(config)
 
         elif use_fp8_ffn:
+            # TODO: add proper init for fp8 ffn 
             self.ffn = te.LayerNormMLP(
                 hidden_size=dim,
                 ffn_hidden_size=hidden_dim,
                 activation='swiglu',
                 bias=False,
+                normalization="RMSNorm",
+                zero_centered_gamma=False,
+                eps = rms_eps,
             )
         else:
             self.w1 = nn.Linear(

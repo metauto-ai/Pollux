@@ -263,6 +263,7 @@ def train(args: TrainArgs):
 
         model = Castor(args.model)
         logger.info("Model is built !")
+        logger.info(model)
 
         model_param_count = get_num_params(model)
         flops_meter = FlopsMeter(args.model, model)
