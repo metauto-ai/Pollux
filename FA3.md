@@ -83,9 +83,9 @@
 2.  Add the following lines to the end of the file if they are not already present or correctly set:
 
     ```bash
-    export CUDA_HOME=/usr/local/cuda-12.8
-    export PATH=$CUDA_HOME/bin:$PATH
-    export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
+    echo 'export CUDA_HOME=/usr/local/cuda-12.8' >> ~/.bashrc
+    echo 'export PATH=$CUDA_HOME/bin:$PATH' >> ~/.bashrc
+    echo 'export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH' >> ~/.bashrc
     ```
 3.  Source the `~/.bashrc` file or restart your terminal for the changes to take effect:
     ```bash
