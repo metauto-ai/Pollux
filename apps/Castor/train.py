@@ -46,7 +46,7 @@ from lingua.checkpoint import (CheckpointArgs, CheckpointManager,
 from lingua.distributed import (DistributedArgs, EnvironmentArgs,
                                 check_model_value_range, dist_mean_dict,
                                 get_device_mesh, get_is_master, get_local_rank,
-                                get_world_size, init_signal_handler,
+                                get_world_size, get_is_slurm_job, init_signal_handler,
                                 parallelize_model, requeue_slurm_job,
                                 setup_env, setup_torch_distributed)
 from lingua.logger import init_logger
@@ -356,7 +356,7 @@ def train(args: TrainArgs):
         max_data_load_time = 0.0
         gc.collect()
 
-        pb = tqdm(total=args.steps, initial=train_state.step, desc="Training Steps")
+        pb = tqdm(total=args.steps, initial=train_state.step, desc="Training Steps", disable=get_is_slurm_job())
 
         while train_state.step < args.steps:
             # We constrain train_state.acc_step to be in range 0 to args.grad_acc_steps - 1
