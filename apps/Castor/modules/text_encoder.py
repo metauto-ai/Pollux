@@ -38,6 +38,7 @@ class BaseTextEncoder:
         self.text_seqlen = args.text_seqlen
 
     # TODO: use this to get the dimension of the text encoder for transformer
+    @property
     def dim(self) -> int:
         raise NotImplementedError
 
@@ -67,6 +68,7 @@ class CLIP(BaseTextEncoder):
             ),
         )
 
+    @property
     def dim(self) -> int:
         return self.clip_model.config.hidden_size
 
@@ -121,6 +123,7 @@ class Qwen2_5_VL(BaseTextEncoder):
             model_path,
         )
 
+    @property
     def dim(self) -> int:
         return self.model.config.hidden_size
 
@@ -181,6 +184,7 @@ class Gemma2_2B_it(BaseTextEncoder):
             args.model_path, subfolder="text_encoder", torch_dtype=self.dtype
         ).cuda()
 
+    @property
     def dim(self) -> int:
         return self.model.config.hidden_size
 
@@ -222,6 +226,7 @@ class T5XXL(BaseTextEncoder):
             args.model_path, torch_dtype=self.dtype
         ).cuda()
 
+    @property
     def dim(self) -> int:
         return self.model.config.hidden_size
 

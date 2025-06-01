@@ -10,6 +10,10 @@ import time
 from omegaconf import OmegaConf
 from tqdm import tqdm
 
+from apps.Castor.modules.text_encoder import create_text_encoder
+from apps.Castor.modules.vae import create_vae
+from apps.Castor.modules.vision_encoder import create_vision_encoder
+
 cli_args = OmegaConf.from_cli()
 file_cfg = OmegaConf.load(cli_args.config)
 os.environ["CUDA_VISIBLE_DEVICES"] = file_cfg.distributed.gpus
@@ -252,20 +256,33 @@ def train(args: TrainArgs):
             dp_rank = dp_rank * dp_degree + world_mesh["dp_shard"].get_local_rank()
             dp_degree *= world_mesh["dp_shard"].size()
 
-        logger.info(f"Running on dp rank : {dp_rank}")
-        logger.info(f"Running on dp size : {dp_degree}")
+        logger.info(f"Running on dp rank : {dp_rank}/{dp_degree}")
 
         torch.manual_seed(args.seed)
-        logger.info("Building model")
 
-        model = Castor(args.model)
-        logger.info("Model is built !")
+        # build encoders
+        start_time = time.perf_counter()
+        compressor = create_vae(args.model.vae_args)
+        vision_encoder = create_vision_encoder(args.model.vision_encoder_args)
+        text_encoder = create_text_encoder(args.model.text_encoder)
+        end_time = time.perf_counter()
+        logger.info(f"Encoders are built in {end_time - start_time:.2f} seconds")
+        # set encoder dims
+        args.model.text_encoder_dim = text_encoder.dim
+        args.model.vision_encoder_dim = vision_encoder.dim
+
+        # build model
+        start_time = time.perf_counter()
+        logger.info("Building model")
+        with torch.device("meta"):
+            model = Castor(args.model)
+        logger.info("Model is built on meta device!")
 
         model_param_count = get_num_params(model)
-        flops_meter = FlopsMeter(args.model, model)
+        flops_meter = FlopsMeter(args.model, model, text_encoder, vision_encoder, compressor)
 
         torch.manual_seed(args.seed)
-        model.init_weights(args.model)
+        logger.info("Parallelizing model")
         model = parallelize_model(
             model,
             world_mesh,
@@ -275,7 +292,13 @@ def train(args: TrainArgs):
             tp_parallelize=tp_parallelize,
             no_recompute_ops=get_no_recompute_ops(),
         )
-        model = model.to(device="cuda")
+        logger.info("Model is parallelized!")
+        model.to_empty(device="cuda")
+        logger.info("Model is moved to cuda!")
+        model.init_weights(args.model)
+        logger.info("Model is initialized!")
+        end_time = time.perf_counter()
+        logger.info(f"Model is initialized in {end_time - start_time:.2f} seconds")
 
         check_model_value_range(model, range=10.0, std=1.0)
 
@@ -398,6 +421,10 @@ def train(args: TrainArgs):
             start_timer = torch.cuda.Event(enable_timing=True)
             end_timer = torch.cuda.Event(enable_timing=True)
             start_timer.record()
+
+            batch["latent_code"] = compressor.extract_latents(batch, flops_meter)
+            batch["vision_encoder_target"] = vision_encoder.extract_image_representations(batch, flops_meter)
+            batch["text_embedding"], batch["attention_mask"] = text_encoder(batch, flops_meter)
 
             outputs = model(batch, flops_meter)
             # We scale loss with grad_acc_steps so the gradient is the same
