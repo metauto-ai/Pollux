@@ -18,6 +18,7 @@ from types import SimpleNamespace
 
 # fa3 
 from flash_attn_interface import flash_attn_varlen_func
+import transformer_engine.pytorch as te
 
 
 flex_attention_comp = torch.compile(flex_attention)
@@ -56,6 +57,8 @@ class BaseTransformerArgs:
     liger_ffn: bool = True
     liger_rms_norm: bool = True
     liger_rotary_emb: bool = False
+    use_fp8_ffn: bool = False
+    sandwich_norm: bool = False
 
 
 def nearest_multiple_of_8(x):
@@ -762,6 +765,8 @@ class FeedForward(nn.Module):
         ffn_dim_multiplier: Optional[float],
         mp_size: int = 1,
         liger_ffn: bool = True,
+        use_fp8_ffn: bool = False,
+        rms_eps = None
     ):
         super().__init__()
 
@@ -774,6 +779,8 @@ class FeedForward(nn.Module):
         self.dim = dim
         self.hidden_dim = hidden_dim
         self.liger_ffn = liger_ffn
+        self.use_fp8_ffn = use_fp8_ffn
+        assert liger_ffn!=use_fp8_ffn, "both fp8 and liger cannot be turned on at the same time"
 
         if liger_ffn:
             config = SimpleNamespace(
@@ -782,6 +789,18 @@ class FeedForward(nn.Module):
                 hidden_act="silu",
             )
             self.ffn = LigerSwiGLUMLP(config)
+
+        elif use_fp8_ffn:
+            # TODO: add proper init for fp8 ffn 
+            self.ffn = te.LayerNormMLP(
+                hidden_size=dim,
+                ffn_hidden_size=hidden_dim,
+                activation='swiglu',
+                bias=False,
+                normalization="RMSNorm",
+                zero_centered_gamma=False,
+                eps = rms_eps,
+            )
         else:
             self.w1 = nn.Linear(
                 dim,
@@ -803,11 +822,13 @@ class FeedForward(nn.Module):
         # B S D
         if self.liger_ffn:
             return self.ffn(x)
-        
-        x1 = self.w1(x.view_as(x))
-        x3 = self.w3(x.view_as(x))
-        output = self.w2(F.silu(x1) * x3)
-        return output
+        elif self.use_fp8_ffn:
+            return self.ffn(x)
+        else:
+            x1 = self.w1(x.view_as(x))
+            x3 = self.w3(x.view_as(x))
+            output = self.w2(F.silu(x1) * x3)
+            return output
 
     def reset_parameters(self, init_std=None, factor=1.0):
         in_init_std = init_std or (self.dim ** (-0.5))
@@ -832,6 +853,9 @@ class FeedForward(nn.Module):
                 a=-3 * out_init_std,
                 b=3 * out_init_std,
             )
+        elif self.use_fp8_ffn:
+            # TODO: Initialize fp8 parameters
+            pass
         else:
             for w in [self.w1, self.w3]:
                 nn.init.trunc_normal_(

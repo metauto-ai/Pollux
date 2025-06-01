@@ -30,8 +30,13 @@ Follow these steps to set up the environment and install dependencies.
 *   Install xformers, ninja, packaging, and requirements:
     ```bash
     pip install xformers # installs xformers-0.0.30
-    pip install ninja packaging flash-attn
+    pip install ninja packaging
     pip install --requirement requirements.txt
+    ```
+### Install Flash Attention
+*   Install Flash Attention with ninja max_jobs and arguments to speed up the build and install:
+    ```bash
+    MAX_JOBS=128 python -m pip -v install flash-attn --no-build-isolation
     ```
 
 ### COSMOS TVAE Installation
