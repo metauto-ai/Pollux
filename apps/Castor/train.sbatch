@@ -8,7 +8,6 @@
 
 #SBATCH --ntasks-per-node=1     # We run one torchrun launcher per node
 #SBATCH --gpus-per-node=8       # Each torchrun launcher will manage 8 processes, one per GPU
-#SBATCH --cpus-per-task=24       # Allocate 24 CPUs for the torchrun task (and its 8 worker processes)
 
 # --- Project and Log Directories ---
 PROJECT_DIR=${PROJECT_DIR:-"/fsx/ubuntu/workspace/repo/Pollux"}
@@ -30,6 +29,10 @@ export LD_PRELOAD="/usr/local/cuda-12.8/lib/libnccl.so"
 # --- Conda environment ---
 CONDA_ENV_NAME="pollux"
 
+CONDA_PATH=${CONDA_PATH:-"/fsx/ubuntu/miniconda3"}
+export PATH="$CONDA_PATH/bin:$PATH"
+source $CONDA_PATH/etc/profile.d/conda.sh
+
 echo "Attempting to activate conda environment: ${CONDA_ENV_NAME}"
 _CONDA_ROOT=$(conda info --base 2>/dev/null)
 
@@ -37,19 +40,6 @@ if [ -z "${_CONDA_ROOT}" ]; then
     echo "Error: conda command not found or conda base not determined."
     echo "Please ensure conda is installed and initialized."
     exit 1
-fi
-
-# Source conda.sh if not already sourced or conda command not available
-if ! command -v conda &> /dev/null || [ -z "$CONDA_SHLVL" ] || [ "$CONDA_SHLVL" -lt 1 ]; then
-    echo "Sourcing conda from ${_CONDA_ROOT}/etc/profile.d/conda.sh"
-    # shellcheck source=/dev/null
-    source "${_CONDA_ROOT}/etc/profile.d/conda.sh"
-    if [ $? -ne 0 ]; then
-        echo "Error: Failed to source conda.sh from ${_CONDA_ROOT}/etc/profile.d/conda.sh"
-        exit 1
-    fi
-else
-    echo "Conda appears to be already initialized."
 fi
 
 conda activate "${CONDA_ENV_NAME}"
@@ -97,9 +87,12 @@ declare -a TORCHRUN_ARGS=(
 )
 
 # Training script module and its arguments
-TRAIN_SCRIPT_MODULE="-m apps.Castor.train"
+declare -a TRAIN_SCRIPT_ARGS=(
+    "-m"
+    "apps.Castor.train"
+)
 declare -a TRAINING_ARGS=(
-    "config=apps/Castor/configs/train_bucket_256_Castor_flux_qwen_fixed_siglip2.yaml"
+    "config=apps/Castor/configs/aws_256_Castor_flux_qwen_fixed_siglip2.yaml"
 )
 
 echo "--- srun command execution ---"
@@ -114,7 +107,7 @@ echo "Current working directory: $(pwd)"
 
 echo "TORCHRUN_CMD: ${TORCHRUN_CMD}"
 echo "TORCHRUN_ARGS: ${TORCHRUN_ARGS[*]}"
-echo "TRAIN_SCRIPT_MODULE: ${TRAIN_SCRIPT_MODULE}"
+echo "TRAIN_SCRIPT_ARGS: ${TRAIN_SCRIPT_ARGS[*]}"
 echo "TRAINING_ARGS: ${TRAINING_ARGS[*]}"
 
 # Ensure all necessary variables are exported for srun tasks
@@ -123,7 +116,7 @@ export PATH FI_PROVIDER FI_EFA_USE_DEVICE_RDMA FI_EFA_USE_HUGE_PAGE FI_EFA_SET_C
 srun ${AUTO_RESUME} \
     "${TORCHRUN_CMD}" \
     "${TORCHRUN_ARGS[@]}" \
-    "${TRAIN_SCRIPT_MODULE}" \
+    "${TRAIN_SCRIPT_ARGS[@]}" \
     "${TRAINING_ARGS[@]}"
 
 EXIT_CODE=$?
