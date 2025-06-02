@@ -80,6 +80,7 @@ TORCHRUN_CMD="torchrun"
 # torchrun will use the PytorchMASTER_ADDR and PytorchMASTER_PORT for rendezvous.
 # nnodes and node_rank are typically auto-detected by torchrun from Slurm environment variables.
 declare -a TORCHRUN_ARGS=(
+    "--nnodes=${SLURM_NNODES}"
     "--nproc_per_node=8"
     "--rdzv_backend=c10d"
     "--rdzv_endpoint=${PytorchMASTER_ADDR}:${PytorchMASTER_PORT}"
