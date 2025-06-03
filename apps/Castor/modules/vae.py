@@ -5,7 +5,6 @@ from typing import Dict, Generic, List, Literal, Optional, Tuple, Type, TypeVar,
 import torch
 from diffusers import AutoencoderKL, AutoencoderKLHunyuanVideo
 from torch import nn
-from cosmos_tokenizer.image_lib import ImageTokenizer
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -225,6 +224,7 @@ class FluxVAE(BaseLatentVideoVAE):
 class COSMOSContinuousVAE(BaseLatentVideoVAE):
     def __init__(self, args: VideoVAEArgs):
         super().__init__(args)
+        from cosmos_tokenizer.image_lib import ImageTokenizer
         """
         Initialize the encoder and decoder for Continuous VAE.
         Checks model type and returns the initialized VAE instance.
