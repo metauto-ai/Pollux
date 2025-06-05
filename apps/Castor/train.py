@@ -61,6 +61,8 @@ from torch.optim import lr_scheduler
 from transformer_engine.common.recipe import Format, DelayedScaling
 import transformer_engine.pytorch as te
 
+from mup import get_shapes, set_base_shapes, make_base_shapes
+
 logger = logging.getLogger()
 
 
@@ -98,6 +100,9 @@ class TrainArgs:
     # If set to None, eval is run locally otherwise it launches a new job with the given number of gpus
     async_eval_gpus: Optional[int] = None
     eval: Optional[Any] = None
+
+    save_base_shapes: str = ""
+    load_base_shapes: str = ""
 
 
 @dataclass
@@ -279,6 +284,10 @@ def train(args: TrainArgs):
         logger.info("Building model")
         with torch.device("meta"):
             model = Castor(args.model)
+            if args.load_base_shapes != '':
+                logger.info(f'Loading base shapes from {args.load_base_shapes}')
+                set_base_shapes(model, args.load_base_shapes)
+
         logger.info("Model is built on meta device!")
 
         model_param_count = get_num_params(model)
@@ -634,7 +643,28 @@ def main():
     cfg = OmegaConf.merge(default_cfg, file_cfg, cli_args)
     cfg = OmegaConf.to_object(cfg)
 
-    train(cfg)
+    
+    if cfg.save_base_shapes != '':
+        logger.info(f'Saving base shapes at {cfg.save_base_shapes}')
+        cfg_base: ModelArgs = deepcopy(cfg.model)
+        cfg_base.diffusion_model.n_layers = 28
+        cfg_base.diffusion_model.dim = 288
+        cfg_base.diffusion_model.n_heads = 8
+        base_model = Castor(cfg_base)
+        base_shapes = get_shapes(base_model)
+
+        cfg_delta: ModelArgs = deepcopy(cfg.model)
+        cfg_delta.diffusion_model.n_layers = 28
+        cfg_delta.diffusion_model.dim = 352
+        cfg_delta.diffusion_model.n_heads = 16
+        delta_model = Castor(cfg_delta)
+        delta_shapes = get_shapes(delta_model)
+
+        make_base_shapes(base_shapes, delta_shapes, savefile=cfg.save_base_shapes)
+        logger.info('done and exit')
+    else:
+        train(cfg)
+
 
 
 if __name__ == "__main__":

@@ -47,18 +47,20 @@ class AlignmentProjection(nn.Module):
         super(AlignmentProjection, self).__init__()
         
         self.proj = nn.Sequential(
-            nn.Sequential(
-                nn.Linear(input_dim, hidden_dim),
-                nn.SiLU(),
-                nn.Linear(hidden_dim, hidden_dim),
-                nn.SiLU(),
-                nn.Linear(hidden_dim, encoder_dim),
-            )
+            nn.Linear(input_dim, hidden_dim),
+            nn.SiLU(),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.SiLU(),
+            nn.Linear(hidden_dim, encoder_dim),
         )
         
     def forward(self, x):
         x = self.proj(x)
         return x
+
+    def init_weights(self):
+        for w in self.proj.parameters():
+            nn.init.xavier_uniform_(w)
 
 
 class Castor(nn.Module):
@@ -172,6 +174,8 @@ class Castor(nn.Module):
                 pre_trained_state_dict = pre_trained_state_dict["model"]
             self.load_state_dict(pre_trained_state_dict)
         else:
+            if args.vision_encoder_alignment:
+                self.vision_encoder_proj.init_weights()
             self.diffusion_transformer.init_weights(
                 pre_trained_path=args.diffusion_model.pre_trained_path
             )

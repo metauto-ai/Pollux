@@ -559,16 +559,12 @@ class FlashAttention(nn.Module):
             n_kv_heads * self.head_dim,
             bias=False,
         )
-        nn.init.xavier_uniform_(self.wq.weight)
-        nn.init.xavier_uniform_(self.wk.weight)
-        nn.init.xavier_uniform_(self.wv.weight)
-
+        
         self.wo = nn.Linear(
             n_heads * self.head_dim,
             dim,
             bias=False,
         )
-        nn.init.xavier_uniform_(self.wo.weight)
 
         if qk_norm:
             self.q_norm = RMSNorm(self.head_dim, liger_rms_norm=liger_rms_norm)
@@ -577,7 +573,7 @@ class FlashAttention(nn.Module):
             self.q_norm = self.k_norm = nn.Identity()
 
     def reset_parameters(self, *args, **kwargs):
-        nn.init.xavier_uniform_(self.wq.weight)
+        nn.init.constant_(self.wq.weight, 0.0)  # mup init
         nn.init.xavier_uniform_(self.wk.weight)
         nn.init.xavier_uniform_(self.wv.weight)
         nn.init.xavier_uniform_(self.wo.weight)

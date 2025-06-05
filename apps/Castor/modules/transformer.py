@@ -32,6 +32,8 @@ from flash_attn.bert_padding import unpad_input, pad_input
 from apps.Castor.utils.pad import pad_flat_tokens_to_multiple, unpad_flat_tokens
 import copy
 
+from mup import MuReadout
+
 logger = logging.getLogger()
 
 
@@ -312,10 +314,12 @@ class DiffusionTransformer(BaseDiffusionTransformer):
             in_dim=self.patch_size * self.patch_size * args.in_channels,
             out_dim=args.dim,
         )
-        self.img_output = nn.Linear(
+        # mup init
+        self.img_output = MuReadout(
             args.dim,
             self.patch_size * self.patch_size * args.out_channels,
             bias=False,
+            readout_zero_init=True
         )
         self.rope_embeddings_image = RotaryEmbedding2D(
             theta=args.rope_theta,
@@ -655,13 +659,7 @@ class DiffusionTransformer(BaseDiffusionTransformer):
         self.cond_norm.reset_parameters()
         self.tmb_embed.reset_parameters()
         self.img_embed.reset_parameters()
-        nn.init.trunc_normal_(
-            self.img_output.weight,
-            mean=0.0,
-            std=init_std,
-            a=-3 * init_std,
-            b=3 * init_std,
-        )
+
         nn.init.trunc_normal_(
             self.cond_proj.weight,
             mean=0.0,
