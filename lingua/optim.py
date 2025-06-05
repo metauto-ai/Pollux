@@ -30,6 +30,8 @@ class OptimArgs:
 
     exp_factor: float = 0.5
 
+    mup: bool = False
+
 
 def lr_linear(step: int, warmup: int, n_steps: int, min_ratio: float) -> float:
     if step < warmup:
@@ -145,14 +147,25 @@ def build_lr_fn(args: OptimArgs, n_steps: int):
 
 def build_optimizer(model: nn.Module, args: OptimArgs, n_steps: int):
     logger.info("Starting build of optimizer...")
-    optimizer = AdamW(
-        (param for param in model.parameters() if param.requires_grad),
-        lr=args.lr,
-        betas=(args.beta1, args.beta2),
-        weight_decay=args.weight_decay,
-        eps=args.epsilon,
-        fused=True,  # Faster optim.step but can throw errors
-    )
+    if args.mup:
+        from mup.optim import MuAdamW
+        optimizer = MuAdamW(
+            (param for param in model.parameters() if param.requires_grad),
+            lr=args.lr,
+            betas=(args.beta1, args.beta2),
+            weight_decay=args.weight_decay,
+            eps=args.epsilon,
+            fused=True,  # Faster optim.step but can throw errors
+        )
+    else:
+        optimizer = AdamW(
+            (param for param in model.parameters() if param.requires_grad),
+            lr=args.lr,
+            betas=(args.beta1, args.beta2),
+            weight_decay=args.weight_decay,
+            eps=args.epsilon,
+            fused=True,  # Faster optim.step but can throw errors
+        )
 
     # scheduler
     lr_fn = build_lr_fn(args, n_steps)
