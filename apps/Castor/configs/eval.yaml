@@ -1,8 +1,8 @@
 # python -m apps.Castor.generate config=apps/Castor/configs/eval.yaml
 name: "debug_evals"
 stage: eval
-ckpt_dir: "/mnt/pollux/checkpoints/aj/neg_token/checkpoints/0000080000/"
-dump_dir: "/mnt/pollux/checkpoints/aj/neg_token/MJHQ/0000080000"
+ckpt_dir: "/mnt/pollux/checkpoints/aj/neg_token2/checkpoints/0000080000/"
+dump_dir: "/mnt/pollux/checkpoints/aj/neg_token2/MJHQ/0000080000"
 generator:
   guidance_scale: 6.5
   dtype: bf16

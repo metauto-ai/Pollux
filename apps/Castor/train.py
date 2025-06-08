@@ -315,10 +315,6 @@ def train(args: TrainArgs):
             scheduler=scheduler,
         )
 
-        checkpoint = CheckpointManager.instantiate_and_make_dir(args.checkpoint)
-        checkpoint.load(model, optimizer, train_state, world_mesh)
-        # Either load from latest checkpoint or start from scratch
-
         fp8_recipe = None
         if args.model.diffusion_model.use_fp8_ffn: 
             logger.info("FP8 is enabled. Defining FP8 recipe.")
@@ -327,6 +323,15 @@ def train(args: TrainArgs):
             fp8_format = Format.HYBRID # Or Format.E4M3
             fp8_recipe = DelayedScaling(fp8_format=fp8_format, amax_history_len=16, amax_compute_algo="max")
             # You might want to make recipe parameters configurable via TrainArgs
+            te.fp8_global_state.FP8GlobalStateManager.set_fp8_enabled(True)
+            te.fp8_global_state.FP8GlobalStateManager.set_fp8_recipe(
+                fp8_recipe
+            )
+
+        checkpoint = CheckpointManager.instantiate_and_make_dir(args.checkpoint)
+        checkpoint.load(model, optimizer, train_state, world_mesh)
+        # Either load from latest checkpoint or start from scratch
+
 
         gc.disable()
 

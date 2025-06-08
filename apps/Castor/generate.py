@@ -93,10 +93,14 @@ class LatentGenerator(nn.Module):
         )
         latent = self.prepare_latent(context, device=cur_device)
         pos_conditional_signal, pos_conditional_mask = self.model.text_encoder(context)
+
+        n_unconditional_tokens = self.model.diffusion_transformer.n_unconditional_tokens
         negative_conditional_signal = torch.zeros_like(pos_conditional_signal)
-        negative_conditional_signal[:, 0, :] = self.model.diffusion_transformer.negative_token
+        negative_conditional_signal[
+            :, :n_unconditional_tokens, :
+        ] = self.model.diffusion_transformer.negative_token
         negative_conditional_mask = torch.zeros_like(pos_conditional_mask)
-        negative_conditional_mask[:, 0] = 1
+        negative_conditional_mask[:, :n_unconditional_tokens] = 1
 
         context = torch.cat(
             [

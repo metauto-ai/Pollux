@@ -107,10 +107,11 @@ class Castor(nn.Module):
         if is_training:
             cfg_mask = (torch.rand(conditional_signal.shape[0], device=conditional_signal.device) < self.text_cfg_ratio)
             if cfg_mask.any():
-                conditional_signal[cfg_mask, 0:1, :] = self.diffusion_transformer.negative_token
-                # For unconditional samples, the attention mask should be [1, 0, 0, ...].
-                conditional_mask[cfg_mask, 0] = 1
-                conditional_mask[cfg_mask, 1:] = 0
+                n_unconditional_tokens = self.diffusion_transformer.n_unconditional_tokens
+                conditional_signal[cfg_mask, :n_unconditional_tokens, :] = self.diffusion_transformer.negative_token
+                # For unconditional samples, the attention mask should be [1, 1, ..., 0, ...].
+                conditional_mask[cfg_mask, :n_unconditional_tokens] = 1
+                conditional_mask[cfg_mask, n_unconditional_tokens:] = 0
         
         latent_code = batch["latent_code"]
         noised_x, t, target = self.scheduler.sample_noised_input(latent_code)
@@ -235,6 +236,7 @@ def build_2B_Castor():
         condition_seqlen=128,
         norm_eps=1e-5,
         condition_dim=512,
+        n_unconditional_tokens=64,
     )
     vae_args = VideoVAEArgs(
         pretrained_model_name_or_path="/mnt/pollux/checkpoints/HunyuanVideo/vae",
