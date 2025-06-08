@@ -92,7 +92,7 @@ class Castor(nn.Module):
         self.scheduler = RectifiedFlow(args.scheduler)
         self.text_cfg_ratio = args.text_cfg_ratio
 
-    def forward(self, batch: dict[str:any], flops_meter= None) -> dict[str:any]:
+    def forward(self, batch: dict[str:any], flops_meter= None, is_training=False) -> dict[str:any]:
         if hasattr(self, "compressor"):
             batch["latent_code"] = self.compressor.extract_latents(batch, flops_meter)
 
@@ -104,13 +104,13 @@ class Castor(nn.Module):
         
         conditional_signal, conditional_mask = batch["text_embedding"], batch["attention_mask"]
 
-        if random.random() <= self.text_cfg_ratio:
-            conditional_signal = self.diffusion_transformer.negative_token.repeat(
-                conditional_signal.size(0), conditional_signal.size(1), 1
-            )
-            conditional_mask = torch.ones_like(
-                conditional_mask, dtype=conditional_signal.dtype
-            )
+        if is_training:
+            cfg_mask = (torch.rand(conditional_signal.shape[0], device=conditional_signal.device) < self.text_cfg_ratio)
+            if cfg_mask.any():
+                conditional_signal[cfg_mask, 0:1, :] = self.diffusion_transformer.negative_token
+                # For unconditional samples, the attention mask should be [1, 0, 0, ...].
+                conditional_mask[cfg_mask, 0] = 1
+                conditional_mask[cfg_mask, 1:] = 0
         
         latent_code = batch["latent_code"]
         noised_x, t, target = self.scheduler.sample_noised_input(latent_code)

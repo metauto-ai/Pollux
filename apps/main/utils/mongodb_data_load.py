@@ -148,8 +148,8 @@ class MongoDBDataLoad(Dataset):
                     data.extend(df.to_dict(orient="records"))
                     
                     # # Note: used for debugging
-                    # if len(data) > 10000:
-                    #     break
+                    if len(data) > int(2e6):
+                        break
             else:
                 raise ValueError(f"Invalid Root Directory Type. Set root_dir_type to 'json' or 'parquet'")
 
