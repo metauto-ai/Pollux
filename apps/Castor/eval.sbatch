@@ -1,10 +1,10 @@
 #!/bin/bash
 
-#SBATCH --job-name=castor_training
+#SBATCH --job-name=castor_eval
 #SBATCH --output=slurm_logs/slurm-%x-%j.out # %x for job name, %j for job ID
 #SBATCH --error=slurm_logs/slurm-%x-%j.err
 # User will specify --nodes and --partition on sbatch command line
-# e.g., sbatch --nodes=2 --partition=my_partition train.sbatch
+# e.g., sbatch --nodes=2 --partition=my_partition eval.sbatch
 
 #SBATCH --ntasks-per-node=1     # We run one torchrun launcher per node
 #SBATCH --gpus-per-node=8       # Each torchrun launcher will manage 8 processes, one per GPU
@@ -81,7 +81,7 @@ TORCHRUN_CMD="torchrun"
 # nnodes and node_rank are typically auto-detected by torchrun from Slurm environment variables.
 declare -a TORCHRUN_ARGS=(
     "--nnodes=${SLURM_NNODES}"
-    "--nproc_per_node=8"
+    "--nproc_per_node=1"
     "--rdzv_backend=c10d"
     "--rdzv_endpoint=${PytorchMASTER_ADDR}:${PytorchMASTER_PORT}"
     "--log_dir=${LOG_DIR}/torchrun_logs/job_${SLURM_JOB_ID}_node_${SLURM_NODEID}" # Per-node torchrun logs
@@ -90,14 +90,14 @@ declare -a TORCHRUN_ARGS=(
 # Training script module and its arguments
 declare -a TRAIN_SCRIPT_ARGS=(
     "-m"
-    "apps.Castor.train"
+    "apps.Castor.eval"
 )
 declare -a TRAINING_ARGS=(
-    "config=apps/Castor/configs/aws_256_Castor_flux_qwen_fixed_siglip2.yaml"
+    "config=apps/Castor/configs/eval.yaml"
 )
 
 echo "--- srun command execution ---"
-echo "Starting training with ${SLURM_NNODES} nodes."
+echo "Starting evaluation with ${SLURM_NNODES} nodes."
 echo "Host where sbatch script is running: $(hostname)"
 echo "User: $(whoami)"
 echo "Current working directory: $(pwd)"
@@ -124,7 +124,7 @@ EXIT_CODE=$?
 echo "srun command finished with exit code ${EXIT_CODE}."
 
 if [ ${EXIT_CODE} -ne 0 ]; then
-    echo "Training job failed. Please check logs in slurm-${SLURM_JOB_NAME}-${SLURM_JOB_ID}.out/err and any application specific logs."
+    echo "Evaluation job failed. Please check logs in slurm-${SLURM_JOB_NAME}-${SLURM_JOB_ID}.out/err and any application specific logs."
 fi
 
 exit ${EXIT_CODE}
