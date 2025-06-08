@@ -7,8 +7,10 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 import numpy as np
 import torch
 from apps.Castor.model import Castor, ModelArgs
+from apps.Castor.modules.text_encoder import TextEncoderArgs, create_text_encoder
 from apps.Castor.modules.vae import (BaseLatentVideoVAE, VideoVAEArgs,
                                      create_vae)
+from apps.text_encoder.text_encoder import TextEncoder
 from lingua.args import dataclass_from_dict
 from lingua.checkpoint import (CONSOLIDATE_FOLDER, CONSOLIDATE_NAME,
                                consolidate_checkpoints)
@@ -35,6 +37,7 @@ class GeneratorArgs:
     inference_steps: int = 25
     vae_scale_factor: float = 8.0
     tvae: VideoVAEArgs = field(default_factory=VideoVAEArgs)
+    text_encoder: TextEncoderArgs = field(default_factory=TextEncoderArgs)
 
 
 class LatentGenerator(nn.Module):
@@ -43,9 +46,11 @@ class LatentGenerator(nn.Module):
         cfg: GeneratorArgs,
         model: nn.Module,
         tvae: BaseLatentVideoVAE,
+        text_encoder: TextEncoder,
     ):
         super().__init__()
         self.model = model
+
         self.vae_scale_factor = cfg.vae_scale_factor
         self.resolution = int(cfg.resolution // self.vae_scale_factor)
         self.cond_resolution = int(cfg.cond_resolution // self.vae_scale_factor)
@@ -58,6 +63,7 @@ class LatentGenerator(nn.Module):
         self.scheduler = model.scheduler.scheduler
         self.num_inference_steps = cfg.inference_steps
         self.tvae = tvae
+        self.text_encoder = text_encoder
 
     def prepare_latent(self, context, device):
         bsz = len(context["caption"])
@@ -92,7 +98,7 @@ class LatentGenerator(nn.Module):
             mu=mu,
         )
         latent = self.prepare_latent(context, device=cur_device)
-        pos_conditional_signal, pos_conditional_mask = self.model.text_encoder(context)
+        pos_conditional_signal, pos_conditional_mask = self.text_encoder(context)
         negative_conditional_signal = (
             self.model.diffusion_transformer.negative_token.repeat(
                 pos_conditional_signal.size(0), pos_conditional_signal.size(1), 1
@@ -228,28 +234,29 @@ def main():
         cfg.ckpt_dir, model_cls=Castor, model_args_cls=ModelArgs
     )
     tvae = create_vae(gen_cfg.tvae)
-    generator = LatentGenerator(gen_cfg, pollux, tvae).cuda()
+    text_encoder = create_text_encoder(gen_cfg.text_encoder)
+    generator = LatentGenerator(gen_cfg, pollux, tvae, text_encoder).cuda()
     print("Model loaded successfully")
     context = {
         "caption": [
             # Short, simple descriptions
             "A red rose in full bloom against a black background.",
-            "A happy young man sitting on a piece of cloud, reading a book.",
-            "A sleeping cat curled up on a windowsill.",
-            "Fresh snow falling in a forest.",
-            "Hot air balloons floating in a clear blue sky.",
+            "A happy young man sitting on a kitchen table chair, reading a book.",
+            "A sleeping cat curled up on a windowsill, looking at the sky.",
+            "Children playing in a forest.",
+            "Hot air balloons floating in a clear blue sky, with a river in the background.",
             
             # Medium length, more detailed
             "A cozy coffee shop interior with vintage furniture, warm lighting, and the aroma of freshly ground beans wafting through the air.",
             "An ancient temple hidden in a misty mountain valley, its weathered stone walls covered in flowering vines.",
             "A bustling night market in Tokyo, neon signs reflecting off wet streets as people hurry past food stalls.",
             "A sea turtle glides gracefully through crystal-clear turquoise water above a school of small fish, with sunlight reflecting off the surface.",
-            "A petri dish with a bamboo forest growing within it that has tiny red pandas running around.",
+            "A bamboo forest growing within it that has tiny red pandas running around.",
             
             # Technical/scientific
-            "A lone astronaut floats in space, gazing at a swirling black hole surrounded by vibrant landscapes, rivers and clouds below.",
-            "Microscopic view of CRISPR gene editing in action, with precisely rendered molecular structures.",
-            "A topographical map of an alien planet's surface, complete with elevation data and geological formations.",
+            "A lone astronaut floats in space, rivers and clouds below.",
+            "Image of a ribosome, a molecular machine that synthesizes proteins.",
+            "A topographical map of earth's surface, complete with elevation data and geological formations.",
             
             # Artistic/abstract
             "An impressionist painting of music made visible, with colorful swirls representing different instruments in an orchestra.",
