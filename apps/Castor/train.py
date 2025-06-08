@@ -284,9 +284,6 @@ def train(args: TrainArgs):
         logger.info("Building model")
         with torch.device("meta"):
             model = Castor(args.model)
-            if args.load_base_shapes != '':
-                logger.info(f'Loading base shapes from {args.load_base_shapes}')
-                set_base_shapes(model, args.load_base_shapes)
 
         logger.info("Model is built on meta device!")
 
@@ -311,6 +308,11 @@ def train(args: TrainArgs):
         logger.info("Model is initialized!")
         end_time = time.perf_counter()
         logger.info(f"Model is initialized in {end_time - start_time:.2f} seconds")
+        
+        if args.load_base_shapes != '':
+            # set base shapes only after the initialization, otherwise they don't persist
+            logger.info(f'Loading base shapes from {args.load_base_shapes}')
+            set_base_shapes(model, args.load_base_shapes)
 
         check_model_value_range(model, range=10.0, std=1.0)
 
@@ -647,14 +649,12 @@ def main():
     if cfg.save_base_shapes != '':
         logger.info(f'Saving base shapes at {cfg.save_base_shapes}')
         cfg_base: ModelArgs = deepcopy(cfg.model)
-        cfg_base.diffusion_model.n_layers = 28
         cfg_base.diffusion_model.dim = 288
         cfg_base.diffusion_model.n_heads = 8
         base_model = Castor(cfg_base)
         base_shapes = get_shapes(base_model)
 
         cfg_delta: ModelArgs = deepcopy(cfg.model)
-        cfg_delta.diffusion_model.n_layers = 28
         cfg_delta.diffusion_model.dim = 352
         cfg_delta.diffusion_model.n_heads = 16
         delta_model = Castor(cfg_delta)
