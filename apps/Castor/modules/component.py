@@ -850,8 +850,7 @@ class FeedForward(nn.Module):
                 b=3 * out_init_std,
             )
         elif self.use_fp8_ffn:
-            # TODO: Initialize fp8 parameters
-            pass
+            self.ffn.reset_parameters()
         else:
             for w in [self.w1, self.w3]:
                 nn.init.trunc_normal_(
