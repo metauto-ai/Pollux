@@ -76,6 +76,7 @@ class DiffusionTransformerBlock(nn.Module):
 
         assert args.n_heads % self.n_kv_heads == 0
         assert args.dim % args.n_heads == 0
+        self.dim = args.dim
 
         # self.attention = Attention(
         #     dim=args.dim,
@@ -194,6 +195,8 @@ class DiffusionTransformerBlock(nn.Module):
             self.sandwich_norm.reset_parameters()
         if not self.shared_adaLN:
             self.adaLN_modulation.reset_parameters()
+        else:
+            nn.init.trunc_normal_(self.modulation, std=1) / self.dim**0.5
 
 
 @dataclass
@@ -659,6 +662,10 @@ class DiffusionTransformer(BaseDiffusionTransformer):
         self.cond_norm.reset_parameters()
         self.tmb_embed.reset_parameters()
         self.img_embed.reset_parameters()
+
+        nn.init.constant_(self.img_output.weight, 0.) # initialize output weights by zero.
+        if self.img_output.bias is not None:
+            nn.init.constant_(self.img_output.bias, 0.)
 
         nn.init.trunc_normal_(
             self.cond_proj.weight,
