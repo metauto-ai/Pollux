@@ -139,8 +139,8 @@ class MongoDBDataLoad(Dataset):
                         if partition_key % self.num_shards == self.shard_idx:
                             data.append(item)
                             # # Note: used for debugging
-                            # if len(data) > 10000:
-                            #     break
+                            if len(data) > 2600000:
+                                break
             elif self.root_dir_type == "parquet":
                 logging.info(f"Loading data from local parquet files: {self.root_dir}")
                 parquet_files = glob.glob(os.path.join(self.root_dir, self.collection_name, "**/*.parquet"))
@@ -240,13 +240,13 @@ class MongoDBImageDataLoad(MongoDBDataLoad):
         except (requests.RequestException, IOError) as e:
             status_code = getattr(locals().get('head_response'), 'status_code', 'N/A') # ensure head_response is accessed safely
             if isinstance(e, requests.Timeout):
-                logging.debug(f"Timeout downloading image: {imageUrl}")
+                logging.error(f"Timeout downloading image: {imageUrl}")
             elif isinstance(e, requests.HTTPError):
-                logging.debug(f"HTTP error ({status_code}) for: {imageUrl}")
+                logging.error(f"HTTP error ({status_code}) for: {imageUrl}")
             elif isinstance(e, requests.ConnectionError):
-                logging.debug(f"Connection error for: {imageUrl}")
+                logging.error(f"Connection error for: {imageUrl}")
             else:
-                logging.debug(f"Error processing image {imageUrl}: {str(e)}")
+                logging.error(f"Error processing image {imageUrl}: {str(e)}")
             
             # Fall back to placeholder image
             return self.place_holder_image, False # Signal failure
@@ -276,7 +276,7 @@ class MongoDBImageDataLoad(MongoDBDataLoad):
         except Exception as e: 
             # Catching a broad exception. 
             # For production, you might want to catch more specific Boto3 exceptions like ClientError
-            logging.debug(f"Error downloading image from S3 {imageUrl}: {str(e)}")
+            logging.error(f"Error downloading image from S3 {imageUrl}: {str(e)}")
             return self.place_holder_image, False # Signal failure
 
         

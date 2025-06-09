@@ -449,11 +449,11 @@ def train(args: TrainArgs):
             batch["vision_encoder_target"] = vision_encoder.extract_image_representations(batch, flops_meter)
             batch["text_embedding"], batch["attention_mask"] = text_encoder(batch, flops_meter)
 
-            with te.fp8_autocast(enabled=args.model.diffusion_model.use_fp8_ffn, fp8_recipe=fp8_recipe, fp8_group=all_gpus):
-                outputs = model(batch, flops_meter)
-                # We scale loss with grad_acc_steps so the gradient is the same
-                # regardless of grad_acc_steps
-                loss = outputs.loss / args.grad_acc_steps
+            # with te.fp8_autocast(enabled=args.model.diffusion_model.use_fp8_ffn, fp8_recipe=fp8_recipe, fp8_group=all_gpus):
+            outputs = model(batch, flops_meter)
+            # We scale loss with grad_acc_steps so the gradient is the same
+            # regardless of grad_acc_steps
+            loss = outputs.loss / args.grad_acc_steps
 
             # backward on scaled loss to create scaled gradients
             loss.backward()
