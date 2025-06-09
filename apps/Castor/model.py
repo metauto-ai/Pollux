@@ -23,6 +23,8 @@ class ModelArgs:
     diffusion_model: TransformerArgs = field(default_factory=TransformerArgs)
     with_vae: bool = False
     vae_args: VideoVAEArgs = field(default_factory=VideoVAEArgs)
+    text_encoder_dim: int = 512
+    vision_encoder_dim: int = 2048
     vision_encoder_alignment: bool = False
     vision_encoder_alignment_factor: float = 0.5
     vision_encoder_args: VisionEncoderArgs = field(default_factory=VisionEncoderArgs)
@@ -45,18 +47,20 @@ class AlignmentProjection(nn.Module):
         super(AlignmentProjection, self).__init__()
         
         self.proj = nn.Sequential(
-            nn.Sequential(
-                nn.Linear(input_dim, hidden_dim),
-                nn.SiLU(),
-                nn.Linear(hidden_dim, hidden_dim),
-                nn.SiLU(),
-                nn.Linear(hidden_dim, encoder_dim),
-            )
+            nn.Linear(input_dim, hidden_dim),
+            nn.SiLU(),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.SiLU(),
+            nn.Linear(hidden_dim, encoder_dim),
         )
         
     def forward(self, x):
         x = self.proj(x)
         return x
+
+    def init_weights(self):
+        for w in self.proj.parameters():
+            nn.init.xavier_uniform_(w)
 
 
 class Castor(nn.Module):
@@ -67,23 +71,15 @@ class Castor(nn.Module):
         super().__init__()
         self.args = args
         
-        # VAE
-        if args.with_vae:
-            self.compressor = create_vae(args.vae_args)
-        
         # Vision encoder
         if args.vision_encoder_alignment:
-            self.vision_encoder = create_vision_encoder(args.vision_encoder_args)
             self.vision_encoder_proj = AlignmentProjection(
-                args.diffusion_model.dim, args.vision_encoder_args.projection_hidden_dim, self.vision_encoder.dim)
+                args.diffusion_model.dim, args.vision_encoder_args.projection_hidden_dim, args.vision_encoder_dim)
         
-        # Text encoder
-        self.text_encoder = create_text_encoder(args.text_encoder)
-        
-        if args.diffusion_model.condition_dim != self.text_encoder.dim():
-            logger.warning(f"Condition dim {args.diffusion_model.condition_dim} does not match text encoder dim {self.text_encoder.dim()}")
-            logger.warning(f"Using {self.text_encoder.dim()} as condition dim")
-            args.diffusion_model.condition_dim = self.text_encoder.dim()
+        if args.diffusion_model.condition_dim != args.text_encoder_dim:
+            logger.warning(f"Condition dim {args.diffusion_model.condition_dim} does not match text encoder dim {args.text_encoder_dim}")
+            logger.warning(f"Using {args.text_encoder_dim} as condition dim")
+            args.diffusion_model.condition_dim = args.text_encoder_dim
         
         # Diffusion transformer
         self.diffusion_transformer = DiffusionTransformer(args.diffusion_model)
@@ -92,16 +88,7 @@ class Castor(nn.Module):
         self.scheduler = RectifiedFlow(args.scheduler)
         self.text_cfg_ratio = args.text_cfg_ratio
 
-    def forward(self, batch: dict[str:any], flops_meter= None) -> dict[str:any]:
-        if hasattr(self, "compressor"):
-            batch["latent_code"] = self.compressor.extract_latents(batch, flops_meter)
-
-        if hasattr(self, "vision_encoder"):
-            batch["vision_encoder_target"] = self.vision_encoder.extract_image_representations(batch, flops_meter)
-
-        if "text_embedding" not in batch:
-            batch["text_embedding"], batch["attention_mask"] = self.text_encoder(batch, flops_meter)
-        
+    def forward(self, batch: dict[str:any], flops_meter) -> dict[str:any]:
         conditional_signal, conditional_mask = batch["text_embedding"], batch["attention_mask"]
 
         if random.random() <= self.text_cfg_ratio:
@@ -127,7 +114,7 @@ class Castor(nn.Module):
         target_loss = self.mse_loss(output.output, batch["target"])
 
         align_loss = None
-        if hasattr(self, "vision_encoder"):
+        if self.args.vision_encoder_alignment:
             vision_encoder_pred = self.vision_encoder_proj(output.align_hidden_state)
             align_loss = self.consine_loss_with_features(
                 vision_encoder_pred, output.cond_l, output.img_size, batch["vision_encoder_target"])
@@ -187,6 +174,8 @@ class Castor(nn.Module):
                 pre_trained_state_dict = pre_trained_state_dict["model"]
             self.load_state_dict(pre_trained_state_dict)
         else:
+            if args.vision_encoder_alignment:
+                self.vision_encoder_proj.init_weights()
             self.diffusion_transformer.init_weights(
                 pre_trained_path=args.diffusion_model.pre_trained_path
             )

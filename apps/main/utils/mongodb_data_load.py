@@ -33,6 +33,8 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from urllib.parse import urlparse
 
+from lingua.distributed import get_is_slurm_job
+
 logging.getLogger("pymongo").setLevel(logging.WARNING)
 boto3.set_stream_logger("boto3", level=logging.WARNING)
 boto3.set_stream_logger("botocore", level=logging.WARNING)
@@ -132,7 +134,7 @@ class MongoDBDataLoad(Dataset):
                 file_path = os.path.join(self.root_dir, f"{self.collection_name}.json")
                 
                 with open(file_path, "r") as file:
-                    for item in tqdm(ijson.items(file, "item"), desc=f"Loading data to shard {self.shard_idx}"):
+                    for item in tqdm(ijson.items(file, "item"), desc=f"Loading data to shard {self.shard_idx}", disable=get_is_slurm_job()):
                         partition_key = int(item[self.partition_key])
                         if partition_key % self.num_shards == self.shard_idx:
                             data.append(item)
@@ -141,14 +143,14 @@ class MongoDBDataLoad(Dataset):
                             #     break
             elif self.root_dir_type == "parquet":
                 logging.info(f"Loading data from local parquet files: {self.root_dir}")
-                parquet_files = glob.glob(os.path.join(self.root_dir, "*.parquet"))
-                for file in tqdm(parquet_files, desc=f"Loading data to shard {self.shard_idx}"):
+                parquet_files = glob.glob(os.path.join(self.root_dir, self.collection_name, "**/*.parquet"))
+                for file in tqdm(parquet_files, desc=f"Loading data to shard {self.shard_idx}", disable=get_is_slurm_job()):
                     df = pd.read_parquet(file)
                     df = df[df[self.partition_key] % self.num_shards == self.shard_idx]
                     data.extend(df.to_dict(orient="records"))
                     
                     # # Note: used for debugging
-                    # if len(data) > 10000:
+                    # if len(data) > 2500000:
                     #     break
             else:
                 raise ValueError(f"Invalid Root Directory Type. Set root_dir_type to 'json' or 'parquet'")
@@ -164,7 +166,7 @@ class MongoDBDataLoad(Dataset):
         )
 
     def __len__(self) -> int:
-        return self.data.index.max()
+        return len(self.data)
 
     def __getitem__(self, idx: int) -> dict[str, Any]:
         return self.data[idx]
@@ -286,7 +288,7 @@ class MongoDBImageDataLoad(MongoDBDataLoad):
         # for pd data
         sample = self.data.iloc[idx]  # Use iloc for row access in DataFrame
         return_sample = {}
-        return_sample["_id"] = str(sample["_id"])
+        return_sample["_id"] = str(sample["_id"] if "_id" in sample else sample["id"])
         caption = sample["caption"]
         if isinstance(caption, tuple):
             caption = caption[0]

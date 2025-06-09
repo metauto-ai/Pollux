@@ -1,5 +1,7 @@
 from apps.Castor.model import Castor
+from apps.Castor.modules.text_encoder import BaseTextEncoder
 from apps.Castor.modules.transformer import TransformerArgs
+from apps.Castor.modules.vision_encoder import BaseVisionEncoder
 from lingua.metrics import get_num_params
 
 
@@ -100,7 +102,7 @@ theoretical_flops = {
 
 class FlopsMeter:
     def __init__(
-        self, args: TransformerArgs, model: Castor, device="h100", dtype="bf16"
+        self, args: TransformerArgs, model: Castor, text_encoder, vision_encoder, compressor, device="h100", dtype="bf16"
     ):
         self.diffusion_params = get_num_params(model.diffusion_transformer)
         self.diffusion_num_layers = args.diffusion_model.n_layers
@@ -110,20 +112,20 @@ class FlopsMeter:
         )
         self.diffusion_dim = args.diffusion_model.dim
 
-        self.cond_params = get_num_params(model.text_encoder.model)
-        self.cond_dim = model.text_encoder.dim()
-        self.cond_num_layers = len(model.text_encoder.model.layers)
-        self.cond_num_heads = model.text_encoder.model.config.num_attention_heads
+        self.cond_params = get_num_params(text_encoder.model)
+        self.cond_dim = text_encoder.dim
+        self.cond_num_layers = len(text_encoder.model.layers)
+        self.cond_num_heads = text_encoder.model.config.num_attention_heads
         self.cond_headdim = self.cond_dim // self.cond_num_heads
 
-        self.vision_params = get_num_params(model.vision_encoder.model)
-        self.vision_num_layers = model.vision_encoder.model.config.num_hidden_layers
-        self.vision_num_heads = model.vision_encoder.model.config.num_attention_heads
-        self.vision_dim = model.vision_encoder.model.config.hidden_size
-        self.vision_patch_size = model.vision_encoder.model.config.patch_size
+        self.vision_params = get_num_params(vision_encoder.model)
+        self.vision_num_layers = vision_encoder.model.config.num_hidden_layers
+        self.vision_num_heads = vision_encoder.model.config.num_attention_heads
+        self.vision_dim = vision_encoder.model.config.hidden_size
+        self.vision_patch_size = vision_encoder.model.config.patch_size
         self.vision_headdim = self.vision_dim // self.vision_num_heads
 
-        self.vae_params = get_num_params(model.compressor.vae)
+        self.vae_params = get_num_params(compressor.vae)
 
         self.diffusion_flops = 0
         self.vision_encoder_flops = 0

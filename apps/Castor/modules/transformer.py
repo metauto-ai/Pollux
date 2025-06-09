@@ -32,6 +32,8 @@ from flash_attn.bert_padding import unpad_input, pad_input
 from apps.Castor.utils.pad import pad_flat_tokens_to_multiple, unpad_flat_tokens
 import copy
 
+from mup import MuReadout
+
 logger = logging.getLogger()
 
 
@@ -74,6 +76,7 @@ class DiffusionTransformerBlock(nn.Module):
 
         assert args.n_heads % self.n_kv_heads == 0
         assert args.dim % args.n_heads == 0
+        self.dim = args.dim
 
         # self.attention = Attention(
         #     dim=args.dim,
@@ -192,6 +195,8 @@ class DiffusionTransformerBlock(nn.Module):
             self.sandwich_norm.reset_parameters()
         if not self.shared_adaLN:
             self.adaLN_modulation.reset_parameters()
+        else:
+            nn.init.trunc_normal_(self.modulation, std=1) / self.dim**0.5
 
 
 @dataclass
@@ -312,10 +317,12 @@ class DiffusionTransformer(BaseDiffusionTransformer):
             in_dim=self.patch_size * self.patch_size * args.in_channels,
             out_dim=args.dim,
         )
-        self.img_output = nn.Linear(
+        # mup init
+        self.img_output = MuReadout(
             args.dim,
             self.patch_size * self.patch_size * args.out_channels,
             bias=False,
+            readout_zero_init=True
         )
         self.rope_embeddings_image = RotaryEmbedding2D(
             theta=args.rope_theta,
@@ -655,13 +662,11 @@ class DiffusionTransformer(BaseDiffusionTransformer):
         self.cond_norm.reset_parameters()
         self.tmb_embed.reset_parameters()
         self.img_embed.reset_parameters()
-        nn.init.trunc_normal_(
-            self.img_output.weight,
-            mean=0.0,
-            std=init_std,
-            a=-3 * init_std,
-            b=3 * init_std,
-        )
+
+        nn.init.constant_(self.img_output.weight, 0.) # initialize output weights by zero.
+        if self.img_output.bias is not None:
+            nn.init.constant_(self.img_output.bias, 0.)
+
         nn.init.trunc_normal_(
             self.cond_proj.weight,
             mean=0.0,

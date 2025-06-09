@@ -17,6 +17,7 @@ import torchvision.transforms as transforms
 from apps.Castor.generate import (GeneratorArgs, LatentGenerator,
                                   load_consolidated_model)
 from apps.Castor.model import Castor, ModelArgs
+from apps.Castor.modules.text_encoder import create_text_encoder
 from apps.Castor.modules.vae import (BaseLatentVideoVAE, VideoVAEArgs,
                                      create_vae)
 from apps.main.data import AutoDataLoader, DataArgs
@@ -90,7 +91,8 @@ def launch_eval(cfg: EvalArgs):
     logger.info("Model loaded")
     model.eval()
     tvae = create_vae(cfg.generator.tvae)
-    generator = LatentGenerator(cfg.generator, model, tvae).cuda()
+    text_encoder = create_text_encoder(cfg.generator.text_encoder)
+    generator = LatentGenerator(cfg.generator, model, tvae, text_encoder).cuda()
     active_data = [d for d in cfg.data if d.stage == cfg.stage and d.use]
     data_loader_factory = AutoDataLoader(
         shard_id=global_rank,
