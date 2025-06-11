@@ -260,10 +260,25 @@ def train(args: TrainArgs):
 
         torch.manual_seed(args.seed)
         logger.info("Building model")
+        
+        fp8_recipe = None
+        if args.model.diffusion_model.use_fp8_ffn: 
+            logger.info("FP8 is enabled. Defining FP8 recipe.")
+            # Example recipe, adjust as needed
+            all_gpus = torch.distributed.new_group(backend="nccl")
+            fp8_format = Format.HYBRID # Or Format.E4M3
+            fp8_recipe = DelayedScaling(fp8_format=fp8_format, amax_history_len=16, amax_compute_algo="max")
 
+        # with te.fp8_model_init(enabled=True, recipe=fp8_recipe):
         model = Castor(args.model)
         logger.info("Model is built !")
         logger.info(model)
+
+        with te.fp8_autocast(enabled=args.model.diffusion_model.use_fp8_ffn, fp8_recipe=fp8_recipe):
+            for module in model.modules():
+                if isinstance(module, te.LayerNormMLP):
+                    module.init_fp8_metadata(2)
+
 
         model_param_count = get_num_params(model)
         flops_meter = FlopsMeter(args.model, model)
@@ -319,14 +334,6 @@ def train(args: TrainArgs):
         checkpoint.load(model, optimizer, train_state, world_mesh)
         # Either load from latest checkpoint or start from scratch
 
-        fp8_recipe = None
-        if args.model.diffusion_model.use_fp8_ffn: 
-            logger.info("FP8 is enabled. Defining FP8 recipe.")
-            # Example recipe, adjust as needed
-            all_gpus = torch.distributed.new_group(backend="nccl")
-            fp8_format = Format.HYBRID # Or Format.E4M3
-            fp8_recipe = DelayedScaling(fp8_format=fp8_format, amax_history_len=16, amax_compute_algo="max")
-            # You might want to make recipe parameters configurable via TrainArgs
 
         gc.disable()
 
@@ -340,6 +347,7 @@ def train(args: TrainArgs):
         )
 
         dataloader_iterator = iter(data_loader)
+        parquet_iterator = iter([])
         nwords_since_last_log = 0
         failure_rate = 0
         time_last_log = timer()

@@ -98,10 +98,13 @@
 ```
 export CUDNN_PATH=/home/ubuntu/miniconda3/envs/env_name/lib/python3.12/site-packages/nvidia/cudnn/
 export CUDNN_INCLUDE_DIR=/home/ubuntu/miniconda3/envs/env_name/lib/python3.12/site-packages/nvidia/cudnn/include/
+export CPATH="$CUDNN_INCLUDE_DIR:$CPATH"
 
 # Clone repository, checkout stable branch, clone submodules
 git clone --branch stable --recursive https://github.com/NVIDIA/TransformerEngine.git
 
 cd TransformerEngine
 pip3 install --no-build-isolation .   # Build and install
+
+sed -i -E 's/\bflash_attn_3\.//g' /home/ubuntu/miniconda3/envs/env_name/lib/python3.12/site-packages/transformer_engine/pytorch/attention/dot_product_attention/backends.py
 ```

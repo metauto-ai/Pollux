@@ -94,7 +94,12 @@ Follow these steps to set up the environment and install dependencies.
     ```bash
     torchrun --standalone --nnodes 1 --nproc-per-node 8 -m apps.main.train config=apps/main/configs/train_bucket_256_latent_code.yaml
     ```
+* MultiNode
 
+    ```bash
+     GLOO_SOCKET_IFNAME=enp2s0 torchrun --nnodes 2 --nproc-per-node 8 --rdzv-endpoint=10.234.47.77:29500 --node-rank=0  -m apps.Castor.train config=apps/Castor/configs/train_bucket_256_Castor_flux_qwen_fixed_siglip2.yaml
+     ```
+     
 ### Generating Visualizations
 *   Example command to generate visualizations:
     ```bash
@@ -109,4 +114,5 @@ Follow these steps to set up the environment and install dependencies.
 
 ## TODO
 *   See GitHub issues for the current task list.
+
 
