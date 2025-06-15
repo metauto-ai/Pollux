@@ -100,14 +100,15 @@ class Qwen2_5_VL(BaseTextEncoder):
     
     def init_model(self, args: TextEncoderArgs, model_path: str):
         config = AutoConfig.from_pretrained(model_path)
-        config.num_hidden_layers = int(math.ceil(args.relative_depth * config.num_hidden_layers))
+        config.text_config.num_hidden_layers = int(math.ceil(args.relative_depth * config.text_config.num_hidden_layers))
         model = Qwen2_5_VLModel.from_pretrained(
             model_path,
             config=config,
             torch_dtype=self.dtype,
         ).cuda()
-        # avoid norm layer in the last layer
-        model.norm = torch.nn.Identity()
+        if args.relative_depth < 1.0:
+            # avoid norm layer in the last layer
+            model.language_model.norm = torch.nn.Identity()
         apply_liger_kernel_to_qwen2_5_vl(model)
         model.eval()
         model.requires_grad_(False)
