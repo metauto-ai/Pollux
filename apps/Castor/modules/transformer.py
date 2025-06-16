@@ -46,6 +46,7 @@ class TransformerArgs(BaseTransformerArgs):
     tmb_size: int = 256
     condition_seqlen: int = 1000
     gen_seqlen: int = 1000
+    n_unconditional_tokens: int = 64
     pre_trained_path: Optional[str] = None
     qk_norm: bool = True
     shared_adaLN: bool = False
@@ -305,6 +306,7 @@ class DiffusionTransformer(BaseDiffusionTransformer):
         self.out_channels = args.out_channels
         self.in_channels = args.in_channels
         self.unpadded = args.unpadded
+        self.n_unconditional_tokens = args.n_unconditional_tokens
         self.tmb_embed = TimestepEmbedder(
             hidden_size=args.time_step_dim, time_embedding_size=args.tmb_size
         )
@@ -335,7 +337,7 @@ class DiffusionTransformer(BaseDiffusionTransformer):
         self.cond_norm = RMSNorm(
             args.dim, eps=args.norm_eps, liger_rms_norm=args.liger_rms_norm
         )
-        self.negative_token = nn.Parameter(torch.zeros(1, 1, args.condition_dim))
+        self.negative_token = nn.Parameter(torch.zeros(1, self.n_unconditional_tokens, args.condition_dim))
         self.cond_proj = nn.Linear(
             in_features=args.condition_dim,
             out_features=args.dim,

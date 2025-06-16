@@ -421,7 +421,7 @@ def train(args: TrainArgs):
             start_timer.record()
 
             with te.fp8_autocast(enabled=args.model.diffusion_model.use_fp8_ffn, fp8_recipe=fp8_recipe, fp8_group=all_gpus):
-                outputs = model(batch, flops_meter)
+                outputs = model(batch, flops_meter, is_training=True)
                 # We scale loss with grad_acc_steps so the gradient is the same
                 # regardless of grad_acc_steps
                 loss = outputs.loss / args.grad_acc_steps

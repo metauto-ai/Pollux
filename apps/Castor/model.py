@@ -2,6 +2,7 @@
 
 import logging
 import random
+import math
 from dataclasses import dataclass, field
 from typing import List, Optional, Tuple
 
@@ -92,7 +93,55 @@ class Castor(nn.Module):
         self.scheduler = RectifiedFlow(args.scheduler)
         self.text_cfg_ratio = args.text_cfg_ratio
 
-    def forward(self, batch: dict[str:any], flops_meter= None) -> dict[str:any]:
+    @torch.compile
+    @torch.no_grad()
+    def sample_timesteps(
+        self, vae_latent: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """
+        Sample a timestep `t`, create the corresponding noisy latent `z_t`, and
+        compute the velocity target `v_objective`.
+
+        Parameters
+        ----------
+        vae_latent : torch.Tensor
+            Clean latent tensor with shape (B, C, H, W).
+
+        Returns
+        -------
+        z_t : torch.Tensor
+            Noisy latent at timestep `t`, same shape and dtype as `vae_latent`.
+        t : torch.Tensor
+            Sampled timestep in the continuous range [0, 1] with shape (B,).
+        v_objective : torch.Tensor
+            Velocity target (`x₀ − noise`) used for training.
+        """
+
+        assert isinstance(vae_latent, torch.Tensor), "vae_latent must be a tensor, implement dynamic resolution"
+        
+        B, _, H, W = vae_latent.shape
+        device, dtype = vae_latent.device, vae_latent.dtype
+
+        # --- sample timesteps --------------------------------------------------
+        image_token_size = H * W
+        alpha = 2 * math.sqrt(image_token_size / (64 * 64))
+
+        z = torch.randn(B, device=device, dtype=torch.float32)
+        logistic = torch.sigmoid(z)
+        lognormal = logistic * alpha / (1 + (alpha - 1) * logistic)
+
+        do_uniform = torch.rand(B, device=device) < 0.1
+        t = torch.where(do_uniform, torch.rand(B, device=device), lognormal).to(dtype)
+
+        # --- add noise ---------------------------------------------------------
+        noise = torch.randn_like(vae_latent)
+        t_reshaped = t.view(B, 1, 1, 1)
+        z_t = vae_latent * (1 - t_reshaped) + noise * t_reshaped
+
+        v_objective = noise - vae_latent
+        return z_t, t, v_objective
+
+    def forward(self, batch: dict[str:any], flops_meter= None, is_training=False) -> dict[str:any]:
         if hasattr(self, "compressor"):
             batch["latent_code"] = self.compressor.extract_latents(batch, flops_meter)
 
@@ -104,16 +153,18 @@ class Castor(nn.Module):
         
         conditional_signal, conditional_mask = batch["text_embedding"], batch["attention_mask"]
 
-        if random.random() <= self.text_cfg_ratio:
-            conditional_signal = self.diffusion_transformer.negative_token.repeat(
-                conditional_signal.size(0), conditional_signal.size(1), 1
-            )
-            conditional_mask = torch.ones_like(
-                conditional_mask, dtype=conditional_signal.dtype
-            )
+        if is_training:
+            cfg_mask = (torch.rand(conditional_signal.shape[0], device=conditional_signal.device) < self.text_cfg_ratio)
+            if cfg_mask.any():
+                n_unconditional_tokens = self.diffusion_transformer.n_unconditional_tokens
+                conditional_signal[cfg_mask, :n_unconditional_tokens, :] = self.diffusion_transformer.negative_token
+                # For unconditional samples, the attention mask should be [1, 1, ..., 0, ...].
+                conditional_mask[cfg_mask, :n_unconditional_tokens] = 1
+                conditional_mask[cfg_mask, n_unconditional_tokens:] = 0
         
         latent_code = batch["latent_code"]
-        noised_x, t, target = self.scheduler.sample_noised_input(latent_code)
+        noised_x, t, target = self.sample_timesteps(latent_code)
+
         output = self.diffusion_transformer(
             x=noised_x,
             time_steps=t,
@@ -235,6 +286,7 @@ def build_2B_Castor():
         condition_seqlen=128,
         norm_eps=1e-5,
         condition_dim=512,
+        n_unconditional_tokens=64,
     )
     vae_args = VideoVAEArgs(
         pretrained_model_name_or_path="/mnt/pollux/checkpoints/HunyuanVideo/vae",
