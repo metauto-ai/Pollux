@@ -116,6 +116,9 @@ class Castor(nn.Module):
         v_objective : torch.Tensor
             Velocity target (`x₀ − noise`) used for training.
         """
+
+        assert isinstance(vae_latent, torch.Tensor), "vae_latent must be a tensor, implement dynamic resolution"
+        
         B, _, H, W = vae_latent.shape
         device, dtype = vae_latent.device, vae_latent.dtype
 
