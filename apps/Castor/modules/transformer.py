@@ -335,7 +335,6 @@ class DiffusionTransformer(BaseDiffusionTransformer):
         self.cond_norm = RMSNorm(
             args.dim, eps=args.norm_eps, liger_rms_norm=args.liger_rms_norm
         )
-        self.negative_token = nn.Parameter(torch.zeros(1, 1, args.condition_dim))
         self.cond_proj = nn.Linear(
             in_features=args.condition_dim,
             out_features=args.dim,
@@ -669,6 +668,5 @@ class DiffusionTransformer(BaseDiffusionTransformer):
             a=-3 * init_std,
             b=3 * init_std,
         )
-        nn.init.normal_(self.negative_token, std=0.02)
         if self.shared_adaLN:
             self.adaLN_modulation.reset_parameters()
