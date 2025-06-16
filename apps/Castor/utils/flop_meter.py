@@ -116,12 +116,13 @@ class FlopsMeter:
         self.cond_num_heads = model.text_encoder.model.config.num_attention_heads
         self.cond_headdim = self.cond_dim // self.cond_num_heads
 
-        self.vision_params = get_num_params(model.vision_encoder.model)
-        self.vision_num_layers = model.vision_encoder.model.config.num_hidden_layers
-        self.vision_num_heads = model.vision_encoder.model.config.num_attention_heads
-        self.vision_dim = model.vision_encoder.model.config.hidden_size
-        self.vision_patch_size = model.vision_encoder.model.config.patch_size
-        self.vision_headdim = self.vision_dim // self.vision_num_heads
+        if hasattr(model, "vision_encoder"):
+            self.vision_params = get_num_params(model.vision_encoder.model)
+            self.vision_num_layers = model.vision_encoder.model.config.num_hidden_layers
+            self.vision_num_heads = model.vision_encoder.model.config.num_attention_heads
+            self.vision_dim = model.vision_encoder.model.config.hidden_size
+            self.vision_patch_size = model.vision_encoder.model.config.patch_size
+            self.vision_headdim = self.vision_dim // self.vision_num_heads
 
         self.vae_params = get_num_params(model.compressor.vae)
 
