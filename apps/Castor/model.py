@@ -135,7 +135,7 @@ class Castor(nn.Module):
         t_reshaped = t.view(B, 1, 1, 1)
         z_t = vae_latent * (1 - t_reshaped) + noise * t_reshaped
 
-        v_objective = vae_latent - noise
+        v_objective = noise - vae_latent
         return z_t, t, v_objective
 
     def forward(self, batch: dict[str:any], flops_meter= None, is_training=False) -> dict[str:any]:
