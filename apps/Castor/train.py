@@ -26,7 +26,6 @@ import numpy as np
 import torch
 import torch.distributed
 import wandb
-import xformers.profiler
 from apps.Castor.model import (Castor, ModelArgs, build_fsdp_grouping_plan,
                                get_no_recompute_ops, tp_parallelize)
 from apps.main.data import AutoDataLoader, DataArgs
@@ -49,7 +48,6 @@ from lingua.logger import init_logger
 from lingua.metrics import (GPUMemoryMonitor, LoggingArgs, MetricLogger,
                             get_num_params)
 from lingua.optim import OptimArgs, build_optimizer
-from lingua.profiling import ProfilerArgs, maybe_run_profiler
 from torch.distributed._tensor import DTensor
 from torch.distributed.checkpoint.stateful import Stateful
 from torch.optim import lr_scheduler
@@ -87,7 +85,6 @@ class TrainArgs:
     env: EnvironmentArgs = field(default_factory=EnvironmentArgs)
 
     checkpoint: CheckpointArgs = field(default_factory=CheckpointArgs)
-    profiling: ProfilerArgs = field(default_factory=ProfilerArgs)
     logging: LoggingArgs = field(default_factory=LoggingArgs)
     scheduler: SchedulerArgs = field(default_factory=SchedulerArgs)
 
@@ -195,10 +192,7 @@ def validate_train_args(args: TrainArgs):
         )
 
     assert (
-        args.probe_freq != args.profiling.mem_steps
-    ), "Don't profile during probe step"
-    assert (
-        args.probe_freq != args.profiling.profile_steps
+        args.probe_freq is None
     ), "Don't profile during probe step"
     if args.logging.wandb is not None:
         args.logging.wandb.name = args.name
@@ -342,9 +336,6 @@ def train(args: TrainArgs):
         metric_logger = context_stack.enter_context(
             MetricLogger(Path(args.dump_dir) / "metrics.jsonl", args)
         )
-        torch_profiler = context_stack.enter_context(
-            maybe_run_profiler(args.dump_dir, model, args.profiling)
-        )
 
         dataloader_iterator = iter(data_loader)
         parquet_iterator = iter([])
@@ -420,11 +411,11 @@ def train(args: TrainArgs):
             end_timer = torch.cuda.Event(enable_timing=True)
             start_timer.record()
 
-            with te.fp8_autocast(enabled=args.model.diffusion_model.use_fp8_ffn, fp8_recipe=fp8_recipe, fp8_group=all_gpus):
-                outputs = model(batch, flops_meter)
-                # We scale loss with grad_acc_steps so the gradient is the same
-                # regardless of grad_acc_steps
-                loss = outputs.loss / args.grad_acc_steps
+        
+            outputs = model(batch, flops_meter)
+            # We scale loss with grad_acc_steps so the gradient is the same
+            # regardless of grad_acc_steps
+            loss = outputs.loss / args.grad_acc_steps
             # backward on scaled loss to create scaled gradients
             loss.backward()
             # For logging we undo that scaling
@@ -452,10 +443,6 @@ def train(args: TrainArgs):
             torch.cuda.synchronize()
 
             curr_iter_time = round(start_timer.elapsed_time(end_timer) * 1e-3, 4)
-
-            # if profiler is active
-            if torch_profiler:
-                xformers.profiler.step()
 
             # log metrics
             if every_n_steps(

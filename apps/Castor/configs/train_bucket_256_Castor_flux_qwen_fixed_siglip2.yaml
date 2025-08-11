@@ -4,8 +4,8 @@
 version: v1.0
 # From now on, start to align train, data, and model setting with train stage (just finish refactor for dara)
 train_stage: stage-1 # options: preliminary, pretraining, posttraining; aligned with data setting
-name: fp8_ffn_unpadded #used for local dump and wandb log
-output_dir: /mnt/pollux/checkpoints/aj/fp8_ffn_unpadded
+name: sanity #used for local dump and wandb log
+output_dir: /mnt/pollux/checkpoints/aj/
 dump_dir: '' # No need now
 steps: 500000
 seed: 777
@@ -62,11 +62,11 @@ model:
         condition_dim: 3584
         qk_norm: false
         liger_rms_norm: true
-        liger_ffn: false
+        liger_ffn: true
         liger_rotary_emb: false
         shared_adaLN: true
         unpadded: true
-        use_fp8_ffn: true
+        use_fp8_ffn: false
         fp8_ffn_skip_layers: [] # falls back to liger_ffn
     with_vae: true
     vae_args:
@@ -116,8 +116,6 @@ data:
         pin_memory: True
         drop_last: False
 
-profiling:
-    run: false
 
 checkpoint:
     dump:

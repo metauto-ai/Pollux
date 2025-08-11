@@ -98,7 +98,7 @@ class Siglip2VisionEncoder(BaseVisionEncoder):
         super().__init__(args)
         self.model = Siglip2VisionModel.from_pretrained(
             args.weight_path if args.weight_path else "google/siglip2-so400m-patch16-naflex", 
-            use_flash_attention_2=True,
+            attn_implementation="flash_attention_2",
             torch_dtype=self.dtype
         ).requires_grad_(False).cuda()
         self.model = self.model.eval()

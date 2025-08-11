@@ -55,7 +55,6 @@ from lingua.metrics import (
     get_num_params,
 )
 from lingua.optim import OptimArgs, build_optimizer
-from lingua.profiling import ProfilerArgs, maybe_run_profiler
 
 from apps.main.data import AutoDataLoader, DataArgs
 from apps.main.utils.dict_tensor_data_load import DictTensorBatchIterator

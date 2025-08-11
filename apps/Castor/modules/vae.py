@@ -5,7 +5,6 @@ from typing import Dict, Generic, List, Literal, Optional, Tuple, Type, TypeVar,
 import torch
 from diffusers import AutoencoderKL, AutoencoderKLHunyuanVideo
 from torch import nn
-from cosmos_tokenizer.image_lib import ImageTokenizer
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)

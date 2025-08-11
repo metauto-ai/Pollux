@@ -5,7 +5,6 @@ import os
 import random
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple, Union
-from xformers.ops import AttentionBias, fmha
 
 import torch
 import torch.nn.functional as F
@@ -138,7 +137,7 @@ class DiffusionTransformerBlock(nn.Module):
         x_mask: torch.Tensor,
         freqs_cis: torch.Tensor,
         modulation_signal: torch.Tensor,
-        mask: Optional[Union[BlockMask, AttentionBias, str]] = None,
+        mask: Optional[Union[BlockMask, str]] = None,
         attn_impl: str = "sdpa",
         modulation_values: Optional[torch.Tensor] = None,
         cu_seqlens: Optional[torch.Tensor] = None,

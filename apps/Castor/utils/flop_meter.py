@@ -112,8 +112,8 @@ class FlopsMeter:
 
         self.cond_params = get_num_params(model.text_encoder.model)
         self.cond_dim = model.text_encoder.dim()
-        self.cond_num_layers = len(model.text_encoder.model.layers)
-        self.cond_num_heads = model.text_encoder.model.config.num_attention_heads
+        self.cond_num_layers = len(model.text_encoder.model.language_model.layers)
+        self.cond_num_heads = model.text_encoder.model.language_model.config.num_attention_heads
         self.cond_headdim = self.cond_dim // self.cond_num_heads
 
         self.vision_params = get_num_params(model.vision_encoder.model)

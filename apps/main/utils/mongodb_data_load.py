@@ -137,8 +137,8 @@ class MongoDBDataLoad(Dataset):
                         if partition_key % self.num_shards == self.shard_idx:
                             data.append(item)
                             # # Note: used for debugging
-                            # if len(data) > 10000:
-                            #     break
+                            if len(data) > 1000:
+                                break
             elif self.root_dir_type == "parquet":
                 logging.info(f"Loading data from local parquet files: {self.root_dir}")
                 parquet_files = glob.glob(os.path.join(self.root_dir, "*.parquet"))

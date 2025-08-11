@@ -12,7 +12,6 @@ from torch.nn import functional as F
 from torch.nn.attention.flex_attention import (BlockMask, _mask_mod_signature,
                                                create_block_mask,
                                                flex_attention)
-from xformers.ops import AttentionBias, fmha
 from liger_kernel.transformers import LigerSwiGLUMLP, LigerRMSNorm, liger_rotary_pos_emb
 from types import SimpleNamespace
 
@@ -424,7 +423,7 @@ class Attention(nn.Module):
         x_mask: torch.Tensor,
         freqs_cis: torch.Tensor,
         tok_idx: Optional[torch.Tensor] = None,
-        mask: Optional[Union[BlockMask, AttentionBias, str]] = None,
+        mask: Optional[Union[BlockMask, str]] = None,
         attn_impl: str = "sdpa",
     ) -> torch.Tensor:
         # B S D
@@ -459,8 +458,7 @@ class Attention(nn.Module):
             output = output.transpose(1, 2).contiguous()  # B H S D -> B S H D
 
         elif attn_impl == "fmha":
-            assert mask is None or isinstance(mask, AttentionBias)
-            output = fmha.memory_efficient_attention(xq, xk, xv, attn_bias=mask)
+            raise NotImplementedError("fmha is not implemented")
             # This uses B S H D instead of B H S D of pytorch
 
         elif attn_impl == "sdpa":
@@ -691,7 +689,7 @@ class FlashAttention(nn.Module):
 
         if dtype in [torch.float16, torch.bfloat16]:
             if cu_seqlens is not None:
-                output, _ = flash_attn_varlen_func(
+                output = flash_attn_varlen_func(
                     xq,
                     xk,
                     xv,
@@ -716,7 +714,7 @@ class FlashAttention(nn.Module):
 
                 cu_seqlens_q, cu_seqlens_k = cu_seq_lens
                 max_seqlen_in_batch_q, max_seqlen_in_batch_k = max_seq_lens
-                attn_output_unpad, _ = flash_attn_varlen_func(
+                attn_output_unpad = flash_attn_varlen_func(
                    query_states,
                     key_states,
                     value_states,

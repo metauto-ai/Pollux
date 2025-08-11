@@ -35,7 +35,6 @@ from torch.utils.checkpoint import (
 from torch.distributed.device_mesh import DeviceMesh, init_device_mesh
 
 # for no recompute ops
-import xformers.ops
 
 from lingua.float8 import convert_linears_to_fp8
 
