@@ -1,11 +1,11 @@
 <div align="center">
   <h1 align="center">Pollux: Unified World Model</h1>
   <p align="center">
-    Pollux is a unified world-model training and generation codebase.
+    
   </p>
 </div>
 
->  A collaboration between  <a href="https://www.kaust.edu.sa/en/">KAUST</a>  and <a href="https://www.withnucleus.ai/">Nucleus</a> on world models.
+>  Pollux is a unified world-model training and generation codebase. A collaboration between  <a href="https://www.kaust.edu.sa/en/">KAUST</a>  and <a href="https://www.withnucleus.ai/">Nucleus</a> on world models.
 
 ### Install
 
