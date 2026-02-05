@@ -1,8 +1,17 @@
+import os
+from urllib.parse import quote_plus
+
+from dotenv import load_dotenv
 from pymongo import MongoClient
 import json
 
-# MongoDB connection URI
-mongo_uri = "mongodb+srv://nucleusadmin:eMPF9pgRy2UqJW3@nucleus.mongocluster.cosmos.azure.com/?tls=true&authMechanism=SCRAM-SHA-256&retrywrites=false&maxIdleTimeMS=120000"
+load_dotenv()
+
+# MongoDB connection URI (see `.env.sample`)
+mongodb_host = os.environ["MONGODB_URI"]
+mongodb_user = quote_plus(os.environ["MONGODB_USER"])
+mongodb_password = quote_plus(os.environ["MONGODB_PASSWORD"])
+mongo_uri = f"mongodb+srv://{mongodb_user}:{mongodb_password}@{mongodb_host}"
 
 # Connect to MongoDB
 client = MongoClient(mongo_uri)

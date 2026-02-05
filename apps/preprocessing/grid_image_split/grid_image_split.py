@@ -31,14 +31,14 @@ MONGODB_URI = f"mongodb+srv://{encoded_user}:{encoded_password}@{MONGODB_URI}"
 """
 Download json
 
-mongoexport --uri="mongodb+srv://nucleusadmin:eMPF9pgRy2UqJW3@nucleus.mongocluster.cosmos.azure.com/?tls=true&authMechanism=SCRAM-SHA-256&retrywrites=false&maxIdleTimeMS=120000" \
+mongoexport --uri="mongodb+srv://${MONGODB_USER}:${MONGODB_PASSWORD}@${MONGODB_URI}" \
 --db=world_model \
 --collection=midjourney_discord-1 \
 --out=/jfs/jinjie/code/downloads/temp_data/midjourney_discord-1.json --jsonArray
 
 upload json
 
-mongoimport --uri="mongodb+srv://nucleusadmin:eMPF9pgRy2UqJW3@nucleus.mongocluster.cosmos.azure.com/?tls=true&authMechanism=SCRAM-SHA-256&retrywrites=false&maxIdleTimeMS=120000" \
+mongoimport --uri="mongodb+srv://${MONGODB_USER}:${MONGODB_PASSWORD}@${MONGODB_URI}" \
 --db=world_model \
 --collection= midjourney_discord-1-splited \
 --file=/mnt/pollux/mongo_db_cache/midjourney_discord-1.json --jsonArray
