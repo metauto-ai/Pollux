@@ -1,118 +1,42 @@
 <div align="center">
-    <h1 align="center">✨ Pollux: Unified World Model</h1>
+  <h1 align="center">Pollux: Unified World Model</h1>
+  <p align="center">
+    A collaboration between KAUST and <a href="https://www.withnucleus.ai/">Nucleus</a> on world models.
+  </p>
 </div>
 
+Pollux is a unified world-model training and generation codebase.
 
 ## Install
+See [Install.md](Install.md).
 
-Follow these steps to set up the environment and install dependencies.
+## Quickstart
 
-### CUDA Installation
-*   Install CUDA 12.8. Follow instructions from `FA3.md`.
+### Train (single node)
+```bash
+torchrun --standalone --nnodes 1 --nproc-per-node 8 -m apps.main.train \
+  config=apps/main/configs/train_bucket_256_latent_code.yaml
+```
 
-### Environment Setup
-*   Create and activate the conda environment:
-    ```bash
-    conda create -n pollux python=3.12.9
-    conda activate pollux
-    ```
+### Generate
+```bash
+python -m apps.main.generate config=apps/main/configs/eval.yaml
+```
 
-### PyTorch Installation
-*   Install PyTorch, torchvision, and torchaudio compatible with CUDA 12.8:
-    ```bash
-    pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128
-    ```
+### Multi-node / Slurm
+See [MULTINODE.md](MULTINODE.md).
 
-### Flash Attention v3 Installation
-*   Build and install Flash Attention v3. Follow instructions from `FA3.md`.
-
-### Core Package Installation
-*   Install xformers, ninja, packaging, and requirements:
-    ```bash
-    pip install xformers # installs xformers-0.0.30
-    pip install ninja packaging
-    pip install --requirement requirements.txt
-    ```
-### Install Flash Attention
-*   Install Flash Attention with ninja max_jobs and arguments to speed up the build and install:
-    ```bash
-    MAX_JOBS=128 python -m pip -v install flash-attn --no-build-isolation
-    ```
-
-### COSMOS TVAE Installation
-*   Install the COSMOS Tokenizer VAE:
-    ```bash
-    cd apps/Cosmos-Tokenizer
-    pip3 install -e .
-    cd ../.. # Return to the root directory
-    ```
-*   Test the COSMOS VAE installation:
-    ```bash
-    python apps/main/test_vae.py
-    ```
-
-### CLIP Model Installation
-*   Install the OpenAI CLIP model:
-    ```bash
-    pip install git+https://github.com/openai/CLIP.git
-    ```
-
-### Optional Dependencies (Data Preprocessing)
-*   If you need to run data preprocessing, install these packages:
-    ```bash
-    pip install timm
-    pip install torchmetrics
-    ```
-
-### Optional Dependencies (Mongo Tools)
-*   If you need `mongoexport`:
-    1.  Add the MongoDB GPG key:
-        ```bash
-        wget -qO - https://www.mongodb.org/static/pgp/server-6.0.asc | sudo apt-key add -
-        ```
-    2.  Create the list file for MongoDB:
-        ```bash
-        echo "deb [ arch=amd64 ] https://repo.mongodb.org/apt/ubuntu focal/mongodb-org/6.0 multiverse" | sudo tee /etc/apt/sources.list.d/mongodb-org-6.0.list
-        ```
-    3.  Update package lists and install MongoDB tools:
-        ```bash
-        sudo apt update
-        sudo apt install mongodb-database-tools
-        ```
-    4.  Example `mongoexport` command:
-        ```bash
-        mongoexport --uri="mongodb+srv://nucleusadmin:eMPF9pgRy2UqJW3@nucleus.mongocluster.cosmos.azure.com/?tls=true&authMechanism=SCRAM-SHA-256&retrywrites=false&maxIdleTimeMS=120000" \
-        --db=world_model \
-        --collection=pexel_images \
-        --out=/mnt/pollux/mongo_db_cache/pexel_images.json --jsonArray
-        ```
-
-## Preliminary Usage
-
-### Training
-*   Example command to train the diffusion model on 8 GPUs using `torchrun`:
-    ```bash
-    torchrun --standalone --nnodes 1 --nproc-per-node 8 -m apps.main.train config=apps/main/configs/train_bucket_256_latent_code.yaml
-    ```
-* MultiNode
-
-    ```bash
-     GLOO_SOCKET_IFNAME=enp2s0 torchrun --nnodes 2 --nproc-per-node 8 --rdzv-endpoint=10.234.47.77:29500 --node-rank=0  -m apps.Castor.train config=apps/Castor/configs/train_bucket_256_Castor_flux_qwen_fixed_siglip2.yaml
-     ```
-     
-### Generating Visualizations
-*   Example command to generate visualizations:
-    ```bash
-    python -m apps.main.generate config=apps/main/configs/eval.yaml
-    ```
+## Docs
+- [DEVELOP.md](DEVELOP.md) – development notes and cluster setup
+- [FA3.md](FA3.md) – CUDA 12.8 + FlashAttention v3
 
 ## Pollux Pipeline
 ![Pollux Pipeline Diagram](https://github.com/user-attachments/assets/d0ea0b5f-54ed-48fd-92de-b849f07c7548)
 
-## Data Pipeline
-*   Haozhe is working on this section.
+## Contributors
+<a href="https://github.com/metauto-ai/Pollux/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=metauto-ai/Pollux" />
+</a>
 
-## TODO
-*   See GitHub issues for the current task list.
-
-
+## License
+MIT (see [LICENSE](LICENSE)).
