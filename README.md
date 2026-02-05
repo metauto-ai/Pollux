@@ -1,23 +1,27 @@
 <div align="center">
   <h1 align="center">Pollux: Unified World Model</h1>
   <p align="center">
-    A collaboration between KAUST and <a href="https://www.withnucleus.ai/">Nucleus</a> on world models.
+    Pollux is a unified world-model training and generation codebase.
   </p>
 </div>
 
-Pollux is a unified world-model training and generation codebase.
+>  A collaboration between  <a href="https://www.kaust.edu.sa/en/">KAUST</a>  and <a href="https://www.withnucleus.ai/">Nucleus</a> on world models.
 
 ### Install
 
+* **Setup** 
+
 Please see [Install.md](Install.md) for a full installation. 
 
-### Train (single node)
+* **Train**
+
 ```bash
 torchrun --standalone --nnodes 1 --nproc-per-node 8 -m apps.main.train \
   config=apps/main/configs/train_bucket_256_latent_code.yaml
 ```
 
-### Generate
+* **Generate**
+
 ```bash
 python -m apps.main.generate config=apps/main/configs/eval.yaml
 ```
