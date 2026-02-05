@@ -35,15 +35,12 @@ config = Config(
     retries={"max_attempts": 10, "mode": "adaptive"},
     max_pool_connections=200,  # Increase pool size (default is 10)
 )
-S3KEY = "AKIA47CRZU7STC4XUXER"
-S3SECRET = "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"
-s3 = boto3.client(
-    "s3",
-    aws_access_key_id=S3KEY,
-    aws_secret_access_key=S3SECRET,
-    region_name="us-east-1",
-    config=config,
-)
+S3KEY = os.environ.get("S3KEY") or os.environ.get("AWS_ACCESS_KEY_ID")
+S3SECRET = os.environ.get("S3SECRET") or os.environ.get("AWS_SECRET_ACCESS_KEY")
+_s3_kwargs = {"region_name": "us-east-1", "config": config}
+if S3KEY and S3SECRET:
+    _s3_kwargs.update({"aws_access_key_id": S3KEY, "aws_secret_access_key": S3SECRET})
+s3 = boto3.client("s3", **_s3_kwargs)
 logger = logging.getLogger()
 
 
@@ -268,7 +265,10 @@ def upload_parquet(
     save_meter: AverageMeter = None,
 ):
     start_time = time.time()
-    fs = s3fs.S3FileSystem(key=S3KEY, secret=S3SECRET)
+    fs_kwargs = {}
+    if S3KEY and S3SECRET:
+        fs_kwargs.update({"key": S3KEY, "secret": S3SECRET})
+    fs = s3fs.S3FileSystem(**fs_kwargs)
     # Convert the dictionary to a PyArrow Table
     df = pd.DataFrame(data)
 

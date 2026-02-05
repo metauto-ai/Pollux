@@ -50,12 +50,19 @@ class NovaCaption:
         batch_size: int = 500,
     ):
         # -------- AWS --------
+        aws_access_key_id = os.environ.get("S3KEY") or os.environ.get("AWS_ACCESS_KEY_ID")
+        aws_secret_access_key = os.environ.get("S3SECRET") or os.environ.get("AWS_SECRET_ACCESS_KEY")
+        bedrock_kwargs = {"region_name": "us-east-1", "config": config}
+        if aws_access_key_id and aws_secret_access_key:
+            bedrock_kwargs.update(
+                {
+                    "aws_access_key_id": aws_access_key_id,
+                    "aws_secret_access_key": aws_secret_access_key,
+                }
+            )
         self.client = boto3.client(
             "bedrock-runtime",
-            aws_access_key_id="AKIA47CRZU7STC4XUXER",
-            aws_secret_access_key="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",
-            region_name="us-east-1",
-            config=config,
+            **bedrock_kwargs,
         )
         # -------- MongoDB --------
         mongodb_client = MongoClient(MONGODB_URI, tlsCAFile=certifi.where())
