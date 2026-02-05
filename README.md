@@ -33,8 +33,8 @@ python -m apps.main.generate config=apps/main/configs/eval.yaml
 
 ### Contributors
 <a href="https://github.com/Pollux/metauto-ai/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=Pollux/metauto-ai" />
+  <img
+    src="https://contrib.rocks/image?repo=Pollux/metauto-ai"
+    alt="Contributors"
+  />
 </a>
-
-### License
-MIT (see [LICENSE](LICENSE)).
