@@ -32,8 +32,8 @@ python -m apps.main.generate config=apps/main/configs/eval.yaml
 - [FA3.md](FA3.md) – CUDA 12.8 + FlashAttention v3
 
 ### Contributors
-<a href="https://github.com/metauto-ai/Pollux/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=metauto-ai/Pollux" />
+<a href="https://github.com/Pollux/metauto-ai/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=Pollux/metauto-ai" />
 </a>
 
 ### License
